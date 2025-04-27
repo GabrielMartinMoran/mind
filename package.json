@@ -1,6 +1,6 @@
 {
   "name": "mind",
-  "module": "index.ts",
+  "module": "src/mind.ts",
   "type": "module",
   "private": true,
   "devDependencies": {

@@ -1,6 +1,11 @@
 #/bin/bash
 
+set -e
+
 # This is a script that works as a shortcut for running mind
 
+# Get the directory of this script
+root_path=$(dirname "$0")
 
-bun run src/mind.ts "$@"
+
+bun run ${root_path}/src/mind.ts "$@"
