@@ -1,8 +1,10 @@
 export class ArgParser {
     private shape: string[];
+    private description: string;
 
-    constructor(shape: string[]) {
+    constructor(shape: string[], description: string) {
         this.shape = shape;
+        this.description = description;
     }
 
     matches(args: string[]): boolean {
@@ -44,15 +46,17 @@ export class ArgParser {
         return params;
     }
 
-    public getRenderedShape(): string {
-        return this.shape
-            .map((part) => {
-                if (this.isParam(part)) {
-                    const name = this.getParamName(part);
-                    return `<${name}>`;
-                }
-                return part;
-            })
-            .join(' ');
+    public getRendered(): string {
+        return (
+            this.shape
+                .map((part) => {
+                    if (this.isParam(part)) {
+                        const name = this.getParamName(part);
+                        return `<${name}>`;
+                    }
+                    return part;
+                })
+                .join(' ') + `\n        ↪ ${this.description}\n`
+        );
     }
 }

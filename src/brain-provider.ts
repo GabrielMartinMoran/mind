@@ -3,8 +3,7 @@ import * as fs from 'fs';
 import type { Brain } from './types';
 
 export interface BrainProvider {
-    createSpace: (name: string) => void;
-    listSpaces: () => string[];
+    createSpace: (name: string, description: string) => void;
     saveBrain: (brain: Brain) => void;
     getBrain: () => Brain;
 }
@@ -16,29 +15,26 @@ export const useBrainProvider = (): BrainProvider => {
 
     const getBrain = (): Brain => {
         if (!fs.existsSync(CONFIG.storagePath)) {
-            return {};
+            return {} as Brain;
         }
         const brain = JSON.parse(fs.readFileSync(CONFIG.storagePath, 'utf8'));
         return brain;
     };
 
-    const createSpace = (name: string) => {
+    const createSpace = (name: string, description: string) => {
         const brain = getBrain();
         if (brain[name] !== undefined) {
             throw new Error(`Space ${name} already exists`);
         }
-        brain[name] = [];
+        brain[name] = {
+            description,
+            memories: [],
+        };
         saveBrain(brain);
-    };
-
-    const listSpaces = (): string[] => {
-        const brain = getBrain();
-        return Object.keys(brain);
     };
 
     return {
         createSpace,
-        listSpaces,
         saveBrain,
         getBrain,
     };

@@ -15,17 +15,20 @@ export const useMockedBrainProvider = () => {
         return mockedBrains[brainId];
     };
 
-    const createSpace = (name: string) => {
-        getBrain()[name] = [];
-    };
-
-    const listSpaces = (): string[] => {
-        return Object.keys(getBrain());
+    const createSpace = (name: string, description: string) => {
+        const brain = getBrain();
+        if (brain[name] !== undefined) {
+            throw new Error(`Space ${name} already exists`);
+        }
+        brain[name] = {
+            description,
+            memories: [],
+        };
+        saveBrain(brain);
     };
 
     return {
         createSpace,
-        listSpaces,
         saveBrain,
         getBrain,
     };
