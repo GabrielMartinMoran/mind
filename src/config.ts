@@ -1,3 +1,3 @@
 export const CONFIG = {
-    storagePath: './brain.json'
-}
+    storagePath: `${__dirname}/../brain.json`,
+};
