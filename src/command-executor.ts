@@ -1,7 +1,6 @@
 import { ArgParser } from './arg-parser';
 import type { BrainProvider } from './brain-provider';
 import type { Logger } from './logger';
-import brain from '../brain.json';
 import { style } from 'bun-style';
 
 export const param = (name: string): string => {
@@ -21,11 +20,21 @@ const ARG_PARSERS = {
         ['describe|ds', param('space'), param('description')],
         'Changes a space description'
     ),
+    REORDER_SPACE: new ArgParser(
+        ['reorder|ro', param('space'), param('fromIndex'), param('toIndex')],
+        "Reorders space memories moving a memory from one index to another. When toIndex is 0, the memory it's moved to the top of the space; and when -1, it's moved to the bottom of the space"
+    ),
 };
 
 export const executeCommand = (args: string[], brainProvider: BrainProvider, logger: Logger) => {
     const { createSpace, saveBrain, getBrain } = brainProvider;
     const { logInfo } = logger;
+
+    const printMemories = (memories: string[]) => {
+        for (let i = 0; i < memories.length; i++) {
+            logInfo(`   ${style(`${i + 1}.`, ['bold'])} ${memories[i]}`);
+        }
+    };
 
     if (args.length === 0) {
         throw new Error('No arguments provided');
@@ -72,9 +81,7 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
         if (content.memories.length === 0) {
             logInfo(style('   No memories found!', ['dim']));
         } else {
-            for (let i = 0; i < content.memories.length; i++) {
-                logInfo(`   ${style(`${i + 1}.`, ['bold'])} ${content.memories[i]}`);
-            }
+            printMemories(content.memories);
         }
         return;
     }
@@ -141,6 +148,39 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
         brain[space].description = description;
         saveBrain(brain);
         logInfo(`Space ${space} description changed`);
+        return;
+    }
+
+    if (ARG_PARSERS.REORDER_SPACE.matches(args)) {
+        const params = ARG_PARSERS.REORDER_SPACE.getParams(args);
+        params.fromIndex = parseInt(params.fromIndex);
+        params.toIndex = parseInt(params.toIndex);
+        const { space, fromIndex, toIndex } = params;
+        const brain = getBrain();
+        if (brain[space] === undefined) {
+            throw new Error(`Space ${space} does not exist`);
+        }
+        const normalizedFromIndex = fromIndex - 1;
+        if (normalizedFromIndex < 0 || normalizedFromIndex >= brain[space].memories.length) {
+            throw new Error(`Memory index ${fromIndex} is not valid for space ${space}`);
+        }
+
+        const memory = brain[space].memories[normalizedFromIndex]!;
+        brain[space].memories.splice(normalizedFromIndex, 1);
+
+        if (toIndex === 0) {
+            brain[space].memories.unshift(memory);
+        } else if (toIndex === -1) {
+            console.log(memory);
+            brain[space].memories.push(memory);
+            console.log(brain[space].memories);
+        } else {
+            brain[space].memories.splice(toIndex - 1, 0, memory);
+        }
+
+        saveBrain(brain);
+        logInfo(style(`✅ Memories for space ${space} reordered:`, ['bold', 'green']));
+        printMemories(brain[space].memories);
         return;
     }
 
