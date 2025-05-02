@@ -1,3 +1,5 @@
+import { style } from 'bun-style';
+
 export class ArgParser {
     private shape: string[];
     private description: string;
@@ -48,15 +50,19 @@ export class ArgParser {
 
     public getRendered(): string {
         return (
-            this.shape
-                .map((part) => {
-                    if (this.isParam(part)) {
-                        const name = this.getParamName(part);
-                        return `<${name}>`;
-                    }
-                    return part;
-                })
-                .join(' ') + `\n        ↪ ${this.description}\n`
+            style(
+                'mind ' +
+                    this.shape
+                        .map((part) => {
+                            if (this.isParam(part)) {
+                                const name = this.getParamName(part);
+                                return style(`<${name}>`, ['italic']);
+                            }
+                            return part;
+                        })
+                        .join(' '),
+                ['bold']
+            ) + style(`\n      ↪ ${this.description}`, ['dim'])
         );
     }
 }

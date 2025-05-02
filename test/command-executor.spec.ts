@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { executeCommand } from '../src/command-executor';
 import { useMockedBrainProvider } from './mocks/mocked-brain-provider';
 import { mockedLogger } from './mocks/mocked-logger';
+import { style } from 'bun-style';
 
 describe('Command Executor', () => {
     test('should show help', () => {
@@ -9,11 +10,7 @@ describe('Command Executor', () => {
         executeCommand(['help'], useMockedBrainProvider(), logger);
 
         const logs = logger.getLogs();
-        expect(logs[0].message).toBe('Allowed commands:');
-        expect(logs).toContainEqual({
-            type: 'info',
-            message: expect.stringContaining('mind help'),
-        });
+        expect(logs[0].message).toBe(style('💻 Allowed commands:', ['bold', 'black']));
     });
 
     test('should create space', () => {
@@ -26,7 +23,7 @@ describe('Command Executor', () => {
         expect(brainProvider.getBrain()['test-space']?.description).toBe('A space for testing');
         expect(logger.getLogs()).toContainEqual({
             type: 'info',
-            message: 'Space test-space created',
+            message: style('✅ Space test-space created', ['bold', 'green']),
         });
     });
 
@@ -34,22 +31,21 @@ describe('Command Executor', () => {
         const brainProvider = useMockedBrainProvider();
         const logger = mockedLogger();
 
-        // Create some test spaces
         brainProvider.createSpace('space1', 'Space 1');
         brainProvider.createSpace('space2', 'Space 2');
 
         executeCommand(['list'], brainProvider, logger);
 
         const logs = logger.getLogs();
-        expect(logs).toContainEqual({ type: 'info', message: '1. space1: Space 1' });
-        expect(logs).toContainEqual({ type: 'info', message: '2. space2: Space 2' });
+        expect(logs[0].message).toBe(style('🧠 Spaces:', ['bold', 'magenta']));
+        expect(logs[1].message).toBe(`   ${style('1. space1', ['bold'])}: ${style('Space 1', ['gray'])}`);
+        expect(logs[2].message).toBe(`   ${style('2. space2', ['bold'])}: ${style('Space 2', ['gray'])}`);
     });
 
     test('should read space', () => {
         const brainProvider = useMockedBrainProvider();
         const logger = mockedLogger();
 
-        // Create and populate test space
         brainProvider.createSpace('test-space', 'A test space');
         executeCommand(['add', 'test-space', 'memory1'], brainProvider, logger);
         executeCommand(['add', 'test-space', 'memory2'], brainProvider, logger);
@@ -57,9 +53,32 @@ describe('Command Executor', () => {
         executeCommand(['read', 'test-space'], brainProvider, logger);
 
         const logs = logger.getLogs();
-        expect(logs).toContainEqual({ type: 'info', message: 'test-space:' });
-        expect(logs).toContainEqual({ type: 'info', message: '   1. memory1' });
-        expect(logs).toContainEqual({ type: 'info', message: '   2. memory2' });
+        expect(logs).toContainEqual({
+            type: 'info',
+            message: style('🛸 test-space:', ['bold', 'blue']),
+        });
+        expect(logs).toContainEqual({
+            type: 'info',
+            message: `   ${style('1.', ['bold'])} memory1`,
+        });
+        expect(logs).toContainEqual({
+            type: 'info',
+            message: `   ${style('2.', ['bold'])} memory2`,
+        });
+    });
+
+    test('should read empty space', () => {
+        const brainProvider = useMockedBrainProvider();
+        const logger = mockedLogger();
+
+        brainProvider.createSpace('test-space', 'A test space');
+        executeCommand(['read', 'test-space'], brainProvider, logger);
+
+        const logs = logger.getLogs();
+        expect(logs).toContainEqual({
+            type: 'info',
+            message: style('   No memories found!', ['dim']),
+        });
     });
 
     test('should rename space', () => {
@@ -74,7 +93,7 @@ describe('Command Executor', () => {
         expect(spaces).toContain('new-space');
         expect(logger.getLogs()).toContainEqual({
             type: 'info',
-            message: 'Space old-space renamed to new-space',
+            message: style('✅ Space old-space renamed to new-space', ['bold', 'green']),
         });
     });
 
@@ -89,7 +108,7 @@ describe('Command Executor', () => {
         expect(brain['test-space'].memories).toContain('new memory');
         expect(logger.getLogs()).toContainEqual({
             type: 'info',
-            message: 'Memory added',
+            message: style('✅ Memory added: ', ['bold', 'green']) + `\n   ${style('new memory', ['dim'])}`,
         });
     });
 
@@ -108,7 +127,7 @@ describe('Command Executor', () => {
         expect(brain['test-space'].memories).toContain('memory2');
         expect(logger.getLogs()).toContainEqual({
             type: 'info',
-            message: 'Memory removed: memory1',
+            message: style('✅ Memory removed: ', ['bold', 'green']) + `\n   ${style('memory1', ['dim'])}`,
         });
     });
 
@@ -122,7 +141,7 @@ describe('Command Executor', () => {
         expect(Object.keys(brainProvider.getBrain())).not.toContain('test-space');
         expect(logger.getLogs()).toContainEqual({
             type: 'info',
-            message: 'Space test-space deleted',
+            message: style('✅ Space test-space deleted', ['bold', 'green']),
         });
     });
 
@@ -142,6 +161,16 @@ describe('Command Executor', () => {
         expect(() => {
             executeCommand(['read', 'non-existent'], brainProvider, logger);
         }).toThrow('Space non-existent does not exist');
+    });
+
+    test('should throw error for invalid memory index', () => {
+        const brainProvider = useMockedBrainProvider();
+        const logger = mockedLogger();
+
+        brainProvider.createSpace('test-space', 'A test space');
+        expect(() => {
+            executeCommand(['remove', 'test-space', '1'], brainProvider, logger);
+        }).toThrow('Memory index 1 is not valid for space test-space');
     });
 
     test('should handle empty args', () => {

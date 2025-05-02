@@ -2,6 +2,7 @@ import { ArgParser } from './arg-parser';
 import type { BrainProvider } from './brain-provider';
 import type { Logger } from './logger';
 import brain from '../brain.json';
+import { style } from 'bun-style';
 
 export const param = (name: string): string => {
     return ArgParser.param(name);
@@ -31,9 +32,9 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
     }
 
     if (ARG_PARSERS.HELP.matches(args)) {
-        logInfo('Allowed commands:');
+        logInfo(style('💻 Allowed commands:', ['bold', 'black']));
         for (const parser of Object.values(ARG_PARSERS)) {
-            logInfo(`   mind ${parser.getRendered()}`);
+            logInfo(`   ${parser.getRendered()}`);
         }
         return;
     }
@@ -41,7 +42,7 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
     if (ARG_PARSERS.CREATE_SPACE.matches(args)) {
         const { space, description } = ARG_PARSERS.CREATE_SPACE.getParams(args);
         createSpace(space, description);
-        logInfo(`Space ${space} created`);
+        logInfo(style(`✅ Space ${space} created`, ['bold', 'green']));
         return;
     }
 
@@ -52,9 +53,10 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
             logInfo('No spaces found');
             return;
         }
+        logInfo(style('🧠 Spaces:', ['bold', 'magenta']));
         for (let i = 0; i < spaces.length; i++) {
             const space = brain[spaces[i]!];
-            logInfo(`${i + 1}. ${spaces[i]}: ${space?.description}`);
+            logInfo(`   ${style(`${i + 1}. ${spaces[i]}`, ['bold'])}: ${style(space?.description!, ['gray'])}`);
         }
         return;
     }
@@ -66,12 +68,12 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
             throw new Error(`Space ${space} does not exist`);
         }
         const content = brain[space];
-        logInfo(`${space}:`);
+        logInfo(style(`🛸 ${space}:`, ['bold', 'blue']));
         if (content.memories.length === 0) {
-            logInfo('   > No memories found');
+            logInfo(style('   No memories found!', ['dim']));
         } else {
             for (let i = 0; i < content.memories.length; i++) {
-                logInfo(`   ${i + 1}. ${content.memories[i]}`);
+                logInfo(`   ${style(`${i + 1}.`, ['bold'])} ${content.memories[i]}`);
             }
         }
         return;
@@ -86,7 +88,7 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
         brain[newName] = brain[old];
         delete brain[old];
         saveBrain(brain);
-        logInfo(`Space ${old} renamed to ${newName}`);
+        logInfo(style(`✅ Space ${old} renamed to ${newName}`, ['bold', 'green']));
         return;
     }
 
@@ -98,7 +100,7 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
         }
         brain[space].memories.push(value);
         saveBrain(brain);
-        logInfo(`Memory added`);
+        logInfo(style(`✅ Memory added: `, ['bold', 'green']) + `\n   ${style(value, ['dim'])}`);
         return;
     }
 
@@ -108,10 +110,13 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
         if (brain[space] === undefined) {
             throw new Error(`Space ${space} does not exist`);
         }
-        const memory = brain[space].memories[index - 1];
+        if (index < 1 || index > brain[space].memories.length) {
+            throw new Error(`Memory index ${index} is not valid for space ${space}`);
+        }
+        const memory = brain[space].memories[index - 1]!;
         brain[space].memories.splice(index - 1, 1);
         saveBrain(brain);
-        logInfo(`Memory removed: ${memory}`);
+        logInfo(style(`✅ Memory removed: `, ['bold', 'green']) + `\n   ${style(memory, ['dim'])}`);
         return;
     }
 
@@ -123,7 +128,7 @@ export const executeCommand = (args: string[], brainProvider: BrainProvider, log
         }
         delete brain[space];
         saveBrain(brain);
-        logInfo(`Space ${space} deleted`);
+        logInfo(style(`✅ Space ${space} deleted`, ['bold', 'green']));
         return;
     }
 

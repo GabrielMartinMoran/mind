@@ -8,5 +8,8 @@
   },
   "peerDependencies": {
     "typescript": "^5"
+  },
+  "dependencies": {
+    "bun-style": "^0.3.2"
   }
 }
