@@ -80,6 +80,7 @@ function printHelp(logger: Logger): void {
     'Status',
     'Tags',
     'Checkpoint',
+    'Sync',
   ];
   for (const name of sections) {
     const group = ALL_GROUPS.find(g => g.name === name);

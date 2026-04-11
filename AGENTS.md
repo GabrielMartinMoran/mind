@@ -68,6 +68,7 @@ User → ./mind <command> [args] [--flag value]
 | Types                 | `src/types.ts`                                                       | All domain types: `Space`, `Memory`, `Link`, `Tier`, `SearchResult`, `StatusResult`, `LegacyBrain`, etc.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Helpers               | `src/helpers/*.ts`                                                   | Shared helpers: logger, tag normalization, formatting/memory refs, markdown resource loading, and RAG helpers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Protocol resources    | `src/resources/protocols/*.md`                                       | Canonical markdown sources for OpenCode setup protocol injection and MCP `system_instructions` tool content.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Sync (Autosync)       | `src/sync/`                                                          | Bidirectional file sync: `FileSyncService` (export/import), `AutoSyncService` (file watcher), `ConflictResolver` (db-wins/file-wins/latest-wins), `FileWatcher` (chokidar-based), `ConfigStore` (sync_config repo), `Frontmatter` (parse/generate). Loop prevention via `.mind-sync/.syncing` lock files.                                                                                                                                                                                                                                                                                                                                                                                                 |
 | Web frontend          | `web/src/*`, `web/styles/*`, `web/assets/*`, `web/public/index.html` | SPA for browsing and editing spaces and memories. Frontend runtime code is modular ES modules in `web/src/` (no build pipeline), with `@ts-check` + JSDoc in key modules, split styles in `web/styles/`, static assets in `web/assets/`, and URL-driven client routing for deep links/reload/back-forward restoration.                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Neural Map API/UI touchpoints:
@@ -289,6 +290,14 @@ Reads `data/brain.json` (or `$MIND_DATA_DIR/brain.json`) and imports all spaces 
 | Guide (mode)        | `guide`               | `g`                                         | `<mode>`                       | —                                                                     | Show guide (`agent` or `human`).                                                                                                                                  |
 | Import              | `import`              | —                                           | —                              | —                                                                     | Import legacy `brain.json` into SQLite.                                                                                                                           |
 | Update              | `update`              | —                                           | —                              | `--check`, `--version`, `--repo`                                      | Update mind from GitHub releases.                                                                                                                                 |
+| Sync status         | `sync status`         | `sync ls`                                   | —                              | `--space`                                                             | Show sync status for spaces.                                                                                                                                      |
+| Sync enable         | `sync enable`         | —                                           | —                              | `--space`, `--path`                                                   | Enable autosync for a project space.                                                                                                                              |
+| Sync disable        | `sync disable`        | —                                           | —                              | `--space`                                                             | Disable autosync for a space.                                                                                                                                     |
+| Sync now            | `sync now`            | —                                           | —                              | `--space`                                                             | Force immediate sync (export + import).                                                                                                                           |
+| Sync export         | `sync export`         | —                                           | —                              | `--space`, `--path`                                                   | Export space memories to markdown files.                                                                                                                          |
+| Sync import         | `sync import`         | —                                           | —                              | `--space`, `--path`                                                   | Import markdown files into a space.                                                                                                                               |
+| Sync conflict       | `sync conflict`       | —                                           | —                              | `--space`, `--strategy`                                               | Configure conflict resolution strategy.                                                                                                                           |
+| Sync serve          | `sync serve`          | —                                           | —                              | `--space`                                                             | Start file watcher for a space (foreground).                                                                                                                      |
 
 > **Note:** `tag` and `untag` are disambiguated by argument count: 2 positional args = space tag, 3 positional args = memory tag.
 
@@ -381,6 +390,68 @@ When using mind via MCP, follow these conventions:
 - T3 (cold) — unlimited
 
 **Continuity rule:** link directly relevant memories for recovery continuity. `memory_add` with `links_to` is best-effort — check `links_failed` in the response.
+
+### 4.11 Autosync (Experimental)
+
+Mind can synchronize project spaces with `.md` files on the filesystem.
+
+**Enable autosync:**
+
+```bash
+mind sync enable --space projects/mind --path .mind
+```
+
+**Commands:**
+
+| Command                                                   | Description                      |
+| --------------------------------------------------------- | -------------------------------- |
+| `mind sync status`                                        | Show sync status                 |
+| `mind sync enable --space <name> --path <dir>`            | Enable autosync                  |
+| `mind sync disable --space <name>`                        | Disable autosync                 |
+| `mind sync now --space <name>`                            | Immediate sync (export + import) |
+| `mind sync export --space <name> --path <dir>`            | Export to files                  |
+| `mind sync import --space <name> --path <dir>`            | Import files                     |
+| `mind sync conflict --space <name> --strategy <strategy>` | Set conflict strategy            |
+| `mind sync serve --space <name>`                          | Start file watcher (foreground)  |
+
+**Conflict strategies:**
+
+- `db-wins` — always use DB (default)
+- `file-wins` — always use file
+- `latest-wins` — use most recent by timestamp
+
+**File structure:**
+
+```
+.mind/
+├── memory-1.md
+├── memory-2.md
+└── .mind-sync/           # (gitignored)
+    └── .syncing          # lock file for loop prevention
+```
+
+**Frontmatter format:**
+
+```yaml
+---
+id: 12345
+space: projects/mind
+name: mi-memory
+tier: 1
+pinned: false
+tags: [cat:decision]
+links_to: ['otra-memory']
+created_at: 2024-01-15T10:30:00Z
+changed_at: 2024-01-16T14:22:00Z
+---
+Content here...
+```
+
+**Limitations:**
+
+- Watcher (`sync serve`) runs in foreground; daemon mode not implemented
+- Auto-delete from DB when file is deleted is not implemented
+- Only selected project spaces are synchronized
 
 ---
 

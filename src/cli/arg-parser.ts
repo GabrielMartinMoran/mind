@@ -62,6 +62,23 @@ export class ArgParser {
         }
 
         if (!foundMatch) return false;
+
+        // Found match for this shape entry.
+        // If we've consumed all positional args:
+        // - If no more shape entries: return true
+        // - If next shape entry is a param: continue (param will consume next positional or fail)
+        // - If next shape entry is a command part (another alias): return true (don't try it)
+        if (posIdx === positional.length) {
+          const nextPart = this.shape[shapeIdx + 1];
+          if (!nextPart) {
+            return true;
+          }
+          // If next part is a command part (not a param), return true - don't try to match it
+          if (!this.isParam(nextPart)) {
+            return true;
+          }
+          // Next is a param - continue to next iteration
+        }
       }
     }
 
