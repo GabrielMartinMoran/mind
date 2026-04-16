@@ -27,14 +27,14 @@ Example:
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- **Autosync** — Bidirectional sync between SQLite and `.md` files with frontmatter
-  - New module `src/sync/` with FileWatcher, AutoSyncService, ConflictResolver
-  - Commands: `sync enable`, `sync disable`, `sync status`, `sync now`, `sync export`, `sync import`, `sync conflict`, `sync serve`
-  - Conflict strategies: `db-wins` (default), `file-wins`, `latest-wins`
-  - Loop prevention via lock files
-  - E2E test script: `scripts/test-sync-e2e.sh`
+- **Autosync** — Complete rewrite to file-based config (`.mind/config.yml`) instead of SQLite table
+  - Config is now versioned with git for team collaboration
+  - Spaces stored in `.mind/spaces/<hash>/` directories
+  - Hash = SHA256 truncated to 8 hex chars
+  - CLI commands: `sync init`, `sync status`, `sync enable`, `sync disable`, `sync now`, `sync export`, `sync import`, `sync conflict`, `sync remove`, `sync config`, `sync serve`
+  - MCP server auto-starts watchers for all enabled spaces
 
 ## [1.4.0] - 2026-04-10
 

@@ -2,8 +2,9 @@
 
 export * from './types';
 export * from './frontmatter';
+export * from './config-file';
+export * from './normalize';
 export { FileSyncService, type SyncStore } from './file-sync-service';
-export { createSyncConfigRepository } from './config-store';
 export { FileWatcher } from './file-watcher';
 export { AutoSyncService } from './auto-sync-service';
 export {

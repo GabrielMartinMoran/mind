@@ -11,6 +11,7 @@ import {
 
 import { createLogEntry } from '../helpers/logger';
 import type { MindStore } from '../store/mind-store';
+import { AutoSyncService as _AutoSyncService } from '../sync';
 
 import { zodToJsonSchema } from './helpers/json-schema';
 import type { ToolDefinition } from './tool-types';
@@ -121,11 +122,23 @@ function createMcpServer(store: MindStore): Server {
 
 export { zodToJsonSchema } from './helpers/json-schema';
 
-export async function startMcpServer(store: MindStore): Promise<void> {
+// ── Autosync watchers ─────────────────────────────────────────────────────────
+
+export async function startAutosyncWatchers(store: MindStore, projectRoot?: string): Promise<void> {
+  const { startAutosyncWatchers: startWatchers } = await import('../sync/auto-sync-service');
+  await startWatchers(store, projectRoot ?? process.cwd());
+}
+
+export async function startMcpServer(store: MindStore, projectRoot?: string): Promise<void> {
   const server = createMcpServer(store);
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error('Mind MCP server running on stdio');
+
+  // Start autosync watchers for all enabled spaces
+  setImmediate(() => startAutosyncWatchers(store, projectRoot ?? process.cwd()));
+
+  await new Promise(() => {}); // keep alive
 }
 
 type SessionEntry = {
@@ -147,7 +160,11 @@ function jsonRpcSessionError(status: number, message: string): Response {
   );
 }
 
-export async function startMcpHttpServer(store: MindStore, port: number = 7438): Promise<void> {
+export async function startMcpHttpServer(
+  store: MindStore,
+  port: number = 7438,
+  projectRoot?: string
+): Promise<void> {
   const sessions = new Map<string, SessionEntry>();
   const mcpPort = Number(port || process.env.MCP_PORT || 7438);
   const idleTimeout = Number(process.env.MIND_MCP_IDLE_TIMEOUT ?? 120);
@@ -226,4 +243,7 @@ export async function startMcpHttpServer(store: MindStore, port: number = 7438):
   });
 
   console.error(`Mind MCP HTTP server running on http://localhost:${mcpPort}/mcp`);
+
+  // Start autosync watchers for all enabled spaces
+  setImmediate(() => startAutosyncWatchers(store, projectRoot ?? process.cwd()));
 }

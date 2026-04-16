@@ -42,3 +42,4 @@ data/
 
 .husky/
 .lintstagedrc.json
+.mind/

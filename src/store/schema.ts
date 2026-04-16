@@ -1,6 +1,6 @@
-// ── SQLite schema and migrations for Mind v8 ──
+// ── SQLite schema and migrations for Mind v7 ──
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 7;
 
 export const SCHEMA_SQL = `
 -- Version tracking
@@ -88,18 +88,6 @@ CREATE TABLE IF NOT EXISTS logs (
 
 CREATE INDEX IF NOT EXISTS idx_logs_timestamp_source ON logs(timestamp, source);
 CREATE INDEX IF NOT EXISTS idx_logs_operation ON logs(operation);
-
--- Sync configuration per space
-CREATE TABLE IF NOT EXISTS sync_config (
-    space_name           TEXT PRIMARY KEY,
-    enabled              INTEGER NOT NULL DEFAULT 0,
-    base_path            TEXT NOT NULL,
-    conflict_resolution  TEXT NOT NULL DEFAULT 'db-wins',
-    last_exported_at     TEXT,
-    last_imported_at     TEXT,
-    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
-);
 `;
 
 // ── Migration: v1 → v2 ──
@@ -236,22 +224,6 @@ PRAGMA foreign_keys = ON;
 UPDATE meta SET value = '7' WHERE key = 'schema_version';
 `;
 
-// ── Migration: v7 → v8 ──
-// Changes: add sync_config table for sync settings per space
-const MIGRATE_V7_TO_V8 = `
-CREATE TABLE IF NOT EXISTS sync_config (
-    space_name           TEXT PRIMARY KEY,
-    enabled              INTEGER NOT NULL DEFAULT 0,
-    base_path            TEXT NOT NULL,
-    conflict_resolution  TEXT NOT NULL DEFAULT 'db-wins',
-    last_exported_at     TEXT,
-    last_imported_at     TEXT,
-    created_at           TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
-);
-UPDATE meta SET value = '8' WHERE key = 'schema_version';
-`;
-
 export function initializeDatabase(db: import('bun:sqlite').Database): void {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA synchronous = NORMAL;');
@@ -305,10 +277,5 @@ export function initializeDatabase(db: import('bun:sqlite').Database): void {
     db.exec(MIGRATE_V6_TO_V7);
   }
 
-  if (currentVersion < 8) {
-    // Migrate v7 → v8
-    db.exec(MIGRATE_V7_TO_V8);
-  }
-
-  // Future migrations: add else-if blocks here for v8→v9, etc.
+  // Future migrations: add else-if blocks here for v7→v8, etc.
 }

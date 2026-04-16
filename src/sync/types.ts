@@ -2,16 +2,23 @@
 
 export type ConflictResolution = 'db-wins' | 'file-wins' | 'latest-wins';
 
-export interface SyncSpaceConfig {
-  spaceName: string;
+// ── File-based config types ──
+
+export interface SpaceSyncConfig {
   enabled: boolean;
-  basePath: string;
   conflictResolution: ConflictResolution;
-  lastExportedAt: string | null;
-  lastImportedAt: string | null;
-  createdAt: string;
-  updatedAt: string;
 }
+
+export interface MindSyncConfig {
+  version: number;
+  spaces: Record<string, SpaceSyncConfig>; // key = space name like "projects/mind"
+}
+
+export interface SpaceManifest {
+  space: string;
+}
+
+// ── Sync state types ──
 
 export interface SyncState {
   isExporting: boolean;
@@ -38,7 +45,7 @@ export interface ExportResult {
   errors: string[];
 }
 
-// ── File event types (Phase 3) ──
+// ── File event types ──
 
 export type FileEventType = 'add' | 'change' | 'unlink';
 

@@ -7,31 +7,38 @@ import { join } from 'path';
 import { expect, test, beforeEach, afterEach, describe } from 'bun:test';
 
 import type { MindStore } from '../src/store/mind-store';
+import { initMindDir, loadConfig, saveConfig } from '../src/sync/config-file';
 import { FileSyncService } from '../src/sync/file-sync-service';
 import { parseFrontmatter, generateMarkdown } from '../src/sync/frontmatter';
-import type { SyncSpaceConfig } from '../src/sync/types';
+import { getSyncBasePath, getSpaceDir } from '../src/sync/normalize';
 
 import { createTestStore } from './mocks/test-store';
 
 let store: MindStore & { cleanup: () => void };
 let syncService: FileSyncService;
-let exportPath: string;
+let testDir: string;
+let projectRoot: string;
 
 beforeEach(async () => {
   const result = await createTestStore();
   store = result;
   syncService = new FileSyncService(store);
-  exportPath = join(tmpdir(), 'sync-test-' + Date.now() + '-' + Math.random());
-  mkdirSync(exportPath, { recursive: true });
-  // Create test space
+  testDir = join(tmpdir(), 'sync-test-' + Date.now() + '-' + Math.random());
+  mkdirSync(testDir, { recursive: true });
+  projectRoot = testDir;
+
+  // Create test spaces
   store.createSpace('projects/test', 'Test space for sync export', ['type:project']);
   store.createSpace('projects/other', 'Other test space', ['type:project']);
+
+  // Initialize .mind directory
+  initMindDir(projectRoot);
 });
 
 afterEach(() => {
   store.close();
   try {
-    rmSync(exportPath, { recursive: true, force: true });
+    rmSync(testDir, { recursive: true, force: true });
   } catch {
     // ignore
   }
@@ -45,16 +52,20 @@ describe('sync export', () => {
       tier: 1,
     });
 
-    // Execute: export to temp dir
-    const result = await syncService.exportSpaceToFiles('projects/test', exportPath);
+    // Pass basePath (.mind directory), not spaceDir
+    const basePath = getSyncBasePath(projectRoot);
+
+    // Execute: export to basePath (which contains spaces/ subdir)
+    const result = await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify: check result
     expect(result.exported).toBe(1);
     expect(result.failed).toBe(0);
     expect(result.errors).toHaveLength(0);
 
-    // Verify: check file exists
-    const filePath = join(exportPath, 'test-memory.md');
+    // Verify: check file exists in the computed space dir
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    const filePath = join(spaceDir, 'test-memory.md');
     expect(existsSync(filePath)).toBe(true);
 
     // Verify: parse and check frontmatter
@@ -84,17 +95,20 @@ describe('sync export', () => {
       tier: 2,
     });
 
+    const basePath = getSyncBasePath(projectRoot);
+
     // Execute
-    const result = await syncService.exportSpaceToFiles('projects/test', exportPath);
+    const result = await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify
     expect(result.exported).toBe(3);
     expect(result.failed).toBe(0);
 
-    // Verify files exist
-    expect(existsSync(join(exportPath, 'memory-one.md'))).toBe(true);
-    expect(existsSync(join(exportPath, 'memory-two.md'))).toBe(true);
-    expect(existsSync(join(exportPath, 'memory-three.md'))).toBe(true);
+    // Verify files exist in the computed space dir
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    expect(existsSync(join(spaceDir, 'memory-one.md'))).toBe(true);
+    expect(existsSync(join(spaceDir, 'memory-two.md'))).toBe(true);
+    expect(existsSync(join(spaceDir, 'memory-three.md'))).toBe(true);
   });
 
   test('exports memory with all frontmatter fields', async () => {
@@ -111,11 +125,14 @@ describe('sync export', () => {
     // Create a link
     store.link(mem1.id, mem2.id, 'related');
 
+    const basePath = getSyncBasePath(projectRoot);
+
     // Execute
-    await syncService.exportSpaceToFiles('projects/test', exportPath);
+    await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify
-    const filePath = join(exportPath, 'source-memory.md');
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    const filePath = join(spaceDir, 'source-memory.md');
     const fileContent = readFileSync(filePath, 'utf-8');
     const { frontmatter } = parseFrontmatter(fileContent);
 
@@ -137,11 +154,14 @@ describe('sync export', () => {
       tier: 1,
     });
 
+    const basePath = getSyncBasePath(projectRoot);
+
     // Execute
-    await syncService.exportSpaceToFiles('projects/test', exportPath);
+    await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify: tags should be a YAML array [item1, item2, item3]
-    const filePath = join(exportPath, 'tagged-memory.md');
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    const filePath = join(spaceDir, 'tagged-memory.md');
     const fileContent = readFileSync(filePath, 'utf-8');
     const { frontmatter } = parseFrontmatter(fileContent);
 
@@ -166,11 +186,14 @@ describe('sync export', () => {
     // Link from local to remote
     store.link(localMem.id, remoteMem.id, 'depends_on');
 
+    const basePath = getSyncBasePath(projectRoot);
+
     // Execute
-    await syncService.exportSpaceToFiles('projects/test', exportPath);
+    await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify: links_to should contain space:name format for cross-space links
-    const filePath = join(exportPath, 'local-memory.md');
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    const filePath = join(spaceDir, 'local-memory.md');
     const fileContent = readFileSync(filePath, 'utf-8');
     const { frontmatter } = parseFrontmatter(fileContent);
 
@@ -184,12 +207,15 @@ describe('sync export', () => {
       tier: 1,
     });
 
+    const basePath = getSyncBasePath(projectRoot);
+
     // Execute
-    const result = await syncService.exportSpaceToFiles('projects/test', exportPath);
+    const result = await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify
     expect(result.exported).toBe(1);
-    const filePath = join(exportPath, 'empty-memory.md');
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    const filePath = join(spaceDir, 'empty-memory.md');
     const fileContent = readFileSync(filePath, 'utf-8');
     const { frontmatter, content } = parseFrontmatter(fileContent);
 
@@ -204,11 +230,14 @@ describe('sync export', () => {
       tier: 1,
     });
 
+    const basePath = getSyncBasePath(projectRoot);
+
     // Execute
-    await syncService.exportSpaceToFiles('projects/test', exportPath);
+    await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify: read file and parse
-    const filePath = join(exportPath, 'roundtrip-memory.md');
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    const filePath = join(spaceDir, 'roundtrip-memory.md');
     const fileContent = readFileSync(filePath, 'utf-8');
     const { frontmatter, content } = parseFrontmatter(fileContent);
 
@@ -253,11 +282,14 @@ describe('sync export', () => {
       tier: 1,
     });
 
+    const basePath = getSyncBasePath(projectRoot);
+
     // Execute
-    await syncService.exportSpaceToFiles('projects/test', exportPath);
+    await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify
-    const filePath = join(exportPath, 'ws-test.md');
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    const filePath = join(spaceDir, 'ws-test.md');
     const fileContent = readFileSync(filePath, 'utf-8');
     const lines = fileContent.split('\n');
     const lastLine = lines[lines.length - 1];
@@ -267,63 +299,47 @@ describe('sync export', () => {
   });
 });
 
-describe('sync config store', () => {
-  test('getSyncConfig returns null for non-existent space', () => {
-    const config = store.getSyncConfig('projects/nonexistent');
-    expect(config).toBeNull();
-  });
+describe('sync config file operations', () => {
+  test('space config can be stored and retrieved', () => {
+    const basePath = getSyncBasePath(projectRoot);
+    const config = loadConfig(basePath) ?? { version: 1, spaces: {} };
 
-  test('setSyncConfig creates new config', () => {
-    const config: Partial<SyncSpaceConfig> = {
+    config.spaces['projects/test'] = {
       enabled: true,
-      basePath: '/tmp/sync',
       conflictResolution: 'db-wins',
     };
+    saveConfig(basePath, config);
 
-    store.setSyncConfig('projects/test', config);
-
-    const saved = store.getSyncConfig('projects/test');
-    expect(saved).not.toBeNull();
-    expect(saved!.spaceName).toBe('projects/test');
-    expect(saved!.enabled).toBe(true);
-    expect(saved!.basePath).toBe('/tmp/sync');
-    expect(saved!.conflictResolution).toBe('db-wins');
-  });
-
-  test('setSyncConfig updates existing config', () => {
-    // Create initial config
-    store.setSyncConfig('projects/test', {
-      enabled: false,
-      basePath: '/tmp/old',
+    const loaded = loadConfig(basePath);
+    expect(loaded).not.toBeNull();
+    expect(loaded!.spaces['projects/test']).toEqual({
+      enabled: true,
       conflictResolution: 'db-wins',
     });
+  });
+
+  test('space config can be updated', () => {
+    const basePath = getSyncBasePath(projectRoot);
+
+    // Set initial config
+    let config = loadConfig(basePath) ?? { version: 1, spaces: {} };
+    config.spaces['projects/test'] = {
+      enabled: false,
+      conflictResolution: 'db-wins',
+    };
+    saveConfig(basePath, config);
 
     // Update it
-    store.setSyncConfig('projects/test', {
+    config = loadConfig(basePath)!;
+    config.spaces['projects/test'] = {
       enabled: true,
-      basePath: '/tmp/new',
-    });
+      conflictResolution: 'latest-wins',
+    };
+    saveConfig(basePath, config);
 
-    const saved = store.getSyncConfig('projects/test');
-    expect(saved!.enabled).toBe(true);
-    expect(saved!.basePath).toBe('/tmp/new');
-    expect(saved!.conflictResolution).toBe('db-wins'); // unchanged
-  });
-
-  test('deleteSyncConfig removes config', () => {
-    store.setSyncConfig('projects/test', { enabled: true, basePath: '/tmp' });
-    store.deleteSyncConfig('projects/test');
-
-    const config = store.getSyncConfig('projects/test');
-    expect(config).toBeNull();
-  });
-
-  test('listSyncConfigs returns all configs', () => {
-    store.setSyncConfig('projects/space1', { enabled: true, basePath: '/tmp/1' });
-    store.setSyncConfig('projects/space2', { enabled: false, basePath: '/tmp/2' });
-
-    const configs = store.listSyncConfigs();
-    expect(configs).toHaveLength(2);
+    const loaded = loadConfig(basePath);
+    expect(loaded!.spaces['projects/test']!.enabled).toBe(true);
+    expect(loaded!.spaces['projects/test']!.conflictResolution).toBe('latest-wins');
   });
 });
 
@@ -335,10 +351,12 @@ describe('export to non-existent directory', () => {
     expect(existsSync(newPath)).toBe(false);
 
     // Execute - should create directory
-    await syncService.exportSpaceToFiles('projects/test', newPath);
+    const basePath = getSyncBasePath(projectRoot);
+    await syncService.exportSpaceToFiles('projects/test', basePath);
 
     // Verify directory was created
-    expect(existsSync(newPath)).toBe(true);
+    const spaceDir = getSpaceDir(basePath, 'projects/test');
+    expect(existsSync(spaceDir)).toBe(true);
 
     // Cleanup
     rmSync(newPath, { recursive: true, force: true });

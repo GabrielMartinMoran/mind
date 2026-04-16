@@ -1,11 +1,18 @@
 // ── FileSyncService: exports memories from DB to filesystem ──
 
-import { mkdirSync, writeFileSync, existsSync } from 'fs';
+import {
+  mkdirSync as _mkdirSync,
+  writeFileSync,
+  existsSync as _existsSync,
+  readFileSync as _readFileSync,
+  readdirSync as _readdirSync,
+} from 'fs';
 import { join } from 'path';
 
 import type { Link, Memory, MemorySummary } from '../types';
 
 import { generateMarkdown } from './frontmatter';
+import { ensureSpaceDir, getSpaceDir as _getSpaceDir } from './normalize';
 import type { ExportResult } from './types';
 
 /**
@@ -28,16 +35,23 @@ export class FileSyncService {
   constructor(private readonly store: SyncStore) {}
 
   /**
-   * Export all memories from a space to files in the given directory.
-   * Creates the directory if it doesn't exist.
+   * Export all memories from a space to files in the new structure:
+   * .mind/spaces/<hash>/memory-1.md, memory-2.md, ...
+   *
+   * Creates the space directory and manifest.json if they don't exist.
    * Exports ALL tiers (T1+T2+T3) for a complete snapshot.
    */
   async exportSpaceToFiles(space: string, basePath: string): Promise<ExportResult> {
     const result: ExportResult = { exported: 0, failed: 0, errors: [] };
 
-    // Ensure directory exists
-    if (!existsSync(basePath)) {
-      mkdirSync(basePath, { recursive: true });
+    // Ensure the space directory exists with manifest
+    let spaceDir: string;
+    try {
+      spaceDir = ensureSpaceDir(basePath, space);
+    } catch (err) {
+      result.failed++;
+      result.errors.push(`Failed to create space directory: ${err}`);
+      return result;
     }
 
     // Export ALL memories in the space (all tiers) via paginated queryMemories
@@ -80,7 +94,7 @@ export class FileSyncService {
           };
 
           const markdown = generateMarkdown(frontmatterData, memory.content);
-          const filePath = join(basePath, `${this.sanitizeFilename(memory.name)}.md`);
+          const filePath = join(spaceDir, `${this.sanitizeFilename(memory.name)}.md`);
 
           writeFileSync(filePath, markdown, 'utf-8');
           result.exported++;

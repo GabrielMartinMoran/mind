@@ -68,7 +68,7 @@ User → ./mind <command> [args] [--flag value]
 | Types                 | `src/types.ts`                                                       | All domain types: `Space`, `Memory`, `Link`, `Tier`, `SearchResult`, `StatusResult`, `LegacyBrain`, etc.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Helpers               | `src/helpers/*.ts`                                                   | Shared helpers: logger, tag normalization, formatting/memory refs, markdown resource loading, and RAG helpers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | Protocol resources    | `src/resources/protocols/*.md`                                       | Canonical markdown sources for OpenCode setup protocol injection and MCP `system_instructions` tool content.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Sync (Autosync)       | `src/sync/`                                                          | Bidirectional file sync: `FileSyncService` (export/import), `AutoSyncService` (file watcher), `ConflictResolver` (db-wins/file-wins/latest-wins), `FileWatcher` (chokidar-based), `ConfigStore` (sync_config repo), `Frontmatter` (parse/generate). Loop prevention via `.mind-sync/.syncing` lock files.                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Sync (Autosync)       | `src/sync/`                                                          | Bidirectional file sync with file-based config: `ConfigFileService` (read/write `.mind/config.yml`), `FileSyncService` (export/import), `AutoSyncService` (file watcher), `ConflictResolver` (db-wins/file-wins/latest-wins), `FileWatcher` (chokidar-based), `Frontmatter` (parse/generate), `Normalizer` (space name to directory hash). Spaces stored in `.mind/spaces/<hash>/` where hash = SHA256 truncated to 8 hex chars. `.mind/` is versioned with git. Loop prevention via `.mind/.syncing` lock files. MCP server auto-starts watchers for all enabled spaces on startup.                                                                                                                      |
 | Web frontend          | `web/src/*`, `web/styles/*`, `web/assets/*`, `web/public/index.html` | SPA for browsing and editing spaces and memories. Frontend runtime code is modular ES modules in `web/src/` (no build pipeline), with `@ts-check` + JSDoc in key modules, split styles in `web/styles/`, static assets in `web/assets/`, and URL-driven client routing for deep links/reload/back-forward restoration.                                                                                                                                                                                                                                                                                                                                                                                    |
 
 Neural Map API/UI touchpoints:
@@ -290,13 +290,16 @@ Reads `data/brain.json` (or `$MIND_DATA_DIR/brain.json`) and imports all spaces 
 | Guide (mode)        | `guide`               | `g`                                         | `<mode>`                       | —                                                                     | Show guide (`agent` or `human`).                                                                                                                                  |
 | Import              | `import`              | —                                           | —                              | —                                                                     | Import legacy `brain.json` into SQLite.                                                                                                                           |
 | Update              | `update`              | —                                           | —                              | `--check`, `--version`, `--repo`                                      | Update mind from GitHub releases.                                                                                                                                 |
+| Sync init           | `sync init`           | —                                           | —                              | —                                                                     | Initialize `.mind/` directory with config.yml and .gitignore.                                                                                                     |
 | Sync status         | `sync status`         | `sync ls`                                   | —                              | `--space`                                                             | Show sync status for spaces.                                                                                                                                      |
-| Sync enable         | `sync enable`         | —                                           | —                              | `--space`, `--path`                                                   | Enable autosync for a project space.                                                                                                                              |
+| Sync enable         | `sync enable`         | —                                           | —                              | `--space`                                                             | Enable autosync for a project space.                                                                                                                              |
 | Sync disable        | `sync disable`        | —                                           | —                              | `--space`                                                             | Disable autosync for a space.                                                                                                                                     |
 | Sync now            | `sync now`            | —                                           | —                              | `--space`                                                             | Force immediate sync (export + import).                                                                                                                           |
-| Sync export         | `sync export`         | —                                           | —                              | `--space`, `--path`                                                   | Export space memories to markdown files.                                                                                                                          |
-| Sync import         | `sync import`         | —                                           | —                              | `--space`, `--path`                                                   | Import markdown files into a space.                                                                                                                               |
+| Sync export         | `sync export`         | —                                           | —                              | `--space`                                                             | Export space memories to markdown files.                                                                                                                          |
+| Sync import         | `sync import`         | —                                           | —                              | `--space`                                                             | Import markdown files into a space.                                                                                                                               |
 | Sync conflict       | `sync conflict`       | —                                           | —                              | `--space`, `--strategy`                                               | Configure conflict resolution strategy.                                                                                                                           |
+| Sync remove         | `sync remove`         | —                                           | —                              | `--space`                                                             | Remove space from sync config.                                                                                                                                    |
+| Sync config         | `sync config`         | —                                           | —                              | —                                                                     | Show config file contents.                                                                                                                                        |
 | Sync serve          | `sync serve`          | —                                           | —                              | `--space`                                                             | Start file watcher for a space (foreground).                                                                                                                      |
 
 > **Note:** `tag` and `untag` are disambiguated by argument count: 2 positional args = space tag, 3 positional args = memory tag.
@@ -393,65 +396,76 @@ When using mind via MCP, follow these conventions:
 
 ### 4.11 Autosync (Experimental)
 
-Mind can synchronize project spaces with `.md` files on the filesystem.
+Mind can synchronize project spaces with `.md` files on the filesystem. The config is stored in `.mind/config.yml` and is versioned with git.
 
-**Enable autosync:**
+**Initialize sync:**
 
 ```bash
-mind sync enable --space projects/mind --path .mind
+mind sync init
+```
+
+**Enable a space:**
+
+```bash
+mind sync enable --space projects/mind
+```
+
+**Directory structure:**
+
+```
+.mind/
+├── config.yml           # spaces config (VERSIONADO)
+├── .gitignore
+└── spaces/
+    ├── a1b2c3d4/        # hash of "projects/mind"
+    │   ├── manifest.json
+    │   └── memory-1.md
+    └── ...
 ```
 
 **Commands:**
+| Command | Description |
+|---------|-------------|
+| `mind sync init` | Initialize .mind/ directory |
+| `mind sync status` | Show configured spaces |
+| `mind sync enable --space <name>` | Enable sync for a space |
+| `mind sync disable --space <name>` | Disable sync |
+| `mind sync now --space <name>` | Immediate sync |
+| `mind sync export --space <name>` | Export to files |
+| `mind sync import --space <name>` | Import from files |
+| `mind sync conflict --space <name> --strategy <strategy>` | Set conflict strategy |
+| `mind sync remove --space <name>` | Remove from sync |
+| `mind sync config` | Show config |
+| `mind sync serve --space <name>` | Start file watcher |
 
-| Command                                                   | Description                      |
-| --------------------------------------------------------- | -------------------------------- |
-| `mind sync status`                                        | Show sync status                 |
-| `mind sync enable --space <name> --path <dir>`            | Enable autosync                  |
-| `mind sync disable --space <name>`                        | Disable autosync                 |
-| `mind sync now --space <name>`                            | Immediate sync (export + import) |
-| `mind sync export --space <name> --path <dir>`            | Export to files                  |
-| `mind sync import --space <name> --path <dir>`            | Import files                     |
-| `mind sync conflict --space <name> --strategy <strategy>` | Set conflict strategy            |
-| `mind sync serve --space <name>`                          | Start file watcher (foreground)  |
-
-**Conflict strategies:**
+**Conflict resolution strategies:**
 
 - `db-wins` — always use DB (default)
 - `file-wins` — always use file
 - `latest-wins` — use most recent by timestamp
 
-**File structure:**
+**MCP integration:** When MCP server starts, it auto-starts watchers for all enabled spaces.
 
-```
-.mind/
-├── memory-1.md
-├── memory-2.md
-└── .mind-sync/           # (gitignored)
-    └── .syncing          # lock file for loop prevention
-```
-
-**Frontmatter format:**
+**config.yml format:**
 
 ```yaml
----
-id: 12345
-space: projects/mind
-name: mi-memory
-tier: 1
-pinned: false
-tags: [cat:decision]
-links_to: ['otra-memory']
-created_at: 2024-01-15T10:30:00Z
-changed_at: 2024-01-16T14:22:00Z
----
-Content here...
+# mind autosync config
+
+version: 1
+
+# Spaces to sync with this project
+# To enable a new space, add it below with enabled: true
+# Valid conflictResolution values: db-wins, file-wins, latest-wins
+spaces:
+  # projects/mind:
+  #   enabled: true
+  #   conflictResolution: db-wins
 ```
 
 **Limitations:**
 
-- Watcher (`sync serve`) runs in foreground; daemon mode not implemented
-- Auto-delete from DB when file is deleted is not implemented
-- Only selected project spaces are synchronized
+- `sync serve` runs in foreground only (daemon mode not implemented)
+- File deletion does not auto-delete from DB
 
 ---
 

@@ -6,7 +6,7 @@ import { existsSync, statSync, copyFileSync, unlinkSync } from 'fs';
 import { Database } from 'bun:sqlite';
 
 import { isRagEnabled } from '../helpers/rag';
-import { createSyncConfigRepository, FileSyncService } from '../sync';
+import { FileSyncService } from '../sync';
 import type { Tier, StatusResult } from '../types';
 
 import type { MindStore } from './mind-store';
@@ -95,9 +95,6 @@ export function createSqliteStore(dbPath: string): MindStore {
 
   // Search (depends on Memory, Tag)
   const searchRepo = createSearchRepository(db, memoryRepo, tagRepo);
-
-  // Sync config (depends on db)
-  const syncConfigRepo = createSyncConfigRepository(db);
 
   // Sync: create a partial store-like object for FileSyncService
   const syncStore = {
@@ -238,12 +235,6 @@ export function createSqliteStore(dbPath: string): MindStore {
     clearAllLogs: () => logRepo.clearAllLogs(),
     subscribeToLogs,
     unsubscribeFromLogs,
-
-    // Sync config
-    getSyncConfig: spaceName => syncConfigRepo.getConfig(spaceName),
-    setSyncConfig: (spaceName, config) => syncConfigRepo.setConfig(spaceName, config),
-    deleteSyncConfig: spaceName => syncConfigRepo.deleteConfig(spaceName),
-    listSyncConfigs: () => syncConfigRepo.listConfigs(),
 
     // Sync operations (Phase 1: export only)
     exportSpaceToFiles: (space, basePath) => fileSyncService.exportSpaceToFiles(space, basePath),

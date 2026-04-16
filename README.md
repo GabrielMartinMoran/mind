@@ -17,6 +17,8 @@ modify that memory through the CLI and web UI.
   and web UI.
 - **Resumption tools included.** Checkpoints and session summaries help recover
   context and continue work.
+- **Optional file sync.** Experimental autosync can mirror project spaces into
+  versioned `.mind/` files.
 - **Search when you need it.** Full-text search is built in, and semantic
   search is available as an optional add-on.
 
@@ -196,6 +198,83 @@ mind update --check
 mind update
 ```
 
+### Autosync (Experimental)
+
+Autosync lets you mirror project spaces to a versioned `.mind/` directory so
+you can review memory files in git, edit markdown on disk, and sync those
+changes back into the local database.
+
+<!-- prettier-ignore -->
+> [!NOTE]
+> This is an experimental feature currently under active development.
+
+Set up autosync with the following flow:
+
+1. Run `mind sync init` to create `.mind/config.yml` and `.mind/.gitignore`.
+2. Review or edit `.mind/config.yml` to choose which spaces are configured.
+3. Run `mind sync enable --space <name>` for the project space you want to
+   sync.
+4. Run `mind sync serve --space <name>` to start the watcher in the current
+   terminal, or rely on MCP startup to auto-start watchers for enabled spaces.
+
+The `.mind/` directory uses a file-based config and hashed space directories:
+
+```text
+.mind/
+├── config.yml
+├── .gitignore
+└── spaces/
+    └── a1b2c3d4/
+        ├── manifest.json
+        └── memory-name.md
+```
+
+Use these commands to manage autosync:
+
+- `mind sync init`
+- `mind sync status`
+- `mind sync enable --space <name>`
+- `mind sync disable --space <name>`
+- `mind sync now --space <name>`
+- `mind sync export --space <name>`
+- `mind sync import --space <name>`
+- `mind sync conflict --space <name> --strategy <strategy>`
+- `mind sync remove --space <name>`
+- `mind sync config`
+- `mind sync serve --space <name>`
+
+Conflict strategies:
+
+- `db-wins`
+- `file-wins`
+- `latest-wins`
+
+Example `.mind/config.yml`:
+
+```yaml
+# mind autosync config
+
+version: 1
+
+# Spaces to sync with this project
+# To enable a new space, add it below with enabled: true
+# Valid conflictResolution values: db-wins, file-wins, latest-wins
+spaces:
+  # projects/mind:
+  #   enabled: true
+  #   conflictResolution: db-wins
+```
+
+Current limitations and caveats:
+
+- Existing-memory imports update content only. They do not restore full
+  metadata parity from files.
+- Exported `links_to` values are written to frontmatter, but imports do not
+  recreate those links from files.
+- Deleting a synced markdown file does not auto-delete the corresponding
+  database memory.
+- `sync serve` runs in the foreground only.
+
 ### Web Server
 
 ```bash
@@ -239,6 +318,9 @@ mind mcp start --http              # HTTP mode
 mind mcp start --http --detached   # HTTP background
 mind mcp stop
 ```
+
+When the MCP server starts, it auto-starts autosync watchers for spaces that
+are enabled in `.mind/config.yml`.
 
 Example MCP tool usage (for agents):
 
@@ -383,7 +465,11 @@ mind update --version v0.1.0        # update to a specific tag
 
 ## Data Storage
 
+Mind stores its primary database in SQLite and can also keep optional
+autosync files in a versioned `.mind/` directory.
+
 - Default DB path: `data/mind.db`
+- Optional autosync config and exported files: `.mind/`
 - Override directory: `MIND_DATA_DIR=/custom/path`
 - Override full DB path: `MIND_DB_PATH=/custom/path/mind.db`
 
@@ -401,6 +487,7 @@ src/
   mcp/        # MCP command + MCP server + tools
   api/        # HTTP command, router, route modules, API server
   helpers/    # logger, tags, format, rag helpers
+  sync/       # autosync config, import/export, conflicts, file watcher
   store/      # SQLite schema + MindStore implementation
   mind.ts     # main entrypoint used by mind
 

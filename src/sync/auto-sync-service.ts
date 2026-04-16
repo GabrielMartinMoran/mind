@@ -1,15 +1,17 @@
 // ── AutoSyncService: manages file watchers and imports external changes to DB ──
 
-import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'fs';
+import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'fs';
 import { join } from 'path';
 
 import type { MindStore } from '../store/mind-store';
 import type { Tier } from '../types';
 
+import { loadConfig, saveConfig as _saveConfig } from './config-file';
 import { shouldUpdateMemory } from './conflict-resolver';
 import { FileWatcher } from './file-watcher';
 import { parseFrontmatter } from './frontmatter';
-import type { FileEvent, SyncSpaceConfig } from './types';
+import { getSyncBasePath, getSpaceDir } from './normalize';
+import type { FileEvent, SpaceSyncConfig } from './types';
 
 const SYNC_METADATA_DIR = '.mind-sync';
 const LOCK_FILE = '.syncing';
@@ -28,14 +30,59 @@ interface ImportResult {
 }
 
 /**
+ * Get the sync config for a specific space from the file-based config.
+ * Returns null if sync is not enabled for the space.
+ */
+function getSpaceSyncConfig(projectRoot: string, space: string): SpaceSyncConfig | null {
+  const basePath = getSyncBasePath(projectRoot);
+  const config = loadConfig(basePath);
+  if (!config) {
+    return null;
+  }
+  const spaceConfig = config.spaces[space];
+  if (!spaceConfig || !spaceConfig.enabled) {
+    return null;
+  }
+  return spaceConfig;
+}
+
+/**
+ * Get all enabled sync configs from the file-based config.
+ */
+function getEnabledSyncConfigs(
+  projectRoot: string
+): Array<{ spaceName: string; config: SpaceSyncConfig; basePath: string }> {
+  const basePath = getSyncBasePath(projectRoot);
+  const config = loadConfig(basePath);
+  if (!config) {
+    return [];
+  }
+
+  return Object.entries(config.spaces)
+    .filter(([, spaceConfig]) => spaceConfig.enabled)
+    .map(([spaceName, spaceConfig]) => ({
+      spaceName,
+      config: spaceConfig,
+      basePath: getSpaceDir(basePath, spaceName),
+    }));
+}
+
+/**
  * AutoSyncService manages file watchers per space, handles the import pipeline
  * (FS → DB), and implements loop prevention via lock files.
  */
 export class AutoSyncService {
   private watchers: Map<string, FileWatcher> = new Map();
   private inProgressFiles: Set<string> = new Set(); // loop prevention: files being imported right now
+  private projectRoot: string;
 
-  constructor(private readonly store: MindStore) {}
+  constructor(
+    private readonly store: MindStore,
+    projectRoot?: string
+  ) {
+    // If projectRoot not provided, use cwd
+    this.projectRoot = projectRoot ?? process.cwd();
+  }
 
   // ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -47,12 +94,12 @@ export class AutoSyncService {
       return; // already watching
     }
 
-    const config = this.store.getSyncConfig(space);
-    if (!config || !config.enabled) {
+    const spaceConfig = getSpaceSyncConfig(this.projectRoot, space);
+    if (!spaceConfig) {
       throw new Error(`Sync is not enabled for space "${space}". Run "sync enable" first.`);
     }
 
-    const basePath = config.basePath;
+    const basePath = getSpaceDir(getSyncBasePath(this.projectRoot), space);
     if (!existsSync(basePath)) {
       throw new Error(`Sync directory does not exist: ${basePath}`);
     }
@@ -122,8 +169,8 @@ export class AutoSyncService {
     this.inProgressFiles.add(filePath);
 
     try {
-      const config = this.store.getSyncConfig(space);
-      if (!config) {
+      const spaceConfig = getSpaceSyncConfig(this.projectRoot, space);
+      if (!spaceConfig) {
         return { action: 'failed', error: 'No sync config' };
       }
 
@@ -142,10 +189,10 @@ export class AutoSyncService {
 
       if (existing) {
         // Decide whether to update based on conflict resolution
-        const shouldUpdate = this.shouldUpdateMemory(
-          existing,
-          frontmatter,
-          config.conflictResolution
+        const shouldUpdate = shouldUpdateMemory(
+          existing.changed_at,
+          frontmatter.changed_at,
+          spaceConfig.conflictResolution
         );
         if (shouldUpdate) {
           await this.store.updateMemory(existing.id, { content: body });
@@ -213,13 +260,10 @@ export class AutoSyncService {
    * Returns true if the file was recently written by us and should be skipped.
    */
   private isFromSync(filePath: string): boolean {
-    // The filePath tells us the basePath via the watcher config
-    // but we don't store that directly. Instead we check all sync configs.
-    const configs = this.store.listSyncConfigs();
+    const configs = getEnabledSyncConfigs(this.projectRoot);
 
-    for (const config of configs) {
-      if (!config.basePath) continue;
-      const markerPath = join(config.basePath, SYNC_METADATA_DIR, LOCK_FILE);
+    for (const { basePath } of configs) {
+      const markerPath = join(basePath, SYNC_METADATA_DIR, LOCK_FILE);
 
       if (!existsSync(markerPath)) continue;
 
@@ -253,16 +297,66 @@ export class AutoSyncService {
     }
   }
 
-  // ── Conflict resolution ───────────────────────────────────────────────────
-
   /**
-   * Determine whether to update an existing memory based on conflict strategy.
+   * Import all markdown files from a directory into the DB.
+   * Used by sync now command.
    */
-  private shouldUpdateMemory(
-    existing: { changed_at: string },
-    fileFrontmatter: { changed_at: string },
-    strategy: SyncSpaceConfig['conflictResolution']
-  ): boolean {
-    return shouldUpdateMemory(existing.changed_at, fileFrontmatter.changed_at, strategy);
+  async importFromDirectory(
+    space: string
+  ): Promise<{ imported: number; updated: number; failed: number; errors: string[] }> {
+    const result = { imported: 0, updated: 0, failed: 0, errors: [] as string[] };
+    const basePath = getSpaceDir(getSyncBasePath(this.projectRoot), space);
+
+    if (!existsSync(basePath)) {
+      result.errors.push(`Directory does not exist: ${basePath}`);
+      return result;
+    }
+
+    const files = readdirSync(basePath).filter(f => f.endsWith('.md'));
+
+    for (const file of files) {
+      const filePath = join(basePath, file);
+      const importResult = await this.importFile(filePath, space);
+
+      switch (importResult.action) {
+        case 'imported':
+          result.imported++;
+          break;
+        case 'updated':
+          result.updated++;
+          break;
+        case 'failed':
+          result.failed++;
+          if (importResult.error) {
+            result.errors.push(`${file}: ${importResult.error}`);
+          }
+          break;
+        // skipped and deleted don't count as failures
+      }
+    }
+
+    return result;
+  }
+}
+
+/**
+ * Start autosync watchers for all enabled spaces.
+ */
+export async function startAutosyncWatchers(store: MindStore, projectRoot?: string): Promise<void> {
+  const autoSync = new AutoSyncService(store, projectRoot);
+  const enabledSpaces = getEnabledSyncConfigs(projectRoot ?? process.cwd());
+
+  if (enabledSpaces.length === 0) return;
+
+  console.error(`[autosync] Starting ${enabledSpaces.length} watcher(s)...`);
+
+  for (const { spaceName, basePath } of enabledSpaces) {
+    try {
+      await autoSync.startWatching(spaceName);
+      console.error(`[autosync] Watching ${spaceName} → ${basePath}`);
+    } catch (err) {
+      console.error(`[autosync] Failed to watch ${spaceName}: ${err}`);
+      // Non-fatal: continue with other spaces
+    }
   }
 }

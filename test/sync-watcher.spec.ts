@@ -1,4 +1,5 @@
 // ── Sync Watcher Integration Tests ──
+// Tests for file-based sync config (.mind/config.yml)
 
 import { existsSync, mkdirSync, rmSync, writeFileSync, unlinkSync } from 'fs';
 import { tmpdir } from 'os';
@@ -8,33 +9,49 @@ import { expect, test, beforeEach, afterEach, describe } from 'bun:test';
 
 import type { MindStore } from '../src/store/mind-store';
 import { AutoSyncService } from '../src/sync/auto-sync-service';
+import { initMindDir, loadConfig, saveConfig } from '../src/sync/config-file';
 import { FileWatcher } from '../src/sync/file-watcher';
 import { generateMarkdown } from '../src/sync/frontmatter';
+import { getSyncBasePath, getSpaceDir } from '../src/sync/normalize';
 
 import { createTestStore } from './mocks/test-store';
 
 let store: MindStore & { cleanup: () => void };
+let testDir: string;
+let projectRoot: string;
 let syncDir: string;
 
 beforeEach(async () => {
   const result = await createTestStore();
   store = result;
-  syncDir = join(tmpdir(), 'sync-watcher-test-' + Date.now() + '-' + Math.random());
-  mkdirSync(syncDir, { recursive: true });
+  testDir = join(tmpdir(), 'sync-watcher-test-' + Date.now() + '-' + Math.random());
+  mkdirSync(testDir, { recursive: true });
+  projectRoot = testDir;
+
+  // Initialize .mind directory
+  initMindDir(projectRoot);
+
   // Create test space
   store.createSpace('projects/test', 'Test space for sync watcher', ['type:project']);
-  // Configure sync
-  store.setSyncConfig('projects/test', {
+
+  // Create the space sync directory
+  const basePath = getSyncBasePath(projectRoot);
+  syncDir = getSpaceDir(basePath, 'projects/test');
+  mkdirSync(syncDir, { recursive: true });
+
+  // Configure sync in file-based config
+  const config = loadConfig(basePath)!;
+  config.spaces['projects/test'] = {
     enabled: true,
-    basePath: syncDir,
     conflictResolution: 'file-wins',
-  });
+  };
+  saveConfig(basePath, config);
 });
 
 afterEach(() => {
   store.close();
   try {
-    rmSync(syncDir, { recursive: true, force: true });
+    rmSync(testDir, { recursive: true, force: true });
   } catch {
     // ignore
   }
@@ -189,16 +206,8 @@ describe('file watcher', () => {
       tier: 2,
     });
 
-    const config = store.getSyncConfig('projects/test')!;
-    await store.exportSpaceToFiles('projects/test', config.basePath);
-
-    const filePath = join(syncDir, 'loop-test-memory.md');
-
-    // Verify file was exported
-    expect(existsSync(filePath)).toBe(true);
-
-    // Now simulate an external edit by writing a lock file (simulating our own export)
-    const autoSync = new AutoSyncService(store);
+    // Get the sync service and write a lock
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     // Write the sync lock to simulate we just exported
     autoSync.writeSyncLock(syncDir, 'loop-test-memory.md');
@@ -216,7 +225,7 @@ describe('file watcher', () => {
 
 describe('auto-sync service', () => {
   test('startWatching creates watcher for space', async () => {
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     await autoSync.startWatching('projects/test');
 
@@ -228,7 +237,7 @@ describe('auto-sync service', () => {
   });
 
   test('stopWatching removes watcher', async () => {
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     await autoSync.startWatching('projects/test');
     await autoSync.stopWatching('projects/test');
@@ -238,7 +247,7 @@ describe('auto-sync service', () => {
   });
 
   test('importFile creates new memory in DB', async () => {
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     // Write a markdown file
     const filePath = join(syncDir, 'new-import.md');
@@ -266,7 +275,7 @@ describe('auto-sync service', () => {
       tier: 1,
     });
 
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     // Write updated markdown file
     const filePath = join(syncDir, 'existing-update.md');
@@ -287,7 +296,7 @@ describe('auto-sync service', () => {
   });
 
   test('handles missing frontmatter gracefully', async () => {
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     // Write a markdown file without proper frontmatter
     const filePath = join(syncDir, 'no-frontmatter.md');
@@ -306,9 +315,13 @@ describe('auto-sync service', () => {
       tier: 2,
     });
 
-    await store.exportSpaceToFiles('projects/test', syncDir);
+    // Get the space dir for export
+    const _basePath = getSyncBasePath(projectRoot);
+    const { FileSyncService } = await import('../src/sync/file-sync-service');
+    const fileSync = new FileSyncService(store);
+    await fileSync.exportSpaceToFiles('projects/test', syncDir);
 
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     // Write sync lock (simulating our own export)
     autoSync.writeSyncLock(syncDir, 'lock-test.md');
@@ -323,7 +336,7 @@ describe('auto-sync service', () => {
   });
 
   test('stopAll stops all watchers', async () => {
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     await autoSync.startWatching('projects/test');
     await autoSync.stopAll();
@@ -337,7 +350,7 @@ describe('auto-sync service', () => {
 
 describe('import pipeline', () => {
   test('creates memory with correct tags and tier from markdown', async () => {
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     const filePath = join(syncDir, 'full-featured.md');
     const fm = {
@@ -374,12 +387,16 @@ describe('import pipeline', () => {
     // Update the memory to have a newer changed_at
     await store.updateMemory(mem.id, { content: 'DB new content' });
 
-    // Set strategy to db-wins
-    store.setSyncConfig('projects/test', {
+    // Set strategy to db-wins in config
+    const basePath = getSyncBasePath(projectRoot);
+    const config = loadConfig(basePath)!;
+    config.spaces['projects/test'] = {
+      enabled: true,
       conflictResolution: 'db-wins',
-    });
+    };
+    saveConfig(basePath, config);
 
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     const filePath = join(syncDir, 'db-wins-test.md');
     const fm = {
@@ -410,12 +427,16 @@ describe('import pipeline', () => {
       tier: 2,
     });
 
-    // Manually set an old changed_at by updating directly
-    // (store doesn't expose changed_at setter, but latest-wins compares)
-    // For this test, we set file to be newer by using a future timestamp approach
-    // Since we can't easily control changed_at, we test file-wins strategy instead
+    // Set strategy to latest-wins
+    const basePath = getSyncBasePath(projectRoot);
+    const config = loadConfig(basePath)!;
+    config.spaces['projects/test'] = {
+      enabled: true,
+      conflictResolution: 'latest-wins',
+    };
+    saveConfig(basePath, config);
 
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     const filePath = join(syncDir, 'latest-wins-test.md');
     const fm = {
@@ -447,11 +468,15 @@ describe('import pipeline', () => {
     });
 
     // Set strategy to file-wins
-    store.setSyncConfig('projects/test', {
+    const basePath = getSyncBasePath(projectRoot);
+    const config = loadConfig(basePath)!;
+    config.spaces['projects/test'] = {
+      enabled: true,
       conflictResolution: 'file-wins',
-    });
+    };
+    saveConfig(basePath, config);
 
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     const filePath = join(syncDir, 'file-wins-test.md');
     const fm = {
@@ -483,11 +508,15 @@ describe('import pipeline', () => {
     });
 
     // Set strategy to latest-wins
-    store.setSyncConfig('projects/test', {
+    const basePath = getSyncBasePath(projectRoot);
+    const config = loadConfig(basePath)!;
+    config.spaces['projects/test'] = {
+      enabled: true,
       conflictResolution: 'latest-wins',
-    });
+    };
+    saveConfig(basePath, config);
 
-    const autoSync = new AutoSyncService(store);
+    const autoSync = new AutoSyncService(store, projectRoot);
 
     const filePath = join(syncDir, 'db-newer-test.md');
     // File with older timestamp than DB (DB has current timestamp which is newer)
