@@ -21,6 +21,14 @@ export interface FileWatcherOptions {
   ignorePattern?: RegExp[];
   /** Debounce window in ms (default: 250) */
   debounceMs?: number;
+  /** Called when watcher encounters an error */
+  onError?: (err: Error) => void;
+  /** Called when watcher is restarted after an error */
+  onRestart?: (attempt: number) => void;
+  /** Maximum restart attempts after errors (default: 3) */
+  maxRestartAttempts?: number;
+  /** Delay in ms between restart attempts (default: 5000) */
+  restartDelayMs?: number;
 }
 
 /**
@@ -32,6 +40,12 @@ export class FileWatcher {
   private ignorePatterns: RegExp[];
   private debounceMs: number;
   private pendingEvents: Map<string, ReturnType<typeof setTimeout>> = new Map();
+  private restartAttempts: number = 0;
+  private maxRestartAttempts: number;
+  private restartDelayMs: number;
+  private onError?: (err: Error) => void;
+  private onRestart?: (attempt: number) => void;
+  private stopped: boolean = false;
 
   constructor(
     private readonly basePath: string,
@@ -40,11 +54,16 @@ export class FileWatcher {
   ) {
     this.ignorePatterns = [...DEFAULT_IGNORE_PATTERNS, ...(options.ignorePattern ?? [])];
     this.debounceMs = options.debounceMs ?? 250;
+    this.maxRestartAttempts = options.maxRestartAttempts ?? 3;
+    this.restartDelayMs = options.restartDelayMs ?? 5000;
+    this.onError = options.onError;
+    this.onRestart = options.onRestart;
   }
 
   /** Start watching the directory */
   start(): void {
     if (this.watcher) return;
+    this.stopped = false;
 
     this.watcher = watch(
       this.basePath,
@@ -58,11 +77,46 @@ export class FileWatcher {
 
     this.watcher.on('error', (err: Error) => {
       console.error('[FileWatcher] error:', err?.message ?? err);
+      this.onError?.(err);
+      this.handleError(err);
     });
+  }
+
+  /**
+   * Handle watcher errors with auto-restart capability.
+   */
+  private handleError(_err: Error): void {
+    if (this.stopped) return;
+
+    // If watcher already exists, close it first
+    if (this.watcher) {
+      this.watcher.close();
+      this.watcher = null;
+    }
+
+    // Check if we can restart
+    if (this.restartAttempts >= this.maxRestartAttempts) {
+      console.error(
+        `[FileWatcher] Max restart attempts (${this.maxRestartAttempts}) reached. Giving up.`
+      );
+      return;
+    }
+
+    this.restartAttempts++;
+    console.error(
+      `[FileWatcher] Attempting restart ${this.restartAttempts}/${this.maxRestartAttempts} in ${this.restartDelayMs}ms...`
+    );
+
+    setTimeout(() => {
+      if (this.stopped) return;
+      this.onRestart?.(this.restartAttempts);
+      this.start();
+    }, this.restartDelayMs);
   }
 
   /** Stop watching */
   stop(): void {
+    this.stopped = true;
     if (this.watcher) {
       this.watcher.close();
       this.watcher = null;

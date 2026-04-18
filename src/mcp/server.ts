@@ -135,8 +135,11 @@ export async function startMcpServer(store: MindStore, projectRoot?: string): Pr
   await server.connect(transport);
   console.error('Mind MCP server running on stdio');
 
+  // Resolve project root: explicit parameter > MIND_SYNC_ROOT env > cwd
+  const resolvedRoot = projectRoot ?? process.env.MIND_SYNC_ROOT ?? process.cwd();
+
   // Start autosync watchers for all enabled spaces
-  setImmediate(() => startAutosyncWatchers(store, projectRoot ?? process.cwd()));
+  setImmediate(() => startAutosyncWatchers(store, resolvedRoot));
 
   await new Promise(() => {}); // keep alive
 }
@@ -244,6 +247,9 @@ export async function startMcpHttpServer(
 
   console.error(`Mind MCP HTTP server running on http://localhost:${mcpPort}/mcp`);
 
+  // Resolve project root: explicit parameter > MIND_SYNC_ROOT env > cwd
+  const resolvedRoot = projectRoot ?? process.env.MIND_SYNC_ROOT ?? process.cwd();
+
   // Start autosync watchers for all enabled spaces
-  setImmediate(() => startAutosyncWatchers(store, projectRoot ?? process.cwd()));
+  setImmediate(() => startAutosyncWatchers(store, resolvedRoot));
 }

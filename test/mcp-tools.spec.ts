@@ -1,6 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
@@ -147,6 +148,11 @@ describe('MCP input schema fidelity', () => {
     const dbPath = join(tempDir, 'mind.db');
     const originalDbPath = process.env.MIND_DB_PATH;
 
+    // Use absolute path to avoid "Module not found" when cwd differs
+    const testDir = fileURLToPath(new URL('.', import.meta.url));
+    const projectRoot = join(testDir, '..');
+    const mindPath = join(projectRoot, 'src', 'mind.ts');
+
     let client: Client | undefined;
     let transport: StdioClientTransport | undefined;
 
@@ -154,7 +160,7 @@ describe('MCP input schema fidelity', () => {
       process.env.MIND_DB_PATH = dbPath;
       transport = new StdioClientTransport({
         command: process.execPath,
-        args: ['run', 'src/mind.ts', 'mcp'],
+        args: ['run', mindPath, 'mcp'],
         env: {
           ...process.env,
           MIND_DB_PATH: dbPath,
@@ -163,6 +169,8 @@ describe('MCP input schema fidelity', () => {
       client = new Client({ name: 'mind-tools-list-test', version: '1.0.0' });
 
       await client.connect(transport);
+      // Wait for server to be fully initialized (helps under resource contention in full suite)
+      await Bun.sleep(50);
 
       const { tools } = await client.listTools();
       const listedTools = tools as ListedTool[];

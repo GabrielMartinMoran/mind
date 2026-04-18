@@ -29,7 +29,9 @@ echo "3. Enabling sync and exporting..."
 
 # 4. Verificar archivos exportados
 echo "4. Verifying exported files..."
-COUNT=$(ls "$TEST_DIR/markdown"/*.md 2>/dev/null | wc -l)
+# Files are in .mind/spaces/<hash>/
+SPACE_HASH=$(echo -n "projects/test" | sha256sum | cut -c1-8)
+COUNT=$(ls "$TEST_DIR/markdown/.mind/spaces/$SPACE_HASH"/*.md 2>/dev/null | wc -l)
 if [ "$COUNT" -ne 3 ]; then
   echo "FAIL: Expected 3 files, got $COUNT"
   exit 1
@@ -37,7 +39,7 @@ fi
 
 # 5. Verificar frontmatter en archivos
 echo "5. Verifying frontmatter..."
-for file in "$TEST_DIR/markdown"/*.md; do
+for file in "$TEST_DIR/markdown/.mind/spaces/$SPACE_HASH"/*.md; do
   if ! head -1 "$file" | grep -q "^---$"; then
     echo "FAIL: $file missing frontmatter start"
     exit 1
@@ -46,17 +48,20 @@ done
 
 # 6. Modificar archivo externamente
 echo "6. Testing external modification detection..."
-cat > "$TEST_DIR/markdown/external.md" << 'EOF'
+# Calculate space hash (same algorithm as src/sync/normalize.ts)
+SPACE_HASH=$(echo -n "projects/test" | sha256sum | cut -c1-8)
+cat > "$TEST_DIR/markdown/.mind/spaces/$SPACE_HASH/external.md" << 'EOF'
 ---
 id: 999
 space: projects/test
 name: external-memory
 tier: 2
 pinned: false
-tags: [cat:external]
+tags:
+  - cat:external
 links_to: []
-created_at: 2024-01-01T00:00:00Z
-changed_at: 2024-01-01T00:00:00Z
+created_at: 2024-01-01 00:00:00
+changed_at: 2024-01-01 00:00:00
 ---
 External content added manually
 EOF

@@ -8,6 +8,11 @@ import { style } from '../../helpers/style';
 import { AutoSyncService } from '../../sync/auto-sync-service';
 import { loadConfig, saveConfig, initMindDir } from '../../sync/config-file';
 import { shouldUpdateMemory } from '../../sync/conflict-resolver';
+import {
+  startSyncWatcherDetached,
+  stopSyncWatcher,
+  getSyncWatcherStatus,
+} from '../../sync/detached-watcher';
 import { FileSyncService } from '../../sync/file-sync-service';
 import { getSyncBasePath, getSpaceSyncDir, hashSpaceName } from '../../sync/normalize';
 import type { ConflictResolution, MindSyncConfig } from '../../sync/types';
@@ -20,7 +25,7 @@ import type { CommandGroup } from './types';
 const INIT_PARSER = new ArgParser(
   ['sync init'],
   'Initialize .mind directory with config.yml and .gitignore',
-  []
+  [{ name: 'path', alias: 'p', hasValue: true, description: 'Custom .mind directory path' }]
 );
 
 const STATUS_PARSER = new ArgParser(
@@ -31,7 +36,7 @@ const STATUS_PARSER = new ArgParser(
 
 const ENABLE_PARSER = new ArgParser(['sync enable'], 'Enables autosync for a project space', [
   { name: 'space', alias: 's', hasValue: true, description: 'Space name' },
-  { name: 'path', alias: 'p', hasValue: true, description: 'Base directory path for sync files' },
+  { name: 'path', alias: 'p', hasValue: true, description: 'Custom .mind directory path' },
 ]);
 
 const DISABLE_PARSER = new ArgParser(['sync disable'], 'Disables autosync for a project space', [
@@ -40,6 +45,7 @@ const DISABLE_PARSER = new ArgParser(['sync disable'], 'Disables autosync for a 
 
 const NOW_PARSER = new ArgParser(['sync now'], 'Forces an immediate sync (export + import)', [
   { name: 'space', alias: 's', hasValue: true, description: 'Space name' },
+  { name: 'path', alias: 'p', hasValue: true, description: 'Custom .mind directory path' },
 ]);
 
 const EXPORT_PARSER = new ArgParser(['sync export'], 'Exports space memories to markdown files', [
@@ -67,9 +73,15 @@ const CONFLICT_PARSER = new ArgParser(
 
 const SERVE_PARSER = new ArgParser(
   ['sync serve'],
-  'Starts a file watcher for a space (foreground)',
-  [{ name: 'space', alias: 's', hasValue: true, description: 'Space name to watch' }]
+  'Starts a file watcher for a space (foreground or detached)',
+  [
+    { name: 'space', alias: 's', hasValue: true, description: 'Space name to watch' },
+    { name: 'detached', alias: 'd', hasValue: false, description: 'Run in background' },
+    { name: 'path', alias: 'p', hasValue: true, description: 'Custom .mind directory path' },
+  ]
 );
+
+const STOP_PARSER = new ArgParser(['sync stop'], 'Stops the detached sync watcher', []);
 
 const REMOVE_PARSER = new ArgParser(['sync remove'], 'Removes a space from sync configuration', [
   { name: 'space', alias: 's', hasValue: true, description: 'Space name to remove' },
@@ -81,20 +93,26 @@ const VALID_STRATEGIES: ConflictResolution[] = ['db-wins', 'file-wins', 'latest-
 
 // ── Project root detection ──
 
-function getProjectRoot(): string {
+function getProjectRoot(overridePath?: string): string {
+  if (overridePath) return overridePath;
+  // Check environment variable for MCP project root override
+  if (process.env.MIND_SYNC_ROOT) return process.env.MIND_SYNC_ROOT;
   return process.cwd();
 }
 
 // ── Config helpers ──
 
-function getConfig(): MindSyncConfig {
-  const basePath = getSyncBasePath(getProjectRoot());
+function getConfig(projectRoot?: string): MindSyncConfig {
+  const basePath = getSyncBasePath(projectRoot ?? getProjectRoot());
   return loadConfig(basePath) ?? { version: 1, spaces: {} };
 }
 
-function updateConfig(updater: (config: MindSyncConfig) => MindSyncConfig): void {
-  const basePath = getSyncBasePath(getProjectRoot());
-  const config = getConfig();
+function updateConfig(
+  updater: (config: MindSyncConfig) => MindSyncConfig,
+  projectRoot?: string
+): void {
+  const basePath = getSyncBasePath(projectRoot ?? getProjectRoot());
+  const config = getConfig(projectRoot);
   const updated = updater(config);
   saveConfig(basePath, updated);
 }
@@ -104,13 +122,35 @@ function updateConfig(updater: (config: MindSyncConfig) => MindSyncConfig): void
 interface ImportMemoryResult {
   imported: number;
   updated: number;
+  linksCreated: number;
+  linksFailed: number;
   failed: number;
   errors: string[];
 }
 
 /**
+ * Resolve a memory reference string to a memory ID.
+ * Supports "space:name" format for cross-space, bare "name" for same space.
+ * Returns null if target memory doesn't exist.
+ */
+function resolveMemoryRef(store: any, space: string, ref: string): number | null {
+  // Handle "space:name" format
+  if (ref.includes(':')) {
+    const colonIdx = ref.indexOf(':');
+    const targetSpace = ref.slice(0, colonIdx);
+    const targetName = ref.slice(colonIdx + 1);
+    const mem = store.getMemory(targetSpace, targetName);
+    return mem?.id ?? null;
+  }
+  // Bare name - resolve in same space
+  const mem = store.getMemory(space, ref);
+  return mem?.id ?? null;
+}
+
+/**
  * Import memories from a directory of markdown files into a space.
  * Uses conflict resolution strategy from file-based config.
+ * Also creates links from links_to frontmatter field.
  */
 async function importFromDirectory(
   store: any,
@@ -118,7 +158,14 @@ async function importFromDirectory(
   basePath: string,
   conflictResolution: ConflictResolution
 ): Promise<ImportMemoryResult> {
-  const result: ImportMemoryResult = { imported: 0, updated: 0, failed: 0, errors: [] };
+  const result: ImportMemoryResult = {
+    imported: 0,
+    updated: 0,
+    linksCreated: 0,
+    linksFailed: 0,
+    failed: 0,
+    errors: [],
+  };
 
   if (!existsSync(basePath)) {
     result.errors.push(`Directory does not exist: ${basePath}`);
@@ -139,6 +186,8 @@ async function importFromDirectory(
       // Check if memory already exists
       const existing = store.getMemory(space, frontmatter.name);
 
+      let memoryId: number | null = null;
+
       if (existing) {
         // Apply conflict resolution
         const shouldUpdate = shouldUpdateMemory(
@@ -151,16 +200,37 @@ async function importFromDirectory(
           if (mem) {
             store.updateMemory(mem.id, { content: body });
             result.updated++;
+            memoryId = mem.id;
           }
         }
       } else {
         // Create new memory
-        await store.addMemory(space, frontmatter.name, body, {
+        const mem = await store.addMemory(space, frontmatter.name, body, {
           tags: frontmatter.tags,
           tier: frontmatter.tier,
           pinned: frontmatter.pinned,
         });
         result.imported++;
+        memoryId = mem.id;
+      }
+
+      // Create links from links_to frontmatter (only for newly created memories)
+      if (memoryId && frontmatter.links_to && frontmatter.links_to.length > 0) {
+        for (const linkRef of frontmatter.links_to) {
+          const targetId = resolveMemoryRef(store, space, linkRef);
+          if (!targetId) {
+            result.linksFailed++;
+            result.errors.push(`Link target not found: ${linkRef} (in ${file})`);
+            continue;
+          }
+          try {
+            store.link(memoryId, targetId);
+            result.linksCreated++;
+          } catch (err) {
+            result.linksFailed++;
+            result.errors.push(`Failed to create link: ${linkRef} -> ${err}`);
+          }
+        }
       }
     } catch (err) {
       result.failed++;
@@ -185,6 +255,7 @@ export const syncGroup: CommandGroup = {
     IMPORT_PARSER,
     CONFLICT_PARSER,
     SERVE_PARSER,
+    STOP_PARSER,
     REMOVE_PARSER,
     CONFIG_PARSER,
   ],
@@ -192,8 +263,10 @@ export const syncGroup: CommandGroup = {
     // ── sync init ──
     {
       matches: args => INIT_PARSER.matches(args),
-      execute: async (_args, _store, logger) => {
-        const projectRoot = getProjectRoot();
+      execute: async (args, _store, logger) => {
+        const flags = INIT_PARSER.getFlags(args);
+        const customPath = flags.path as string | undefined;
+        const projectRoot = getProjectRoot(customPath);
         const config = initMindDir(projectRoot);
 
         logger.logInfo(style('✅ Initialized .mind directory', ['green']));
@@ -249,7 +322,7 @@ export const syncGroup: CommandGroup = {
     // ── sync status ──
     {
       matches: args => STATUS_PARSER.matches(args),
-      execute: async (args, _store, logger) => {
+      execute: async (args, store, logger) => {
         const flags = STATUS_PARSER.getFlags(args);
         const spaceFilter = flags.space as string | undefined;
 
@@ -262,7 +335,47 @@ export const syncGroup: CommandGroup = {
           return;
         }
 
-        // Build status table
+        // If a specific space is requested, show detailed stats
+        if (spaceFilter) {
+          const spaceConfig = config.spaces[spaceFilter];
+          if (!spaceConfig) {
+            logger.logInfo(style(`❌ Space "${spaceFilter}" not found in sync config`, ['red']));
+            return;
+          }
+
+          const _hash = hashSpaceName(spaceFilter);
+          const syncDir = getSpaceSyncDir(getProjectRoot(), spaceFilter);
+          const status = getSyncWatcherStatus();
+          const watcherStatus = status.running
+            ? style(`running (pid ${status.pid})`, ['green'])
+            : style('stopped', ['yellow']);
+
+          // Count memories in space
+          const memories = store.listMemories(spaceFilter);
+          const memoryCount = memories.length;
+
+          // Count files in sync directory
+          let fileCount = 0;
+          if (existsSync(syncDir)) {
+            fileCount = readdirSync(syncDir).filter(f => f.endsWith('.md')).length;
+          }
+
+          logger.logInfo('');
+          logger.logInfo(` Sync Status for ${spaceFilter}`);
+          logger.logInfo(' '.repeat(62).replace(/ /g, '═'));
+          logger.logInfo(
+            `  Enabled:        ${spaceConfig.enabled ? style('yes', ['green']) : style('no', ['red'])}`
+          );
+          logger.logInfo(`  Watcher:        ${watcherStatus}`);
+          logger.logInfo(`  Memories:       ${memoryCount}`);
+          logger.logInfo(`  Sync files:     ${fileCount}`);
+          logger.logInfo(`  Strategy:       ${style(spaceConfig.conflictResolution, ['cyan'])}`);
+          logger.logInfo(`  Path:           ${syncDir}`);
+          logger.logInfo('');
+          return;
+        }
+
+        // Build status table (all spaces)
         const lines: string[] = [];
         lines.push('');
         lines.push(' Sync Status');
@@ -270,11 +383,6 @@ export const syncGroup: CommandGroup = {
         lines.push('');
 
         for (const [spaceName, spaceConfig] of Object.entries(config.spaces)) {
-          // Filter by space if specified
-          if (spaceFilter && spaceName !== spaceFilter) {
-            continue;
-          }
-
           const statusIcon = spaceConfig.enabled
             ? style('✓', ['green'])
             : style('✗', ['red', 'bold']);
@@ -308,6 +416,7 @@ export const syncGroup: CommandGroup = {
       execute: async (args, store, logger) => {
         const flags = ENABLE_PARSER.getFlags(args);
         const space = flags.space as string | undefined;
+        const customPath = flags.path as string | undefined;
 
         if (!space) {
           logger.logInfo(style('❌ Space name is required (--space)', ['red']));
@@ -321,8 +430,8 @@ export const syncGroup: CommandGroup = {
           return;
         }
 
-        // Initialize .mind directory
-        const projectRoot = getProjectRoot();
+        // Initialize .mind directory (use custom path if provided)
+        const projectRoot = getProjectRoot(customPath);
         initMindDir(projectRoot);
 
         // Calculate the sync directory path
@@ -409,6 +518,7 @@ export const syncGroup: CommandGroup = {
       execute: async (args, store, logger) => {
         const flags = NOW_PARSER.getFlags(args);
         const space = flags.space as string | undefined;
+        const customPath = flags.path as string | undefined;
 
         if (!space) {
           logger.logInfo(style('❌ Space name is required (--space)', ['red']));
@@ -425,7 +535,7 @@ export const syncGroup: CommandGroup = {
           return;
         }
 
-        const projectRoot = getProjectRoot();
+        const projectRoot = getProjectRoot(customPath);
         const syncDir = getSpaceSyncDir(projectRoot, space);
         const resolution = spaceConfig.conflictResolution;
 
@@ -454,6 +564,12 @@ export const syncGroup: CommandGroup = {
         logger.logInfo(
           `  Import: ${importResult.imported} new, ${importResult.updated} updated, ${importResult.failed} failed`
         );
+
+        if (importResult.linksCreated > 0 || importResult.linksFailed > 0) {
+          logger.logInfo(
+            `  Links: ${importResult.linksCreated} created, ${importResult.linksFailed} failed`
+          );
+        }
 
         if (exportResult.errors.length > 0 || importResult.errors.length > 0) {
           logger.logInfo('');
@@ -485,12 +601,16 @@ export const syncGroup: CommandGroup = {
           return;
         }
 
-        const projectRoot = getProjectRoot();
-        const syncDir = customPath ?? getSpaceSyncDir(projectRoot, space);
+        const projectRoot = getProjectRoot(customPath);
+        const syncDir = customPath
+          ? getSyncBasePath(customPath)
+          : getSpaceSyncDir(projectRoot, space);
 
         // Export
         const fileSyncService = new FileSyncService(store);
-        const exportBasePath = customPath ?? getSyncBasePath(projectRoot);
+        const exportBasePath = customPath
+          ? getSyncBasePath(customPath)
+          : getSyncBasePath(projectRoot);
         const result = await fileSyncService.exportSpaceToFiles(space, exportBasePath);
 
         if (result.failed > 0) {
@@ -526,9 +646,11 @@ export const syncGroup: CommandGroup = {
           return;
         }
 
-        const projectRoot = getProjectRoot();
-        const syncDir = customPath ?? getSpaceSyncDir(projectRoot, space);
-        const config = getConfig();
+        const projectRoot = getProjectRoot(customPath);
+        const syncDir = customPath
+          ? getSpaceSyncDir(customPath, space)
+          : getSpaceSyncDir(projectRoot, space);
+        const config = getConfig(projectRoot);
         const resolution = config.spaces[space]?.conflictResolution ?? 'db-wins';
 
         const result = await importFromDirectory(store, space, syncDir, resolution);
@@ -549,6 +671,11 @@ export const syncGroup: CommandGroup = {
               'green',
             ])
           );
+        }
+
+        // Report link creation stats
+        if (result.linksCreated > 0 || result.linksFailed > 0) {
+          logger.logInfo(`  Links: ${result.linksCreated} created, ${result.linksFailed} failed`);
         }
       },
     },
@@ -641,13 +768,16 @@ export const syncGroup: CommandGroup = {
       execute: async (args, store, logger) => {
         const flags = SERVE_PARSER.getFlags(args);
         const space = flags.space as string | undefined;
+        const detached = !!flags.detached;
+        const customPath = flags.path as string | undefined;
 
         if (!space) {
           logger.logInfo(style('❌ Space name is required (--space)', ['red']));
           return;
         }
 
-        const config = getConfig();
+        const projectRoot = getProjectRoot(customPath);
+        const config = getConfig(projectRoot);
         const spaceConfig = config.spaces[space];
 
         if (!spaceConfig) {
@@ -664,7 +794,6 @@ export const syncGroup: CommandGroup = {
           return;
         }
 
-        const projectRoot = getProjectRoot();
         const syncDir = getSpaceSyncDir(projectRoot, space);
 
         if (!existsSync(syncDir)) {
@@ -672,6 +801,13 @@ export const syncGroup: CommandGroup = {
           return;
         }
 
+        // Handle detached mode
+        if (detached) {
+          await startSyncWatcherDetached(space, projectRoot);
+          return;
+        }
+
+        // Foreground mode
         const autoSync = new AutoSyncService(store, projectRoot);
 
         await autoSync.startWatching(space);
@@ -701,6 +837,19 @@ export const syncGroup: CommandGroup = {
 
         // Keep the process alive
         await new Promise(() => {});
+      },
+    },
+
+    // ── sync stop ──
+    {
+      matches: args => STOP_PARSER.matches(args),
+      execute: async (_args, _store, logger) => {
+        const status = getSyncWatcherStatus();
+        if (!status.running) {
+          logger.logInfo(style('Sync watcher not running', ['yellow']));
+          return;
+        }
+        await stopSyncWatcher();
       },
     },
   ],

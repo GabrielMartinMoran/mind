@@ -269,8 +269,8 @@ Current limitations and caveats:
 
 - Existing-memory imports update content only. They do not restore full
   metadata parity from files.
-- Exported `links_to` values are written to frontmatter, but imports do not
-  recreate those links from files.
+- Exported `links_to` values are written to frontmatter, and imports recreate
+  those links in the database.
 - Deleting a synced markdown file does not auto-delete the corresponding
   database memory.
 - `sync serve` runs in the foreground only.

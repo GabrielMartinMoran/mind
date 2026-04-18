@@ -15,3 +15,8 @@ export {
   type DBMemory,
   type FileFrontmatter,
 } from './conflict-resolver';
+export {
+  startSyncWatcherDetached,
+  stopSyncWatcher,
+  getSyncWatcherStatus,
+} from './detached-watcher';

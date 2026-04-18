@@ -27,6 +27,18 @@ Example:
 
 ## [Unreleased]
 
+### Added
+
+- **`sync serve --detached`** — Background file watcher mode (like `mind serve --detached`) with PID file at `data/mind-sync-watch.pid`
+- **`sync stop`** — Command to stop the detached sync watcher process
+- **`sync init --path <dir>`** — Initialize `.mind/` in a custom directory instead of cwd
+- **`sync enable --path <dir>`**, **`sync now --path <dir>`**, **`sync export --path <dir>`**, **`sync import --path <dir>`** — Custom `.mind/` path override via `--path` flag
+- **`links_to` import** — When importing markdown files, links from frontmatter are now created as actual links in the DB (cross-space refs like `projects/other:memory-name` are supported; missing targets are logged as warnings)
+- **`sync status --space <name>`** — Detailed stats view showing enabled status, watcher status (running/stopped), memory count, sync file count, conflict strategy, and path
+- **`MIND_SYNC_ROOT` env var** — MCP server respects this env var to find `.mind/` when running from a different directory than the project
+- **`mind mcp --sync-root <path>`** — MCP server accepts `projectRoot` parameter in both `startMcpServer()` and `startMcpHttpServer()` for explicit project root override
+- **FileWatcher auto-restart** — If the watcher encounters an error (e.g., directory deleted), it automatically restarts up to 3 times with a 5 second delay between attempts
+
 ### Changed
 
 - **Autosync** — Complete rewrite to file-based config (`.mind/config.yml`) instead of SQLite table
