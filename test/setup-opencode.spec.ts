@@ -160,7 +160,7 @@ describe('OpenCode setup integration', () => {
     expect(existsSync(pluginPath)).toBe(true);
   });
 
-  test('writes OpenCode prudent automation plugin with required handlers', async () => {
+  test('writes OpenCode prudent automation plugin with required V1 handlers', async () => {
     await runSetup('opencode');
 
     const pluginPath = join(tempHome, '.config', 'opencode', 'plugins', 'mind-automation.js');
@@ -218,7 +218,7 @@ describe('OpenCode setup integration', () => {
     }
   });
 
-  test('chat.system.transform handler appends to LAST system entry (not push new)', async () => {
+  test('V1 chat.system.transform handler appends to LAST system entry (not push new)', async () => {
     await runSetup('opencode');
 
     const pluginPath = join(tempHome, '.config', 'opencode', 'plugins', 'mind-automation.js');
@@ -536,8 +536,10 @@ export const handlers = {
     expect(pluginText).toContain('ctx.event.subscribe');
     // V2 system prompt is an array of parts, not a mutable string.
     expect(pluginText).toContain("event.system.push({ type: 'text', text })");
-    // V2 event/session payloads expose sessionID.
-    expect(pluginText).toContain('payload.sessionID');
+    // V2 session id lives at event.data.sessionID for stream events.
+    expect(pluginText).toContain('payload.data');
+    // V2 emits session.compaction.ended; session.compacted is the V1 name.
+    expect(pluginText).toContain('session.compaction.ended');
   });
 
   test('plugin reads v2 location context instead of v1 worktree/directory', async () => {

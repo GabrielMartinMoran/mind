@@ -1,5 +1,5 @@
 // Extracted from setup.ts - OpenCode prudent automation plugin builder
-// This is the embedded JavaScript string for OpenCode's experimental plugin system
+// This is the embedded JavaScript string for OpenCode's plugin system (V2 default export with V1 server() compatibility)
 
 import { OFFICIAL_SESSION_SUMMARY_SCHEMA } from '../helpers/session-summary';
 
@@ -62,9 +62,23 @@ function extractSessionId(payload) {
     return 'session-unknown';
   }
 
-  const direct = payload.sessionID ?? payload.sessionId ?? payload.id;
+  const direct = payload.sessionID ?? payload.sessionId;
   if (typeof direct === 'string' && direct.trim().length > 0) {
     return direct;
+  }
+
+  // V2 stream events carry the session id under event.data.sessionID.
+  const data = payload.data;
+  if (data && typeof data === 'object') {
+    const dataId = data.sessionID ?? data.sessionId;
+    if (typeof dataId === 'string' && dataId.trim().length > 0) {
+      return dataId;
+    }
+  }
+
+  const legacy = payload.id;
+  if (typeof legacy === 'string' && legacy.trim().length > 0) {
+    return legacy;
   }
 
   const nested = payload.session;
@@ -398,7 +412,7 @@ const buildV2Setup = async (ctx) => {
 
           if (event.type === 'session.created') {
             checkpointForEvent(event, 'Ensure project space and checkpoint at session start');
-          } else if (event.type === 'session.compacted') {
+          } else if (event.type === 'session.compacted' || event.type === 'session.compaction.ended') {
             checkpointForEvent(event, 'Post-compaction checkpoint refresh and context recovery');
             recoverCheckpointContext(getProjectSpace(projectCtx));
           } else if (event.type === 'session.deleted') {

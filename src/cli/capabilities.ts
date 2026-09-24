@@ -90,7 +90,7 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
         status: 'supported',
         confidence: 'medium',
         evidence:
-          'OpenCode prudent automation is configured by default; setup writes a managed plugin with session.created/session.compacted handlers and experimental.session.compacting context injection.',
+          'OpenCode prudent automation is configured by default; setup writes a managed plugin that default-exports an OpenCode V2 definition (id + setup using ctx.session.hook context/compaction and ctx.event.subscribe) with V1 server() hooks kept for compatibility, covering session.created, session.compacted/session.compaction.ended, and compaction context injection.',
         fallback:
           'If plugin write or hook execution fails, setup continues and the managed protocol file keeps the manual continuity workflow available.',
       },
