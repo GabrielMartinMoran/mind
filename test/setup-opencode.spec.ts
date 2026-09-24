@@ -13,6 +13,34 @@ function stripJsoncComments(text: string): string {
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
+function extractFunctionSource(pluginText: string, signature: string): string {
+  const start = pluginText.indexOf(signature);
+  if (start === -1) {
+    throw new Error(`Function not found in generated plugin: ${signature}`);
+  }
+
+  let depth = 0;
+  let end = -1;
+  for (let i = pluginText.indexOf('{', start); i < pluginText.length; i += 1) {
+    const char = pluginText[i];
+    if (char === '{') {
+      depth += 1;
+    } else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) {
+        end = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (end === -1) {
+    throw new Error(`Unbalanced braces while extracting: ${signature}`);
+  }
+
+  return pluginText.slice(start, end);
+}
+
 let previousHome = '';
 let tempHome = '';
 
@@ -550,5 +578,34 @@ export const handlers = {
 
     expect(pluginText).toContain('ctx.location.directory');
     expect(pluginText).toContain('ctx.location.project.canonical');
+  });
+
+  test('extractSessionId resolves V2 stream, hook, legacy, and nested payloads', async () => {
+    await runSetup('opencode');
+
+    const pluginPath = join(tempHome, '.config', 'opencode', 'plugins', 'mind-automation.js');
+    const pluginText = readFileSync(pluginPath, 'utf-8');
+    const source = extractFunctionSource(pluginText, 'function extractSessionId(payload) {');
+    const extractSessionId = new Function(`${source}\nreturn extractSessionId;`)() as (
+      payload: unknown
+    ) => string;
+
+    // V2 stream event: top-level id is the event id, session id lives under data.
+    expect(
+      extractSessionId({ type: 'session.created', id: 'evt_123', data: { sessionID: 'ses_abc' } })
+    ).toBe('ses_abc');
+    // V2 session hooks expose a top-level sessionID.
+    expect(extractSessionId({ sessionID: 'ses_hook' })).toBe('ses_hook');
+    // Legacy camelCase.
+    expect(extractSessionId({ sessionId: 'ses_legacy' })).toBe('ses_legacy');
+    // Legacy top-level id when no session field is present.
+    expect(extractSessionId({ id: 'legacy_id' })).toBe('legacy_id');
+    // Nested session object.
+    expect(extractSessionId({ session: { id: 'ses_nested' } })).toBe('ses_nested');
+    expect(extractSessionId({ session: { sessionID: 'ses_nested2' } })).toBe('ses_nested2');
+    // Missing or invalid payloads fall back to the sentinel.
+    expect(extractSessionId(null)).toBe('session-unknown');
+    expect(extractSessionId({})).toBe('session-unknown');
+    expect(extractSessionId({ data: {} })).toBe('session-unknown');
   });
 });
