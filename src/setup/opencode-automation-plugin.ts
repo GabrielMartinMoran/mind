@@ -70,7 +70,7 @@ function extractSessionId(payload) {
   // V2 stream events carry the session id under event.data.sessionID.
   const data = payload.data;
   if (data && typeof data === 'object') {
-    const dataId = data.sessionID ?? data.sessionId;
+    const dataId = data.sessionID ?? data.sessionId ?? data.id;
     if (typeof dataId === 'string' && dataId.trim().length > 0) {
       return dataId;
     }
@@ -380,17 +380,25 @@ export const MindAutomationPlugin = async (ctx) => {
 };
 
 const buildV2Setup = async (ctx) => {
-  const projectCtx = {
-    directory:
-      ctx && ctx.location && typeof ctx.location.directory === 'string' ? ctx.location.directory : '',
-    worktree:
-      ctx && ctx.location && ctx.location.project && typeof ctx.location.project.canonical === 'string'
-        ? ctx.location.project.canonical
-        : '',
+  const baseDirectory =
+    ctx && ctx.location && typeof ctx.location.directory === 'string' ? ctx.location.directory : '';
+  const baseWorktree =
+    ctx && ctx.location && ctx.location.project && typeof ctx.location.project.canonical === 'string'
+      ? ctx.location.project.canonical
+      : '';
+  // V2 ctx.location is the plugin instance location; the event stream can span
+  // locations, so prefer each event's own location and fall back to the instance.
+  const ctxFor = (payload) => {
+    const directory =
+      payload && payload.location && typeof payload.location.directory === 'string'
+        ? payload.location.directory
+        : '';
+    return { directory: directory || baseDirectory, worktree: directory || baseWorktree };
   };
   const state = loadState();
 
   const checkpointForEvent = (eventPayload, extra) => {
+    const projectCtx = ctxFor(eventPayload);
     const projectSpace = getProjectSpace(projectCtx);
     const checkpointKey = projectSpace + ':' + extractSessionId(eventPayload);
     if (!hasIntervalPassed(state.checkpoints, checkpointKey, MIN_CHECKPOINT_INTERVAL_MS)) {
@@ -414,8 +422,9 @@ const buildV2Setup = async (ctx) => {
             checkpointForEvent(event, 'Ensure project space and checkpoint at session start');
           } else if (event.type === 'session.compacted' || event.type === 'session.compaction.ended') {
             checkpointForEvent(event, 'Post-compaction checkpoint refresh and context recovery');
-            recoverCheckpointContext(getProjectSpace(projectCtx));
+            recoverCheckpointContext(getProjectSpace(ctxFor(event)));
           } else if (event.type === 'session.deleted') {
+            const projectCtx = ctxFor(event);
             const summary = buildEventNotes(projectCtx, event, 'Session end summary (prudent)');
             persistSessionSummary(projectCtx, event, summary, state);
           }
@@ -430,8 +439,10 @@ const buildV2Setup = async (ctx) => {
     }
   })();
 
+  try {
   await ctx.session.hook('context', (event) => {
     try {
+      const projectCtx = ctxFor(event);
       const sessionId = event && typeof event === 'object' ? extractSessionId(event) : 'session-unknown';
       const dedupeKey = getProjectSpace(projectCtx) + ':chat-transform:' + sessionId;
 
@@ -444,8 +455,8 @@ const buildV2Setup = async (ctx) => {
 
       if (event && Array.isArray(event.system)) {
         event.system.push({ type: 'text', text });
+        state.handled[dedupeKey] = Date.now();
       }
-      state.handled[dedupeKey] = Date.now();
     } catch {
       // Non-blocking fallback: protocol instructions remain available.
     } finally {
@@ -456,6 +467,7 @@ const buildV2Setup = async (ctx) => {
   await ctx.session.hook('compaction', async (event) => {
     try {
       const payload = event && typeof event === 'object' ? event : {};
+      const projectCtx = ctxFor(payload);
       const eventKey = getProjectSpace(projectCtx) + ':compacting:' + extractSessionId(payload);
       if (!hasIntervalPassed(state.handled, eventKey, MIN_CHECKPOINT_INTERVAL_MS)) {
         return;
@@ -481,6 +493,10 @@ const buildV2Setup = async (ctx) => {
       saveState(state);
     }
   });
+  } catch {
+    // If hook registration fails, stop the event subscription so nothing leaks.
+    controller.abort();
+  }
 
   return () => controller.abort();
 };

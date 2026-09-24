@@ -594,6 +594,10 @@ export const handlers = {
     expect(
       extractSessionId({ type: 'session.created', id: 'evt_123', data: { sessionID: 'ses_abc' } })
     ).toBe('ses_abc');
+    // V2 session entity may surface as data.id; still must not return the event id.
+    expect(
+      extractSessionId({ type: 'session.created', id: 'evt_456', data: { id: 'ses_def' } })
+    ).toBe('ses_def');
     // V2 session hooks expose a top-level sessionID.
     expect(extractSessionId({ sessionID: 'ses_hook' })).toBe('ses_hook');
     // Legacy camelCase.
@@ -607,5 +611,80 @@ export const handlers = {
     expect(extractSessionId(null)).toBe('session-unknown');
     expect(extractSessionId({})).toBe('session-unknown');
     expect(extractSessionId({ data: {} })).toBe('session-unknown');
+  });
+
+  test('buildV2Setup registers hooks, dedupes context, and cleans up the subscription', async () => {
+    const pluginContent = buildOpenCodeAutomationPlugin('/nonexistent/mind-test-bin');
+    // Isolated dir so the plugin's import.meta.dir state file does not leak
+    // across runs.
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-v2-'));
+    const tmpPath = join(pluginDir, 'index.mjs');
+    await Bun.write(tmpPath, pluginContent);
+
+    const previousPath = process.env.PATH;
+    // Neutralize the `mind` fallback so the hook never spawns a real process.
+    process.env.PATH = '/nonexistent';
+    try {
+      const mod = (await import(tmpPath)) as {
+        default: { setup: (ctx: unknown) => Promise<() => void> };
+      };
+
+      const hooks: Record<string, (event: unknown) => unknown> = {};
+      let aborted = false;
+      const fakeCtx = {
+        location: {
+          directory: '/tmp/opencode/proj-a',
+          project: { canonical: '/tmp/opencode/proj-a' },
+        },
+        event: {
+          subscribe: async function* (options: { signal: AbortSignal }) {
+            try {
+              await new Promise<void>(resolve => {
+                if (options.signal.aborted) {
+                  resolve();
+                  return;
+                }
+                options.signal.addEventListener('abort', () => resolve(), { once: true });
+              });
+            } finally {
+              aborted = options.signal.aborted;
+            }
+          },
+        },
+        session: {
+          hook: async (name: string, callback: (event: unknown) => unknown) => {
+            hooks[name] = callback;
+            return { dispose: async () => {} };
+          },
+        },
+      };
+
+      const cleanup = await mod.default.setup(fakeCtx);
+      const contextHook = hooks.context;
+      const compactionHook = hooks.compaction;
+      expect(typeof contextHook).toBe('function');
+      expect(typeof compactionHook).toBe('function');
+
+      const system: Array<{ type: string; text: string }> = [];
+      await contextHook!({ sessionID: 'ses_v2_test', system });
+      expect(system).toHaveLength(1);
+      expect(system[0]?.type).toBe('text');
+      expect((system[0]?.text ?? '').length).toBeGreaterThan(0);
+
+      // Same session must be deduped.
+      await contextHook!({ sessionID: 'ses_v2_test', system });
+      expect(system).toHaveLength(1);
+
+      // A payload without a system array must not mark the session handled.
+      await contextHook!({ sessionID: 'ses_v2_other' });
+
+      await new Promise(resolve => setTimeout(resolve, 20));
+      cleanup();
+      await new Promise(resolve => setTimeout(resolve, 20));
+      expect(aborted).toBe(true);
+    } finally {
+      process.env.PATH = previousPath;
+      rmSync(pluginDir, { recursive: true, force: true });
+    }
   });
 });
