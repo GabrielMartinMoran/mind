@@ -27,6 +27,10 @@ Example:
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode automation plugin now loads on OpenCode V2. The generated `~/.config/opencode/plugins/mind-automation.js` default-exports a V2 plugin definition (`id` + `setup`) and registers V2 session hooks (`context`, `compaction`) plus `ctx.event.subscribe`, while keeping the V1 `server()` hooks for backward compatibility. V2 changed the plugin API and rejects V1 modules with `Plugin must export a default definition with an id and an effect or setup function`.
+
 ## [1.6.0] - 2026-06-30
 
 ### Fixed

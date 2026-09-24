@@ -511,4 +511,42 @@ export const handlers = {
     expect(backup.theme).toBe('dark');
     expect(backup.mcp.github.command).toBe('gh');
   });
+
+  test('plugin default-exports an OpenCode v2 definition with id and setup', async () => {
+    await runSetup('opencode');
+
+    const pluginPath = join(tempHome, '.config', 'opencode', 'plugins', 'mind-automation.js');
+    const pluginText = readFileSync(pluginPath, 'utf-8');
+
+    expect(pluginText).toContain('export default {');
+    expect(pluginText).toContain("id: 'mind-automation'");
+    expect(pluginText).toContain('setup: buildV2Setup');
+    // V1 runtimes read server() and ignore the V2 fields.
+    expect(pluginText).toContain('server: MindAutomationPlugin');
+  });
+
+  test('plugin registers v2 session hooks for context and compaction', async () => {
+    await runSetup('opencode');
+
+    const pluginPath = join(tempHome, '.config', 'opencode', 'plugins', 'mind-automation.js');
+    const pluginText = readFileSync(pluginPath, 'utf-8');
+
+    expect(pluginText).toContain("ctx.session.hook('context'");
+    expect(pluginText).toContain("ctx.session.hook('compaction'");
+    expect(pluginText).toContain('ctx.event.subscribe');
+    // V2 system prompt is an array of parts, not a mutable string.
+    expect(pluginText).toContain("event.system.push({ type: 'text', text })");
+    // V2 event/session payloads expose sessionID.
+    expect(pluginText).toContain('payload.sessionID');
+  });
+
+  test('plugin reads v2 location context instead of v1 worktree/directory', async () => {
+    await runSetup('opencode');
+
+    const pluginPath = join(tempHome, '.config', 'opencode', 'plugins', 'mind-automation.js');
+    const pluginText = readFileSync(pluginPath, 'utf-8');
+
+    expect(pluginText).toContain('ctx.location.directory');
+    expect(pluginText).toContain('ctx.location.project.canonical');
+  });
 });

@@ -62,14 +62,14 @@ function extractSessionId(payload) {
     return 'session-unknown';
   }
 
-  const direct = payload.sessionId ?? payload.id;
+  const direct = payload.sessionID ?? payload.sessionId ?? payload.id;
   if (typeof direct === 'string' && direct.trim().length > 0) {
     return direct;
   }
 
   const nested = payload.session;
   if (nested && typeof nested === 'object') {
-    const nestedId = nested.id ?? nested.sessionId;
+    const nestedId = nested.id ?? nested.sessionID ?? nested.sessionId;
     if (typeof nestedId === 'string' && nestedId.trim().length > 0) {
       return nestedId;
     }
@@ -363,6 +363,120 @@ export const MindAutomationPlugin = async (ctx) => {
       }
     },
   };
+};
+
+const buildV2Setup = async (ctx) => {
+  const projectCtx = {
+    directory:
+      ctx && ctx.location && typeof ctx.location.directory === 'string' ? ctx.location.directory : '',
+    worktree:
+      ctx && ctx.location && ctx.location.project && typeof ctx.location.project.canonical === 'string'
+        ? ctx.location.project.canonical
+        : '',
+  };
+  const state = loadState();
+
+  const checkpointForEvent = (eventPayload, extra) => {
+    const projectSpace = getProjectSpace(projectCtx);
+    const checkpointKey = projectSpace + ':' + extractSessionId(eventPayload);
+    if (!hasIntervalPassed(state.checkpoints, checkpointKey, MIN_CHECKPOINT_INTERVAL_MS)) {
+      return;
+    }
+
+    const notes = buildEventNotes(projectCtx, eventPayload, extra);
+    ensureSessionScaffold(projectSpace, notes);
+  };
+
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        try {
+          if (!event || typeof event !== 'object') {
+            continue;
+          }
+
+          if (event.type === 'session.created') {
+            checkpointForEvent(event, 'Ensure project space and checkpoint at session start');
+          } else if (event.type === 'session.compacted') {
+            checkpointForEvent(event, 'Post-compaction checkpoint refresh and context recovery');
+            recoverCheckpointContext(getProjectSpace(projectCtx));
+          } else if (event.type === 'session.deleted') {
+            const summary = buildEventNotes(projectCtx, event, 'Session end summary (prudent)');
+            persistSessionSummary(projectCtx, event, summary, state);
+          }
+        } catch {
+          // Non-blocking fallback: protocol instructions remain available.
+        } finally {
+          saveState(state);
+        }
+      }
+    } catch {
+      // Non-blocking fallback: protocol instructions remain available.
+    }
+  })();
+
+  await ctx.session.hook('context', (event) => {
+    try {
+      const sessionId = event && typeof event === 'object' ? extractSessionId(event) : 'session-unknown';
+      const dedupeKey = getProjectSpace(projectCtx) + ':chat-transform:' + sessionId;
+
+      if (state.handled[dedupeKey]) {
+        return;
+      }
+
+      const recovered = recoverCheckpointContext(getProjectSpace(projectCtx));
+      const text = recovered && recovered.length > 0 ? recovered : RECOVERY_TEXT;
+
+      if (event && Array.isArray(event.system)) {
+        event.system.push({ type: 'text', text });
+      }
+      state.handled[dedupeKey] = Date.now();
+    } catch {
+      // Non-blocking fallback: protocol instructions remain available.
+    } finally {
+      saveState(state);
+    }
+  });
+
+  await ctx.session.hook('compaction', async (event) => {
+    try {
+      const payload = event && typeof event === 'object' ? event : {};
+      const eventKey = getProjectSpace(projectCtx) + ':compacting:' + extractSessionId(payload);
+      if (!hasIntervalPassed(state.handled, eventKey, MIN_CHECKPOINT_INTERVAL_MS)) {
+        return;
+      }
+
+      checkpointForEvent(payload, 'Pre-compaction checkpoint capture and signal preservation');
+      const recovered = recoverCheckpointContext(getProjectSpace(projectCtx));
+      const text = [
+        '## mind Prudent Continuity',
+        '- Before compaction: key context was checkpointed using mind checkpoint set.',
+        '- After compaction: use \`checkpoint list <project-space> --status active\` and then \`checkpoint recover <project-space> --name <checkpoint-name>\` if needed.',
+        recovered && recovered.length > 0
+          ? '\\nRecovered context snapshot:\\n' + recovered
+          : '\\nRecovered context snapshot unavailable; follow manual mind protocol.',
+      ].join('\\n');
+
+      if (event && Array.isArray(event.system)) {
+        event.system.push({ type: 'text', text });
+      }
+    } catch {
+      // Non-blocking fallback: protocol instructions remain available.
+    } finally {
+      saveState(state);
+    }
+  });
+
+  return () => controller.abort();
+};
+
+// V2 plugin definition. OpenCode V2 reads the default export's id and setup();
+// V1 reads server() and ignores the V2 fields.
+export default {
+  id: 'mind-automation',
+  setup: buildV2Setup,
+  server: MindAutomationPlugin,
 };
 `;
 }
