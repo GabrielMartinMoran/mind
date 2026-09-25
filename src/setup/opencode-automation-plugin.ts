@@ -57,39 +57,40 @@ function sanitizeSegment(value) {
   return text || 'unknown';
 }
 
+function firstNonEmptyString(...values) {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return '';
+}
+
 function extractSessionId(payload) {
   if (!payload || typeof payload !== 'object') {
     return 'session-unknown';
   }
 
-  const direct = payload.sessionID ?? payload.sessionId;
-  if (typeof direct === 'string' && direct.trim().length > 0) {
-    return direct;
-  }
-
   // V2 stream events carry the session id under event.data.sessionID.
-  const data = payload.data;
-  if (data && typeof data === 'object') {
-    const dataId = data.sessionID ?? data.sessionId ?? data.id;
-    if (typeof dataId === 'string' && dataId.trim().length > 0) {
-      return dataId;
-    }
-  }
+  const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+  const nested = payload.session && typeof payload.session === 'object' ? payload.session : {};
 
-  const legacy = payload.id;
-  if (typeof legacy === 'string' && legacy.trim().length > 0) {
-    return legacy;
-  }
+  // Resolution order: direct session fields, V2 event data, legacy event id,
+  // then the nested session object. Empty or non-string values never block
+  // later fallbacks.
+  const resolved = firstNonEmptyString(
+    payload.sessionID,
+    payload.sessionId,
+    data.sessionID,
+    data.sessionId,
+    data.id,
+    payload.id,
+    nested.id,
+    nested.sessionID,
+    nested.sessionId
+  );
 
-  const nested = payload.session;
-  if (nested && typeof nested === 'object') {
-    const nestedId = nested.id ?? nested.sessionID ?? nested.sessionId;
-    if (typeof nestedId === 'string' && nestedId.trim().length > 0) {
-      return nestedId;
-    }
-  }
-
-  return 'session-unknown';
+  return resolved || 'session-unknown';
 }
 
 function buildProjectName(ctx) {
@@ -129,14 +130,14 @@ function loadState() {
   };
 }
 
-function compactHandledKeys(handled) {
-  const keys = Object.keys(handled);
+function compactStateMap(map) {
+  const keys = Object.keys(map);
   if (keys.length <= MAX_STATE_KEYS) {
-    return handled;
+    return map;
   }
 
   const sorted = keys
-    .map((key) => ({ key, value: Number(handled[key]) || 0 }))
+    .map((key) => ({ key, value: Number(map[key]) || 0 }))
     .sort((a, b) => b.value - a.value)
     .slice(0, MAX_STATE_KEYS);
 
@@ -154,7 +155,9 @@ function saveState(state) {
     const safeState = {
       ...state,
       version: STATE_VERSION,
-      handled: compactHandledKeys(state.handled ?? {}),
+      checkpoints: compactStateMap(state.checkpoints ?? {}),
+      summaries: compactStateMap(state.summaries ?? {}),
+      handled: compactStateMap(state.handled ?? {}),
     };
     writeFileSync(filePath, JSON.stringify(safeState, null, 2));
   } catch {
@@ -389,11 +392,19 @@ const buildV2Setup = async (ctx) => {
   // V2 ctx.location is the plugin instance location; the event stream can span
   // locations, so prefer each event's own location and fall back to the instance.
   const ctxFor = (payload) => {
-    const directory =
-      payload && payload.location && typeof payload.location.directory === 'string'
-        ? payload.location.directory
+    const location =
+      payload && payload.location && typeof payload.location === 'object' ? payload.location : {};
+    const directory = typeof location.directory === 'string' ? location.directory : '';
+    const canonical =
+      location.project && typeof location.project.canonical === 'string'
+        ? location.project.canonical
         : '';
-    return { directory: directory || baseDirectory, worktree: directory || baseWorktree };
+    // The canonical project path keeps one space per project even when an
+    // event's directory is nested or lives somewhere else.
+    return {
+      directory: directory || baseDirectory,
+      worktree: canonical || directory || baseWorktree || baseDirectory,
+    };
   };
   const state = loadState();
 
@@ -427,11 +438,14 @@ const buildV2Setup = async (ctx) => {
             const projectCtx = ctxFor(event);
             const summary = buildEventNotes(projectCtx, event, 'Session end summary (prudent)');
             persistSessionSummary(projectCtx, event, summary, state);
+          } else {
+            // Foreign events (for example session.text.delta) must not touch state.
+            continue;
           }
+
+          saveState(state);
         } catch {
           // Non-blocking fallback: protocol instructions remain available.
-        } finally {
-          saveState(state);
         }
       }
     } catch {

@@ -1,4 +1,12 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -39,6 +47,109 @@ function extractFunctionSource(pluginText: string, signature: string): string {
   }
 
   return pluginText.slice(start, end);
+}
+
+async function waitFor(
+  condition: () => boolean,
+  description: string,
+  timeoutMs = 1000
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return;
+    }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+  throw new Error(`Timed out waiting for: ${description}`);
+}
+
+function createFakeMindBin(dir: string): { binPath: string; logPath: string } {
+  const binPath = join(dir, 'fake-mind');
+  const logPath = join(dir, 'mind-calls.log');
+  writeFileSync(binPath, `#!/bin/sh\nprintf '%s\\n' "$*" >> '${logPath}'\n`);
+  chmodSync(binPath, 0o755);
+  return { binPath, logPath };
+}
+
+function readMindLog(logPath: string): string {
+  return existsSync(logPath) ? readFileSync(logPath, 'utf-8') : '';
+}
+
+function countOccurrences(text: string, needle: string): number {
+  return text.split(needle).length - 1;
+}
+
+type GeneratedV2Module = {
+  default: { setup: (ctx: unknown) => Promise<() => void> };
+};
+
+async function importGeneratedPluginIn(
+  pluginDir: string,
+  mindPath: string
+): Promise<GeneratedV2Module> {
+  const filePath = join(pluginDir, 'index.mjs');
+  await Bun.write(filePath, buildOpenCodeAutomationPlugin(mindPath));
+  return (await import(filePath)) as GeneratedV2Module;
+}
+
+interface FakeV2Ctx {
+  ctx: unknown;
+  hooks: Record<string, (event: unknown) => unknown>;
+  processed: Promise<void>;
+  isAborted: () => boolean;
+}
+
+function createFakeV2Ctx(options: {
+  events: unknown[];
+  directory: string;
+  canonical: string;
+}): FakeV2Ctx {
+  const hooks: Record<string, (event: unknown) => unknown> = {};
+  let aborted = false;
+  let signalProcessed: (() => void) | undefined;
+  const processed = new Promise<void>(resolve => {
+    signalProcessed = () => resolve();
+  });
+
+  const ctx = {
+    location: {
+      directory: options.directory,
+      project: { canonical: options.canonical },
+    },
+    event: {
+      subscribe: async function* (subscribeOptions: { signal: AbortSignal }) {
+        try {
+          for (const event of options.events) {
+            if (subscribeOptions.signal.aborted) {
+              return;
+            }
+            yield event;
+          }
+          // The consumer requests the next event only after it finishes
+          // handling the previous one, so this marks all events processed.
+          signalProcessed?.();
+          await new Promise<void>(resolve => {
+            if (subscribeOptions.signal.aborted) {
+              resolve();
+              return;
+            }
+            subscribeOptions.signal.addEventListener('abort', () => resolve(), { once: true });
+          });
+        } finally {
+          aborted = subscribeOptions.signal.aborted;
+        }
+      },
+    },
+    session: {
+      hook: async (name: string, callback: (event: unknown) => unknown) => {
+        hooks[name] = callback;
+        return { dispose: async () => {} };
+      },
+    },
+  };
+
+  return { ctx, hooks, processed, isAborted: () => aborted };
 }
 
 let previousHome = '';
@@ -585,10 +696,14 @@ export const handlers = {
 
     const pluginPath = join(tempHome, '.config', 'opencode', 'plugins', 'mind-automation.js');
     const pluginText = readFileSync(pluginPath, 'utf-8');
+    const helperSource = extractFunctionSource(
+      pluginText,
+      'function firstNonEmptyString(...values) {'
+    );
     const source = extractFunctionSource(pluginText, 'function extractSessionId(payload) {');
-    const extractSessionId = new Function(`${source}\nreturn extractSessionId;`)() as (
-      payload: unknown
-    ) => string;
+    const extractSessionId = new Function(
+      `${helperSource}\n${source}\nreturn extractSessionId;`
+    )() as (payload: unknown) => string;
 
     // V2 stream event: top-level id is the event id, session id lives under data.
     expect(
@@ -607,6 +722,16 @@ export const handlers = {
     // Nested session object.
     expect(extractSessionId({ session: { id: 'ses_nested' } })).toBe('ses_nested');
     expect(extractSessionId({ session: { sessionID: 'ses_nested2' } })).toBe('ses_nested2');
+    expect(extractSessionId({ session: { sessionId: 'ses_nested3' } })).toBe('ses_nested3');
+    // Empty or non-string fields must not block later fallbacks.
+    expect(extractSessionId({ sessionID: '', sessionId: 'B' })).toBe('B');
+    expect(extractSessionId({ sessionID: 42, sessionId: 'B' })).toBe('B');
+    expect(extractSessionId({ sessionId: '', id: 'A' })).toBe('A');
+    expect(extractSessionId({ sessionID: '   ', sessionId: 'B' })).toBe('B');
+    expect(extractSessionId({ data: { sessionID: 42, sessionId: 'ses_data_fallback' } })).toBe(
+      'ses_data_fallback'
+    );
+    expect(extractSessionId({ data: { sessionID: 42 }, id: 'evt_fallback' })).toBe('evt_fallback');
     // Missing or invalid payloads fall back to the sentinel.
     expect(extractSessionId(null)).toBe('session-unknown');
     expect(extractSessionId({})).toBe('session-unknown');
@@ -684,6 +809,266 @@ export const handlers = {
       expect(aborted).toBe(true);
     } finally {
       process.env.PATH = previousPath;
+      rmSync(pluginDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('OpenCode prudent automation plugin behavior (V2)', () => {
+  const canonicalDir = () => join(tempHome, 'canonical-proj');
+  const nestedDir = () => join(tempHome, 'nested-dir');
+  const eventLocation = () => ({
+    directory: nestedDir(),
+    project: { canonical: canonicalDir() },
+  });
+  const stateFilePath = (pluginDir: string) => join(pluginDir, '.mind-automation-state.json');
+
+  test('resolves one project space from the canonical project path and dedupes checkpoints', async () => {
+    const { binPath, logPath } = createFakeMindBin(tempHome);
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-canonical-'));
+    const mod = await importGeneratedPluginIn(pluginDir, binPath);
+    const fake = createFakeV2Ctx({
+      events: [
+        {
+          type: 'session.created',
+          id: 'evt_1',
+          data: { sessionID: 'ses_same' },
+          location: eventLocation(),
+        },
+        {
+          type: 'session.created',
+          id: 'evt_2',
+          data: { sessionID: 'ses_same' },
+          location: eventLocation(),
+        },
+      ],
+      directory: canonicalDir(),
+      canonical: canonicalDir(),
+    });
+
+    const cleanup = await mod.default.setup(fake.ctx);
+    try {
+      await fake.processed;
+      await waitFor(
+        () => readMindLog(logPath).includes('checkpoint set projects/canonical-proj'),
+        'canonical checkpoint scaffold'
+      );
+
+      const log = readMindLog(logPath);
+      expect(log).toContain('create projects/canonical-proj');
+      expect(log).toContain('checkpoint set projects/canonical-proj');
+      expect(log).not.toContain('projects/nested-dir');
+      expect(countOccurrences(log, 'checkpoint set')).toBe(1);
+      expect(existsSync(stateFilePath(pluginDir))).toBe(true);
+    } finally {
+      cleanup();
+      rmSync(pluginDir, { recursive: true, force: true });
+    }
+  });
+
+  test('refreshes the checkpoint on session.compaction.ended for a different session', async () => {
+    const { binPath, logPath } = createFakeMindBin(tempHome);
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-compaction-event-'));
+    const mod = await importGeneratedPluginIn(pluginDir, binPath);
+    const fake = createFakeV2Ctx({
+      events: [
+        {
+          type: 'session.created',
+          data: { sessionID: 'ses_one' },
+          location: eventLocation(),
+        },
+        {
+          type: 'session.compaction.ended',
+          data: { sessionID: 'ses_two' },
+          location: eventLocation(),
+        },
+      ],
+      directory: canonicalDir(),
+      canonical: canonicalDir(),
+    });
+
+    const cleanup = await mod.default.setup(fake.ctx);
+    try {
+      await fake.processed;
+      await waitFor(
+        () => countOccurrences(readMindLog(logPath), 'checkpoint set') === 2,
+        'second checkpoint set after compaction.ended'
+      );
+
+      const log = readMindLog(logPath);
+      expect(log).toContain('checkpoint set projects/canonical-proj');
+      expect(countOccurrences(log, 'checkpoint set')).toBe(2);
+    } finally {
+      cleanup();
+      rmSync(pluginDir, { recursive: true, force: true });
+    }
+  });
+
+  test('persists a session summary on session.deleted with session tags at tier 3', async () => {
+    const { binPath, logPath } = createFakeMindBin(tempHome);
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-summary-'));
+    const mod = await importGeneratedPluginIn(pluginDir, binPath);
+    const fake = createFakeV2Ctx({
+      events: [
+        {
+          type: 'session.deleted',
+          data: { sessionID: 'ses_end' },
+          location: eventLocation(),
+        },
+      ],
+      directory: canonicalDir(),
+      canonical: canonicalDir(),
+    });
+
+    const cleanup = await mod.default.setup(fake.ctx);
+    try {
+      await fake.processed;
+      await waitFor(
+        () => readMindLog(logPath).includes('type:session,cat:summary'),
+        'session summary add'
+      );
+
+      const log = readMindLog(logPath);
+      expect(log).toMatch(/add projects\/canonical-proj session-/);
+      expect(log).toContain('--tags type:session,cat:summary');
+      expect(log).toContain('--tier 3');
+    } finally {
+      cleanup();
+      rmSync(pluginDir, { recursive: true, force: true });
+    }
+  });
+
+  test('injects compaction continuity once per session interval', async () => {
+    const { binPath, logPath } = createFakeMindBin(tempHome);
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-compaction-hook-'));
+    const mod = await importGeneratedPluginIn(pluginDir, binPath);
+    const fake = createFakeV2Ctx({
+      events: [],
+      directory: canonicalDir(),
+      canonical: canonicalDir(),
+    });
+
+    const cleanup = await mod.default.setup(fake.ctx);
+    try {
+      const compactionHook = fake.hooks.compaction;
+      expect(typeof compactionHook).toBe('function');
+
+      const system: Array<{ type: string; text: string }> = [];
+      await compactionHook!({ sessionID: 'ses_compact', system });
+      expect(system).toHaveLength(1);
+      expect(system[0]?.type).toBe('text');
+      expect(system[0]?.text).toContain('mind Prudent Continuity');
+
+      // A second hook call within the minimum interval must add nothing.
+      await compactionHook!({ sessionID: 'ses_compact', system });
+      expect(system).toHaveLength(1);
+
+      await waitFor(
+        () => readMindLog(logPath).includes('checkpoint set projects/canonical-proj'),
+        'hook checkpoint set'
+      );
+      expect(readMindLog(logPath)).toContain('checkpoint set projects/canonical-proj');
+    } finally {
+      cleanup();
+      rmSync(pluginDir, { recursive: true, force: true });
+    }
+  });
+
+  test('does not write plugin state for foreign stream events', async () => {
+    const { binPath, logPath } = createFakeMindBin(tempHome);
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-foreign-'));
+    const mod = await importGeneratedPluginIn(pluginDir, binPath);
+    const fake = createFakeV2Ctx({
+      events: [
+        { type: 'session.text.delta', data: { sessionID: 'ses_noise', delta: 'a' } },
+        { type: 'session.text.delta', data: { sessionID: 'ses_noise', delta: 'b' } },
+        { type: 'message.updated', data: { sessionID: 'ses_noise' } },
+      ],
+      directory: canonicalDir(),
+      canonical: canonicalDir(),
+    });
+
+    const cleanup = await mod.default.setup(fake.ctx);
+    try {
+      // `processed` resolves only after the loop finished handling every event.
+      await fake.processed;
+
+      expect(existsSync(stateFilePath(pluginDir))).toBe(false);
+      expect(existsSync(logPath)).toBe(false);
+    } finally {
+      cleanup();
+      rmSync(pluginDir, { recursive: true, force: true });
+    }
+  });
+
+  test('caps checkpoints, summaries, and handled maps at 400 entries when saving state', async () => {
+    const { binPath } = createFakeMindBin(tempHome);
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-cap-'));
+    const mod = await importGeneratedPluginIn(pluginDir, binPath);
+    const largeMap = (prefix: string) => {
+      const map: Record<string, number> = {};
+      for (let i = 0; i < 401; i += 1) {
+        map[`${prefix}-${i}`] = i + 1;
+      }
+      return map;
+    };
+    const statePath = stateFilePath(pluginDir);
+    writeFileSync(
+      statePath,
+      JSON.stringify({
+        version: 1,
+        checkpoints: largeMap('cp'),
+        summaries: largeMap('sum'),
+        handled: largeMap('handled'),
+      })
+    );
+
+    const fake = createFakeV2Ctx({
+      events: [
+        {
+          type: 'session.created',
+          data: { sessionID: 'ses_cap' },
+          location: eventLocation(),
+        },
+      ],
+      directory: canonicalDir(),
+      canonical: canonicalDir(),
+    });
+
+    const cleanup = await mod.default.setup(fake.ctx);
+    try {
+      await fake.processed;
+      type StateMaps = {
+        checkpoints: Record<string, number>;
+        summaries: Record<string, number>;
+        handled: Record<string, number>;
+      };
+      const readMaps = () => JSON.parse(readFileSync(statePath, 'utf-8')) as StateMaps;
+
+      await waitFor(() => {
+        if (!existsSync(statePath)) {
+          return false;
+        }
+        const maps = readMaps();
+        return (
+          Object.keys(maps.checkpoints).length === 400 &&
+          Object.keys(maps.summaries).length === 400 &&
+          Object.keys(maps.handled).length === 400
+        );
+      }, 'all state maps capped at 400 entries');
+
+      const maps = readMaps();
+      // 401 pre-existing checkpoint keys plus one new key: the two oldest drop.
+      expect(maps.checkpoints['cp-0']).toBeUndefined();
+      expect(maps.checkpoints['cp-1']).toBeUndefined();
+      expect(maps.checkpoints['cp-400']).toBe(401);
+      // Summaries and handled have 401 pre-existing keys: the oldest drops.
+      expect(maps.summaries['sum-0']).toBeUndefined();
+      expect(maps.summaries['sum-400']).toBe(401);
+      expect(maps.handled['handled-0']).toBeUndefined();
+      expect(maps.handled['handled-400']).toBe(401);
+    } finally {
+      cleanup();
       rmSync(pluginDir, { recursive: true, force: true });
     }
   });

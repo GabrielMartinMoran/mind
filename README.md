@@ -470,7 +470,7 @@ Rollout policy:
 - configures `mcp.mind` as local command transport (`type: "local"`, `command: ["<path-to-mind>", "mcp"]`)
 - writes/refreshes `~/.config/opencode/instructions/mind-memory-protocol.md`
 - ensures that instruction file is present in OpenCode's `instructions` list
-- configures prudent L3 session/compaction automation by default and non-blocking, writing `~/.config/opencode/plugins/mind-automation.js` during setup. The generated plugin default-exports an OpenCode V2 plugin definition (`id` + `setup`) and also exposes V1 `server()` hooks, so the same file loads on OpenCode V2 and on V1 builds that support object plugin entrypoints (1.18.29+)
+- configures prudent L3 session/compaction automation by default and non-blocking, writing `~/.config/opencode/plugins/mind-automation.js` during setup. The generated plugin default-exports an OpenCode V2 plugin definition (`id` + `setup`) and also exposes V1 `server()` hooks, so the same file loads on OpenCode V2 and on V1 builds that support object plugin entrypoints (1.18.29+); older V1 builds keep loading it through the named `MindAutomationPlugin` export
 
 > **Setup safety contract:** all setup flows that touch a user-owned JSON/JSONC config file (opencode, claude fallback, cursor, windsurf, gemini-cli, vscode, antigravity) now go through `src/setup/safe-config.ts`. Existing files are parsed strictly — a parse failure aborts the run with a clear error rather than overwriting the file with an empty default. Content-changing writes are preceded by a timestamped sibling backup (`.bak.YYYYMMDDTHHMMSSmmmZ`) and the new content is staged in a sibling `.tmp` file and renamed into place so a crash mid-write cannot leave a partial file. The same contract applies to `mind setup refresh`.
 

@@ -23,3 +23,21 @@ Feature: Single-space session continuity
     When the summary is written
     Then it is stored in "projects/mind"
     And no new write is made to any legacy session-summary space
+
+  Scenario: OpenCode V2 automation keeps one project space per canonical project
+    Given OpenCode V2 stream events whose location directory differs from the canonical project path
+    When prudent automation resolves the project space for those events
+    Then continuity artifacts are stored under "projects/<canonical-project>"
+    And no separate space is created for the event directory
+
+  Scenario: OpenCode V2 automation writes plugin state only when session state changes
+    Given a burst of OpenCode V2 stream events that do not change session state
+    When prudent automation processes the burst
+    Then no plugin state file write happens for those events
+    And a state write happens after an event that changes session state
+
+  Scenario: OpenCode V2 compaction continuity is injected once per session interval
+    Given an active OpenCode V2 session with an empty system context
+    When the compaction hook runs for that session
+    Then one prudent continuity block is added to the system context
+    And a second compaction hook for the same session within the minimum interval adds no block

@@ -30,6 +30,9 @@ Example:
 ### Fixed
 
 - Fixed OpenCode automation plugin loading on OpenCode V2. The generated `~/.config/opencode/plugins/mind-automation.js` default-exports a V2 plugin definition (`id` + `setup`) and registers V2 session hooks (`context`, `compaction`) plus `ctx.event.subscribe`, while keeping the V1 `server()` hooks for backward compatibility. V2 changed the plugin API and rejects V1 modules with `Plugin must export a default definition with an id and an effect or setup function`. The object-entrypoint V1 form requires OpenCode 1.18.29 or newer.
+- Fixed OpenCode V2 automation to resolve one project space per canonical project path. The event's `location.project.canonical` now takes precedence over `location.directory`, so continuity artifacts no longer land in `projects/<event-directory>` when events come from a nested or different directory.
+- Fixed OpenCode V2 automation writing plugin state for every streamed event. State is now written only after state-changing events (`session.created`, compaction, `session.deleted`), and the checkpoint, summary, and handled maps are capped to the newest 400 entries.
+- Fixed OpenCode V2 session id extraction to skip empty or non-string fields so later fallbacks still resolve (for example, an empty `payload.sessionID` no longer masks `payload.sessionId`).
 
 ## [1.6.0] - 2026-06-30
 
