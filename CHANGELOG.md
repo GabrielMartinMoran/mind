@@ -29,6 +29,12 @@ Example:
 
 ### Fixed
 
+- Fixed OpenCode automation plugin loading on OpenCode V2. The generated `~/.config/opencode/plugins/mind-automation.js` default-exports a V2 plugin definition (`id` + `setup`) and registers V2 session hooks (`context`, `compaction`) plus `ctx.event.subscribe`, while keeping the V1 `server()` hooks for backward compatibility. V2 changed the plugin API and rejects V1 modules with `Plugin must export a default definition with an id and an effect or setup function`. The object-entrypoint V1 form requires OpenCode 1.18.29 or newer.
+
+## [1.6.0] - 2026-06-30
+
+### Fixed
+
 - MCP `memory_query` LIKE fallback search no longer fails with `no such column: s.name` when FTS5 returns no results.
 - OpenCode automation plugin: reduced session summary noise by ~95%. The plugin now only persists a session summary on `session.deleted` (fires once per session) instead of also on `session.idle` (fires 20-50 times per session), eliminating redundant empty-summary noise.
 

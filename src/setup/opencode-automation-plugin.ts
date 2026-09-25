@@ -1,5 +1,5 @@
 // Extracted from setup.ts - OpenCode prudent automation plugin builder
-// This is the embedded JavaScript string for OpenCode's experimental plugin system
+// This is the embedded JavaScript string for OpenCode's plugin system (V2 default export with V1 server() compatibility)
 
 import { OFFICIAL_SESSION_SUMMARY_SCHEMA } from '../helpers/session-summary';
 
@@ -62,14 +62,28 @@ function extractSessionId(payload) {
     return 'session-unknown';
   }
 
-  const direct = payload.sessionId ?? payload.id;
+  const direct = payload.sessionID ?? payload.sessionId;
   if (typeof direct === 'string' && direct.trim().length > 0) {
     return direct;
   }
 
+  // V2 stream events carry the session id under event.data.sessionID.
+  const data = payload.data;
+  if (data && typeof data === 'object') {
+    const dataId = data.sessionID ?? data.sessionId ?? data.id;
+    if (typeof dataId === 'string' && dataId.trim().length > 0) {
+      return dataId;
+    }
+  }
+
+  const legacy = payload.id;
+  if (typeof legacy === 'string' && legacy.trim().length > 0) {
+    return legacy;
+  }
+
   const nested = payload.session;
   if (nested && typeof nested === 'object') {
-    const nestedId = nested.id ?? nested.sessionId;
+    const nestedId = nested.id ?? nested.sessionID ?? nested.sessionId;
     if (typeof nestedId === 'string' && nestedId.trim().length > 0) {
       return nestedId;
     }
@@ -363,6 +377,136 @@ export const MindAutomationPlugin = async (ctx) => {
       }
     },
   };
+};
+
+const buildV2Setup = async (ctx) => {
+  const baseDirectory =
+    ctx && ctx.location && typeof ctx.location.directory === 'string' ? ctx.location.directory : '';
+  const baseWorktree =
+    ctx && ctx.location && ctx.location.project && typeof ctx.location.project.canonical === 'string'
+      ? ctx.location.project.canonical
+      : '';
+  // V2 ctx.location is the plugin instance location; the event stream can span
+  // locations, so prefer each event's own location and fall back to the instance.
+  const ctxFor = (payload) => {
+    const directory =
+      payload && payload.location && typeof payload.location.directory === 'string'
+        ? payload.location.directory
+        : '';
+    return { directory: directory || baseDirectory, worktree: directory || baseWorktree };
+  };
+  const state = loadState();
+
+  const checkpointForEvent = (eventPayload, extra) => {
+    const projectCtx = ctxFor(eventPayload);
+    const projectSpace = getProjectSpace(projectCtx);
+    const checkpointKey = projectSpace + ':' + extractSessionId(eventPayload);
+    if (!hasIntervalPassed(state.checkpoints, checkpointKey, MIN_CHECKPOINT_INTERVAL_MS)) {
+      return;
+    }
+
+    const notes = buildEventNotes(projectCtx, eventPayload, extra);
+    ensureSessionScaffold(projectSpace, notes);
+  };
+
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      for await (const event of ctx.event.subscribe({ signal: controller.signal })) {
+        try {
+          if (!event || typeof event !== 'object') {
+            continue;
+          }
+
+          if (event.type === 'session.created') {
+            checkpointForEvent(event, 'Ensure project space and checkpoint at session start');
+          } else if (event.type === 'session.compacted' || event.type === 'session.compaction.ended') {
+            checkpointForEvent(event, 'Post-compaction checkpoint refresh and context recovery');
+            recoverCheckpointContext(getProjectSpace(ctxFor(event)));
+          } else if (event.type === 'session.deleted') {
+            const projectCtx = ctxFor(event);
+            const summary = buildEventNotes(projectCtx, event, 'Session end summary (prudent)');
+            persistSessionSummary(projectCtx, event, summary, state);
+          }
+        } catch {
+          // Non-blocking fallback: protocol instructions remain available.
+        } finally {
+          saveState(state);
+        }
+      }
+    } catch {
+      // Non-blocking fallback: protocol instructions remain available.
+    }
+  })();
+
+  try {
+  await ctx.session.hook('context', (event) => {
+    try {
+      const projectCtx = ctxFor(event);
+      const sessionId = event && typeof event === 'object' ? extractSessionId(event) : 'session-unknown';
+      const dedupeKey = getProjectSpace(projectCtx) + ':chat-transform:' + sessionId;
+
+      if (state.handled[dedupeKey]) {
+        return;
+      }
+
+      const recovered = recoverCheckpointContext(getProjectSpace(projectCtx));
+      const text = recovered && recovered.length > 0 ? recovered : RECOVERY_TEXT;
+
+      if (event && Array.isArray(event.system)) {
+        event.system.push({ type: 'text', text });
+        state.handled[dedupeKey] = Date.now();
+      }
+    } catch {
+      // Non-blocking fallback: protocol instructions remain available.
+    } finally {
+      saveState(state);
+    }
+  });
+
+  await ctx.session.hook('compaction', async (event) => {
+    try {
+      const payload = event && typeof event === 'object' ? event : {};
+      const projectCtx = ctxFor(payload);
+      const eventKey = getProjectSpace(projectCtx) + ':compacting:' + extractSessionId(payload);
+      if (!hasIntervalPassed(state.handled, eventKey, MIN_CHECKPOINT_INTERVAL_MS)) {
+        return;
+      }
+
+      checkpointForEvent(payload, 'Pre-compaction checkpoint capture and signal preservation');
+      const recovered = recoverCheckpointContext(getProjectSpace(projectCtx));
+      const text = [
+        '## mind Prudent Continuity',
+        '- Before compaction: key context was checkpointed using mind checkpoint set.',
+        '- After compaction: use \`checkpoint list <project-space> --status active\` and then \`checkpoint recover <project-space> --name <checkpoint-name>\` if needed.',
+        recovered && recovered.length > 0
+          ? '\\nRecovered context snapshot:\\n' + recovered
+          : '\\nRecovered context snapshot unavailable; follow manual mind protocol.',
+      ].join('\\n');
+
+      if (event && Array.isArray(event.system)) {
+        event.system.push({ type: 'text', text });
+      }
+    } catch {
+      // Non-blocking fallback: protocol instructions remain available.
+    } finally {
+      saveState(state);
+    }
+  });
+  } catch {
+    // If hook registration fails, stop the event subscription so nothing leaks.
+    controller.abort();
+  }
+
+  return () => controller.abort();
+};
+
+// V2 plugin definition. OpenCode V2 reads the default export's id and setup();
+// V1 reads server() and ignores the V2 fields.
+export default {
+  id: 'mind-automation',
+  setup: buildV2Setup,
+  server: MindAutomationPlugin,
 };
 `;
 }
