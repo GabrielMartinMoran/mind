@@ -33,6 +33,7 @@ Example:
 - Fixed OpenCode V2 automation to resolve one project space per canonical project path. The event's `location.project.canonical` now takes precedence over `location.directory`, so continuity artifacts no longer land in `projects/<event-directory>` when events come from a nested or different directory.
 - Fixed OpenCode V2 automation writing plugin state for every streamed event. State is now written only after state-changing events (`session.created`, compaction, `session.deleted`), and the checkpoint, summary, and handled maps are capped to the newest 400 entries.
 - Fixed OpenCode V2 session id extraction to skip empty or non-string fields so later fallbacks still resolve (for example, an empty `payload.sessionID` no longer masks `payload.sessionId`).
+- Fixed OpenCode V1 automation using the bus event id instead of the session id. The generated plugin now resolves the session identity from V1 event `properties` (`properties.sessionID`, `properties.session.id`, or `properties.info.id`) before falling back to the legacy event id, so checkpoint dedupe keys and session summary names use the real session.
 
 ## [1.6.0] - 2026-06-30
 

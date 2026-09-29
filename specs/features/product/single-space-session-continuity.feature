@@ -41,3 +41,8 @@ Feature: Single-space session continuity
     When the compaction hook runs for that session
     Then one prudent continuity block is added to the system context
     And a second compaction hook for the same session within the minimum interval adds no block
+
+  Scenario: OpenCode V1 automation uses the underlying session identity
+    Given an OpenCode V1 session event carrying its session id under properties
+    When prudent automation extracts the session identity
+    Then the session id is used instead of the event id

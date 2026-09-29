@@ -73,17 +73,34 @@ function extractSessionId(payload) {
 
   // V2 stream events carry the session id under event.data.sessionID.
   const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+  // V1 bus events carry it under event.properties; session.created/deleted
+  // expose properties.sessionID or properties.info.id. properties.id is
+  // intentionally ignored because it can be an event payload id.
+  const properties =
+    payload.properties && typeof payload.properties === 'object' ? payload.properties : {};
+  const propertiesSession =
+    properties.session && typeof properties.session === 'object' ? properties.session : {};
+  const propertiesInfo =
+    properties.info && typeof properties.info === 'object' ? properties.info : {};
   const nested = payload.session && typeof payload.session === 'object' ? payload.session : {};
 
-  // Resolution order: direct session fields, V2 event data, legacy event id,
-  // then the nested session object. Empty or non-string values never block
-  // later fallbacks.
+  // Resolution order: direct session fields, V2 event data, V1 event
+  // properties, legacy event id, then the nested session object. Empty or
+  // non-string values never block later fallbacks.
   const resolved = firstNonEmptyString(
     payload.sessionID,
     payload.sessionId,
     data.sessionID,
     data.sessionId,
     data.id,
+    properties.sessionID,
+    properties.sessionId,
+    propertiesSession.id,
+    propertiesSession.sessionID,
+    propertiesSession.sessionId,
+    propertiesInfo.id,
+    propertiesInfo.sessionID,
+    propertiesInfo.sessionId,
     payload.id,
     nested.id,
     nested.sessionID,

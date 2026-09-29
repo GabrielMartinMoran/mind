@@ -80,17 +80,22 @@ function countOccurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
 }
 
-type GeneratedV2Module = {
+type GeneratedV1PluginHooks = {
+  event: (input: unknown) => Promise<void>;
+};
+
+type GeneratedPluginModule = {
   default: { setup: (ctx: unknown) => Promise<() => void> };
+  MindAutomationPlugin: (ctx: unknown) => Promise<GeneratedV1PluginHooks>;
 };
 
 async function importGeneratedPluginIn(
   pluginDir: string,
   mindPath: string
-): Promise<GeneratedV2Module> {
+): Promise<GeneratedPluginModule> {
   const filePath = join(pluginDir, 'index.mjs');
   await Bun.write(filePath, buildOpenCodeAutomationPlugin(mindPath));
-  return (await import(filePath)) as GeneratedV2Module;
+  return (await import(filePath)) as GeneratedPluginModule;
 }
 
 interface FakeV2Ctx {
@@ -719,6 +724,31 @@ export const handlers = {
     expect(extractSessionId({ sessionId: 'ses_legacy' })).toBe('ses_legacy');
     // Legacy top-level id when no session field is present.
     expect(extractSessionId({ id: 'legacy_id' })).toBe('legacy_id');
+    // V1 bus events carry the session id under properties; the event id must
+    // never win over the session identity.
+    expect(
+      extractSessionId({
+        id: 'evt_1',
+        type: 'session.created',
+        properties: { sessionID: 'ses_v1', info: { id: 'ses_v1' } },
+      })
+    ).toBe('ses_v1');
+    expect(
+      extractSessionId({
+        id: 'evt_2',
+        type: 'session.deleted',
+        properties: { info: { id: 'ses_v1b' } },
+      })
+    ).toBe('ses_v1b');
+    expect(extractSessionId({ id: 'evt_3', properties: { session: { id: 'ses_v1c' } } })).toBe(
+      'ses_v1c'
+    );
+    expect(
+      extractSessionId({ id: 'evt_4', properties: { sessionID: '', sessionId: 'ses_v1d' } })
+    ).toBe('ses_v1d');
+    // properties.id is ambiguous (it is the event payload id on some events)
+    // and must not be used as a session id.
+    expect(extractSessionId({ id: 'evt_5', properties: { id: 'evt_properties' } })).toBe('evt_5');
     // Nested session object.
     expect(extractSessionId({ session: { id: 'ses_nested' } })).toBe('ses_nested');
     expect(extractSessionId({ session: { sessionID: 'ses_nested2' } })).toBe('ses_nested2');
@@ -1071,5 +1101,42 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
       cleanup();
       rmSync(pluginDir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('OpenCode prudent automation plugin behavior (V1)', () => {
+  const stateFilePath = (pluginDir: string) => join(pluginDir, '.mind-automation-state.json');
+
+  test('resolves the V1 session identity from properties instead of the event id', async () => {
+    const { binPath, logPath } = createFakeMindBin(tempHome);
+    const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-v1-'));
+    const projectDir = join(tempHome, 'testproj');
+    mkdirSync(projectDir, { recursive: true });
+    const mod = await importGeneratedPluginIn(pluginDir, binPath);
+
+    const hooks = await mod.MindAutomationPlugin({ directory: projectDir, worktree: projectDir });
+    await hooks.event({
+      event: {
+        id: 'evt_x',
+        type: 'session.created',
+        properties: { sessionID: 'ses_v1beh', info: { id: 'ses_v1beh' } },
+      },
+    });
+
+    await waitFor(
+      () => readMindLog(logPath).includes('create projects/testproj'),
+      'V1 checkpoint scaffold'
+    );
+    expect(readMindLog(logPath)).toContain('create projects/testproj');
+
+    // The V1 handler saves state synchronously in its finally block.
+    const statePath = stateFilePath(pluginDir);
+    await waitFor(() => existsSync(statePath), 'V1 plugin state file');
+    const state = JSON.parse(readFileSync(statePath, 'utf-8')) as {
+      checkpoints: Record<string, number>;
+    };
+    const checkpointKeys = Object.keys(state.checkpoints);
+    expect(checkpointKeys).toContain('projects/testproj:ses_v1beh');
+    expect(checkpointKeys.some(key => key.includes('evt_x'))).toBe(false);
   });
 });
