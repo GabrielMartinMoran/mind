@@ -50,8 +50,8 @@ FTS5 full-text search, metadata filters, tags, links, and a 3-tier memory
 model (T1 hot, T2 warm, T3 cold) to keep saved context useful over
 time.
 
-If you want semantic search, you can enable optional OpenAI embeddings. They
-are off by default.
+If you want semantic search, you can enable optional embeddings from OpenAI or
+OpenRouter. They are off by default.
 
 ## Installation
 
@@ -153,16 +153,21 @@ Mind ships with a `.env.example` that contains all configurable options. The ins
 
 Edit `.env` to customize your setup:
 
-| Variable         | Default   | Description                             |
-| ---------------- | --------- | --------------------------------------- |
-| `MIND_PORT`      | `30303`   | Port for the web server                 |
-| `MIND_DATA_DIR`  | `data/`   | Directory for SQLite database and data  |
-| `MIND_RAG`       | _(empty)_ | Set to `true` to enable semantic search |
-| `OPENAI_API_KEY` | _(empty)_ | Your OpenAI API key (required for RAG)  |
+| Variable                  | Default   | Description                                                  |
+| ------------------------- | --------- | ------------------------------------------------------------ |
+| `MIND_PORT`               | `30303`   | Port for the web server                                      |
+| `MIND_DATA_DIR`           | `data/`   | Directory for SQLite database and data                       |
+| `MIND_RAG`                | _(empty)_ | Set to `true` to enable semantic search                      |
+| `MIND_EMBEDDING_PROVIDER` | `openai`  | Embedding provider for RAG: `openai` or `openrouter`         |
+| `OPENAI_API_KEY`          | _(empty)_ | Your OpenAI API key (required for RAG with `openai`)         |
+| `OPENROUTER_API_KEY`      | _(empty)_ | Your OpenRouter API key (required for RAG with `openrouter`) |
 
 **RAG / semantic search setup:**
 
-To enable AI-powered semantic search:
+To enable AI-powered semantic search, set `MIND_RAG=true` and provide the API
+key for your embedding provider. Mind uses OpenAI by default.
+
+OpenAI (default):
 
 ```bash
 # In .env:
@@ -170,9 +175,25 @@ MIND_RAG=true
 OPENAI_API_KEY=sk-your-key-here
 ```
 
-When enabled, memories are embedded using OpenAI's
-`text-embedding-3-small` model and combined with full-text search for hybrid
-retrieval.
+OpenRouter:
+
+```bash
+# In .env:
+MIND_RAG=true
+MIND_EMBEDDING_PROVIDER=openrouter
+OPENROUTER_API_KEY=sk-or-your-key-here
+```
+
+Mind embeds memories with `text-embedding-3-small` (OpenAI) or
+`openai/text-embedding-3-small` (OpenRouter) and combines the embeddings with
+full-text search for hybrid retrieval. Both providers return 1536-dimension
+vectors, so switching providers keeps existing stored embeddings valid; Mind
+doesn't re-embed memories.
+
+Provider values are matched case-insensitively. Mind uses only the selected
+provider's key. If `MIND_EMBEDDING_PROVIDER` holds an unsupported value, RAG
+stays disabled and Mind doesn't fall back to another provider. Run
+`mind status` to see the active provider or the reason RAG is disabled.
 
 ## Basic CLI example
 

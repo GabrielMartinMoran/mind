@@ -27,6 +27,14 @@ Example:
 
 ## [Unreleased]
 
+### Added
+
+- Added embedding provider selection for RAG with `MIND_EMBEDDING_PROVIDER` (`openai` default or `openrouter`). OpenRouter uses `OPENROUTER_API_KEY` and the `openai/text-embedding-3-small` model slug. Both providers return 1536-dimension vectors, so existing stored embeddings remain valid without re-embedding.
+
+### Changed
+
+- Changed `mind status` to report the active RAG embedding provider with provider-specific hints for a missing key, an invalid provider value, or disabled RAG.
+
 ### Fixed
 
 - Fixed OpenCode automation plugin loading on OpenCode V2. The generated `~/.config/opencode/plugins/mind-automation.js` default-exports a V2 plugin definition (`id` + `setup`) and registers V2 session hooks (`context`, `compaction`) plus `ctx.event.subscribe`, while keeping the V1 `server()` hooks for backward compatibility. V2 changed the plugin API and rejects V1 modules with `Plugin must export a default definition with an id and an effect or setup function`. The object-entrypoint V1 form requires OpenCode 1.18.29 or newer.

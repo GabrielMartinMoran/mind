@@ -25,10 +25,12 @@ export const CONFIG = {
   legacyJsonPath: path.join(resolvedDataDir, 'brain.json'),
   /** Log retention in minutes (default: 6 hours = 360 minutes). Override with MIND_LOG_RETENTION_MINUTES. */
   logRetentionMinutes: parseInt(process.env.MIND_LOG_RETENTION_MINUTES ?? '360', 10),
-  /** RAG: Enable semantic search with OpenAI embeddings */
+  /** RAG: Enable semantic search with a selectable embeddings provider (MIND_EMBEDDING_PROVIDER) */
   rag: {
     enabled: process.env.MIND_RAG === 'true',
-    apiKey: process.env.OPENAI_API_KEY ?? null,
+    provider: process.env.MIND_EMBEDDING_PROVIDER ?? null,
+    openaiApiKey: process.env.OPENAI_API_KEY ?? null,
+    openrouterApiKey: process.env.OPENROUTER_API_KEY ?? null,
     model: 'text-embedding-3-small',
   },
 };

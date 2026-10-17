@@ -1,66 +1,84 @@
 import { CONFIG } from '../config';
 
-export type EmbeddingVector = number[];
+import { resolveEmbeddingRuntime, type ResolvedEmbeddingRuntime } from './embedding-providers';
+
+export type EmbeddingVector = number[] | Float32Array;
+
+const MAX_ATTEMPTS = 3;
 
 export function isRagEnabled(): boolean {
-  return CONFIG.rag.enabled && !!CONFIG.rag.apiKey;
+  return resolveEmbeddingRuntime(CONFIG.rag) !== null;
 }
 
-export async function getEmbedding(text: string): Promise<EmbeddingVector | null> {
-  if (!isRagEnabled()) {
+export async function getEmbedding(text: string): Promise<Float32Array | null> {
+  const runtime = resolveEmbeddingRuntime(CONFIG.rag);
+  if (!runtime) {
     return null;
   }
 
-  const maxAttempts = 3;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+  return requestEmbedding(text, runtime);
+}
+
+export async function requestEmbedding(
+  input: string,
+  runtime: ResolvedEmbeddingRuntime
+): Promise<Float32Array | null> {
+  const { provider, apiKey } = runtime;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const response = await fetch('https://api.openai.com/v1/embeddings', {
+      const response = await fetch(provider.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${CONFIG.rag.apiKey}`,
+          Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          model: CONFIG.rag.model,
-          input: text,
+          model: provider.model,
+          input,
+          encoding_format: 'float',
         }),
       });
 
       if (!response.ok) {
-        const errMsg = `OpenAI API error: ${response.status} ${response.statusText}`;
-        const isLast = attempt === maxAttempts;
-        if (isLast) {
-          console.error(`[RAG] ${errMsg} (attempt ${attempt}/${maxAttempts}) — giving up`);
-        } else {
-          console.warn(`[RAG] ${errMsg} (attempt ${attempt}/${maxAttempts}) — retrying...`);
-        }
+        const isLast = attempt === MAX_ATTEMPTS;
+        logAttempt(
+          `${provider.label} API error: ${response.status} ${response.statusText}`,
+          attempt,
+          isLast
+        );
         if (isLast) return null;
-        await new Promise(r => setTimeout(r, 1000 * attempt));
-        continue;
-      }
-
-      const data = (await response.json()) as {
-        data: { embedding: number[] }[];
-      };
-
-      return data.data[0]?.embedding ?? null;
-    } catch (e: any) {
-      const isLast = attempt === maxAttempts;
-      if (isLast) {
-        console.error(
-          `[RAG] Failed to get embedding: ${e.message} (attempt ${attempt}/${maxAttempts}) — giving up`
-        );
       } else {
-        console.warn(
-          `[RAG] Failed to get embedding: ${e.message} (attempt ${attempt}/${maxAttempts}) — retrying...`
-        );
+        const data = (await response.json()) as {
+          data: { embedding: number[] }[];
+        };
+        const embedding = data.data[0]?.embedding;
+        return embedding ? new Float32Array(embedding) : null;
       }
+    } catch (e: any) {
+      const isLast = attempt === MAX_ATTEMPTS;
+      logAttempt(`Failed to get embedding: ${e.message}`, attempt, isLast);
       if (isLast) return null;
-      await new Promise(r => setTimeout(r, 1000 * attempt));
     }
+
+    await delayBeforeRetry(attempt);
   }
 
   return null;
+}
+
+function logAttempt(reason: string, attempt: number, isLast: boolean): void {
+  const outcome = isLast ? 'giving up' : 'retrying...';
+  const message = `[RAG] ${reason} (attempt ${attempt}/${MAX_ATTEMPTS}) — ${outcome}`;
+  if (isLast) {
+    console.error(message);
+  } else {
+    console.warn(message);
+  }
+}
+
+function delayBeforeRetry(attempt: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, 1000 * attempt));
 }
 
 export function cosineSimilarity(a: EmbeddingVector, b: EmbeddingVector): number {

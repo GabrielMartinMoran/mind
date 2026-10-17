@@ -1,6 +1,7 @@
 import { describe, expect, test, afterEach } from 'bun:test';
 
 import { executeCommand } from '../src/cli/command-executor';
+import { style } from '../src/helpers/style';
 import type { MindStore } from '../src/store/mind-store';
 
 import { mockedLogger } from './mocks/mocked-logger';
@@ -479,6 +480,19 @@ describe('Command Executor — Status', () => {
     expect(logs.some(l => l.message.includes('Status'))).toBe(true);
     // Should show tier labels
     expect(logs.some(l => l.message.includes('T1') || l.message.includes('hot'))).toBe(true);
+  });
+
+  test('should render the provider-aware RAG status line', () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+
+    executeCommand(['status'], store, logger);
+
+    const ragLine = `   ${style('RAG:', ['bold'])} disabled (set MIND_RAG=true)`;
+    const messages = logger.getLogs().map(entry => entry.message);
+
+    expect(messages).toContain(ragLine);
+    expect(messages.join('\n')).not.toContain('+ OPENAI_API_KEY');
   });
 
   test('should run space-scoped status', () => {
