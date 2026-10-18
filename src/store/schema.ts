@@ -1,6 +1,14 @@
-// ── SQLite schema and migrations for Mind v8 ──
+// ── SQLite schema and migrations for Mind v10 ──
+//
+// v10 is the FINAL consolidated schema. The intermediate dev-only schemas v10
+// (with a per-document search-term dictionary) and v11 (dictionary retired)
+// were never published; the last published schema was v9. v10 here is
+// functionally identical to the never-published dev v11: trigram index
+// `tokenize='trigram remove_diacritics 1'`, `content=''`, `contentless_delete=1`;
+// NO `search_terms` / `memory_terms` dictionary tables; fuzzy P-A; contentless
+// recovery via `delete-all` + repopulate.
 
-export const SCHEMA_VERSION = 8;
+export const SCHEMA_VERSION = 10;
 
 // Core table creation only — no indexes that reference columns not present in earlier versions
 export const SCHEMA_SQL = `
@@ -66,6 +74,19 @@ CREATE TABLE IF NOT EXISTS links (
 CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts USING fts5(
     name, content,
     tokenize='porter unicode61'
+);
+
+-- Trigram substring index (schema v10): standalone, synced manually like
+-- memories_fts. remove_diacritics=1 folds accents so accented and unaccented
+-- queries match both ways (R1); content='' plus contentless_delete=1 makes it a
+-- contentless index with delete support (reads return NULL; 'rebuild' is
+-- unsupported — recovery uses delete-all + repopulate).
+-- rowid is linked to memories.fts_id (not the UUID primary key).
+CREATE VIRTUAL TABLE IF NOT EXISTS memories_fts_trigram USING fts5(
+    name, content,
+    tokenize='trigram remove_diacritics 1',
+    content='',
+    contentless_delete=1
 );
 
 -- fts_id sequence: transactional integer assignment for FTS5 rowid
@@ -361,6 +382,44 @@ PRAGMA foreign_keys = ON;
 UPDATE meta SET value = '8' WHERE key = 'schema_version';
 `;
 
+// ── Migration: v8 → v9 ──
+// Adds the standalone trigram FTS index for substring / typo tolerance and
+// populates it from existing memories. Synced manually like memories_fts.
+const MIGRATE_V8_TO_V9 = `
+DELETE FROM memories_fts_trigram;
+INSERT INTO memories_fts_trigram(rowid, name, content)
+SELECT fts_id, name, content FROM memories;
+UPDATE meta SET value = '9' WHERE key = 'schema_version';
+`;
+
+// ── Migration: v9 → v10 (FINAL schema) ──
+// Builds the definitive v10 state directly from the published v9 schema:
+// DROP the old trigram index, CREATE it with `remove_diacritics 1` (R1) and
+// `content='', contentless_delete=1` (trigram size), repopulate it from
+// `memories`, and bump the version. There is NO dictionary: the dev-only
+// `search_terms` / `memory_terms` tables were never published, so this
+// migration never creates or drops them.
+const MIGRATE_V9_TO_V10 = `
+DROP TABLE memories_fts_trigram;
+CREATE VIRTUAL TABLE memories_fts_trigram USING fts5(
+    name, content,
+    tokenize='trigram remove_diacritics 1',
+    content='',
+    contentless_delete=1
+);
+INSERT INTO memories_fts_trigram(rowid, name, content)
+SELECT fts_id, name, content FROM memories;
+UPDATE meta SET value = '10' WHERE key = 'schema_version';
+`;
+
+// ── Migration: v10 → v11 (REMOVED) ──
+// The dev-only v11 schema retired a per-document dictionary that was prototyped
+// in an equally dev-only v10. Neither was ever published, so the final v10
+// (SCHEMA_SQL + MIGRATE_V9_TO_V10) already IS the functional state of that dev
+// v11. The dictionary migration and its guard were deleted rather than kept as
+// permanent compatibility. Dev databases stamped `schema_version = 11` are
+// normalized to 10 with `scripts/normalize-dev-db.ts` (see that script).
+
 export function initializeDatabase(db: import('bun:sqlite').Database): void {
   db.exec('PRAGMA journal_mode = WAL;');
   db.exec('PRAGMA synchronous = NORMAL;');
@@ -414,6 +473,14 @@ export function initializeDatabase(db: import('bun:sqlite').Database): void {
 
   if (currentVersion < 8) {
     db.exec(MIGRATE_V7_TO_V8);
+  }
+
+  if (currentVersion < 9) {
+    db.exec(MIGRATE_V8_TO_V9);
+  }
+
+  if (currentVersion < 10) {
+    db.exec(MIGRATE_V9_TO_V10);
   }
 
   // Always apply indexes after migrations — for v8+, the migration creates

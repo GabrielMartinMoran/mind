@@ -58,7 +58,7 @@ export function createMemoryTools(store: MindStore): MemoryTools {
     memory_query: {
       schema: MemoryQuerySchema,
       description:
-        'Query memories by metadata, date, or full-text search (search param uses FTS5 syntax). Use space="*" for all spaces.',
+        'Query memories by metadata, date, or relevance search (the search param supports quoted phrases, OR/AND/NOT and a trailing * prefix; results include confidence and methods). Use space="*" for all spaces.',
       annotations: { readOnlyHint: true, openWorldHint: false },
       handler: queryMemoriesHandler(store),
     },

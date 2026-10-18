@@ -955,7 +955,7 @@ describe('MCP Memory Tools - links_to Best-Effort (Phase 1a)', () => {
 });
 
 describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () => {
-  test('memory_query with search parameter returns FTS5 results', async () => {
+  test('memory_query with search parameter returns unified-pipeline results', async () => {
     store = createTestStore();
     store.createSpace('projects/mind', 'Mind project', ['test']);
     await store.addMemory('projects/mind', 'auth-jwt', 'JWT authentication implementation', {
@@ -971,8 +971,13 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
     expect(res.memories).toBeDefined();
     expect(res.memories.length).toBeGreaterThan(0);
     // Should find the memory with JWT in content
-    expect(res.memories.some((m: { name: string }) => m.name === 'auth-jwt')).toBe(true);
-    expect(res.search_method).toBe('fts5');
+    const found = res.memories.find((m: { name: string }) => m.name === 'auth-jwt');
+    expect(found).toBeDefined();
+    // New contract (D12): score + confidence + methods provenance per result.
+    expect(found.score).toBeGreaterThan(0);
+    expect(found.confidence).toBe('high');
+    expect(found.methods).toContain('all');
+    expect(res.search_method).toBe('mixed');
   });
 
   test('memory_query without search uses SQL filters only', async () => {
@@ -1012,8 +1017,65 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
   });
 });
 
+describe('MCP Memory Tools - memory_query limits (D6)', () => {
+  test('defaults to 25 results and reports the total', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind-limits', 'Limits', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('projects/mind-limits', `m-${i}`, 'shared token content', {
+        tags: ['test'],
+      });
+    }
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({
+      space: 'projects/mind-limits',
+      search: 'token',
+    });
+
+    expect(res.total).toBe(30);
+    expect(res.memories.length).toBe(25);
+    expect(res.limit).toBe(25);
+    expect(res.offset).toBe(0);
+  });
+
+  test('honours explicit limit and offset', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind-limits-2', 'Limits', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('projects/mind-limits-2', `m-${i}`, 'shared token content', {
+        tags: ['test'],
+      });
+    }
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({
+      space: 'projects/mind-limits-2',
+      search: 'token',
+      limit: 10,
+      offset: 5,
+    });
+
+    expect(res.memories.length).toBe(10);
+    expect(res.offset).toBe(5);
+  });
+
+  test('space "*" searches across all spaces', async () => {
+    store = createTestStore();
+    store.createSpace('projects/a', 'A', ['test']);
+    store.createSpace('projects/b', 'B', ['test']);
+    await store.addMemory('projects/a', 'a1', 'shared token', { tags: ['test'] });
+    await store.addMemory('projects/b', 'b1', 'shared token', { tags: ['test'] });
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({ space: '*', search: 'token' });
+
+    expect(res.memories.map((m: any) => m.space).sort()).toEqual(['projects/a', 'projects/b']);
+  });
+});
+
 describe('MCP Memory Tools - memory_query LIKE fallback (Phase 1b LIKE fix)', () => {
-  test('memory_query LIKE fallback hit: embedded substring not found by FTS5 falls through to LIKE', async () => {
+  test('memory_query substring hit: embedded substring found by the unified pipeline', async () => {
     store = createTestStore();
     store.createSpace('projects/mind-mcp-fallback', 'Test', ['test']);
     await store.addMemory(
@@ -1031,10 +1093,12 @@ describe('MCP Memory Tools - memory_query LIKE fallback (Phase 1b LIKE fix)', ()
       search: 'duablevalue',
     });
 
-    expect(res.search_method).toBe('like');
+    expect(res.search_method).toBe('trigram');
     expect(res.memories).toBeDefined();
     expect(res.memories.length).toBe(1);
     expect(res.memories[0]?.name).toBe('test-memory');
+    expect(res.memories[0]?.confidence).toBe('medium');
+    expect(res.memories[0]?.methods).toContain('trigram');
   });
 
   test('memory_query no-hit: nonexistent search term returns empty results without error', async () => {
@@ -1086,7 +1150,7 @@ describe('MCP Search Tool Removed (Phase 1b Step 2)', () => {
       search: 'hello',
     });
     expect(res.memories.length).toBe(1);
-    expect(res.search_method).toBe('fts5');
+    expect(res.search_method).toBe('mixed');
   });
 });
 

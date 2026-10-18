@@ -1,4 +1,5 @@
 import type { MindStore } from '../../../store/mind-store';
+import { toCompatSearchMethod } from '../../../store/shared';
 import type { Tier } from '../../../types';
 import { presentMemoryResponse } from '../../helpers/memory-response';
 import { buildYamlContent } from '../../helpers/yaml-response';
@@ -12,11 +13,11 @@ interface MemoryQueryPayload {
   search_method?: string;
 }
 
-function applyDateFilters(
-  results: { changed_at: string }[],
+function applyDateFilters<T extends { changed_at: string }>(
+  results: T[],
   from?: string,
   to?: string
-): typeof results {
+): T[] {
   let filtered = results;
 
   if (from) {
@@ -86,16 +87,20 @@ export function queryMemoriesHandler(store: MindStore) {
     let search_method: string | undefined;
 
     if (parsed.search) {
-      const searchResult = await store.searchFallback(parsed.search, {
+      // Unified pipeline (D1): fused ranking with confidence/methods provenance.
+      const results = await store.search(parsed.search, {
         space: spaceFilter,
         tag: parsed.tag,
         tier: tierFilter as Tier | undefined,
       });
 
-      const filteredResults = applyDateFilters(searchResult.results, parsed.from, parsed.to);
+      const filteredResults = applyDateFilters(results, parsed.from, parsed.to);
 
       totalCount = filteredResults.length;
-      search_method = searchResult.search_method;
+      // Compatibility field: primary channel of the top-ranked result (D5).
+      search_method = filteredResults[0]
+        ? toCompatSearchMethod(filteredResults[0].methods)
+        : undefined;
 
       const offset = parsed.offset ?? 0;
       const limit = parsed.limit ?? 25;

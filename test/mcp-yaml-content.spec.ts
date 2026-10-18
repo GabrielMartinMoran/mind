@@ -127,6 +127,20 @@ describe('MCP YAML content stage 1', () => {
     expectNoBoundaryLeaks(memoryQuery.structuredContent);
     expect(memoryQuery.structuredContent).not.toHaveProperty('search_method');
 
+    // Search results expose confidence + methods, with YAML parity retained.
+    const memorySearch: any = await memoryTools.memory_query.handler({
+      space: 'projects/mind',
+      search: 'yaml',
+    });
+    expectYamlParity(memorySearch);
+    expectNoBoundaryLeaks(memorySearch.structuredContent);
+    expect(typeof memorySearch.structuredContent?.search_method).toBe('string');
+    const searchedItem = memorySearch.structuredContent?.memories?.[0];
+    expect(searchedItem).toBeDefined();
+    expect(searchedItem.confidence).toMatch(/^(high|medium|low)$/);
+    expect(Array.isArray(searchedItem.methods)).toBe(true);
+    expect(searchedItem.score).toBeGreaterThan(0);
+
     const checkpointSave = await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'Ship stage 1',

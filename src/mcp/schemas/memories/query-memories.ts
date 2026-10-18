@@ -6,7 +6,7 @@ export const MemoryQuerySchema = z.object({
     .string()
     .optional()
     .describe(
-      'Search query using FTS5 syntax. When provided, performs full-text search on name and content.'
+      'Relevance search query supporting quoted "phrases", OR / AND / NOT operators, and a trailing * prefix wildcard. Malformed operator usage degrades to a safe literal match. Each result includes score, a confidence bucket (high|medium|low) and the matched methods.'
     ),
   tag: z.string().optional().describe('Filter by tag.'),
   tier: z

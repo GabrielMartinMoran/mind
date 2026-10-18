@@ -224,7 +224,7 @@ describe('UUID primary ID migration (v7 → v8)', () => {
     const version = db.query("SELECT value FROM meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(version.value).toBe('8');
+    expect(version.value).toBe('10');
 
     // Verify all spaces have UUIDs
     const spaces = db
@@ -506,7 +506,7 @@ describe('UUID primary ID migration (v7 → v8)', () => {
     const version = db.query("SELECT value FROM meta WHERE key = 'schema_version'").get() as {
       value: string;
     };
-    expect(version.value).toBe('8');
+    expect(version.value).toBe('10');
 
     // Verify memory table has UUID id and fts_id columns
     const tableInfo = db.query('PRAGMA table_info(memories)').all() as any[];

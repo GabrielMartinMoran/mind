@@ -17,6 +17,8 @@ import type {
   HotMemorySummary,
 } from '../types';
 
+import type { ScoredSearchResult } from './repositories/search-repository';
+
 export interface LinkedMemorySummary {
   id: string;
   name: string;
@@ -36,6 +38,14 @@ export interface MemoryPatchInput {
   removeTags?: string[];
   addLinksToIds?: string[];
   removeLinksToIds?: string[];
+}
+
+/** Optional pagination for relevance search. Surfaces supply their own defaults. */
+export interface SearchPagination {
+  /** Maximum results to return; clamped by the store to 1..500. Omit for unbounded. */
+  limit?: number;
+  /** Zero-based offset into the ranked results. */
+  offset?: number;
 }
 
 export interface MindStore {
@@ -119,8 +129,10 @@ export interface MindStore {
   getLinks(memoryId: string): Link[];
 
   // Search (T4 memories are no longer applicable - T3 is unlimited)
-  // When RAG is enabled, returns FTS results merged with semantic similarity scores
-  search(query: string, filter?: SearchFilter): Promise<SearchResult[]>;
+  // Unified multi-channel pipeline (D1). Returns fused score, confidence and
+  // provenance per result. Optional pagination applies after ranking; when
+  // omitted the full ordered set is returned (the eval harness relies on this).
+  search(query: string, filter?: SearchFilter & SearchPagination): Promise<ScoredSearchResult[]>;
 
   // Search with fallback chain: FTS5 → LIKE → embeddings; returns results + search_method
   searchFallback(

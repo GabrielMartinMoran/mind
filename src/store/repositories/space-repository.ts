@@ -131,10 +131,11 @@ export function createSpaceRepository(db: Database, fts: FtsHelper): SpaceReposi
       throw new Error(`Space "${name}" does not exist. Create it first with space_create tool.`);
 
     // Clean FTS entries before cascade delete removes memories
-    const mems = db.query('SELECT fts_id FROM memories WHERE space_id = ?').all(space.id) as {
+    const mems = db.query('SELECT id, fts_id FROM memories WHERE space_id = ?').all(space.id) as {
+      id: string;
       fts_id: number;
     }[];
-    for (const m of mems) fts.delete(m.fts_id);
+    for (const m of mems) fts.delete(m.id, m.fts_id);
     db.run('DELETE FROM spaces WHERE name = ?', [name]);
   }
 

@@ -1,10 +1,10 @@
 Feature: search-parameter
 
-  Scenario: memory_query with search parameter returns FTS5 results
+  Scenario: memory_query with search parameter returns pipeline results
     Given a space "projects/mind" with memory "auth-jwt" with content about JWT authentication
     When I call memory_query with space="projects/mind", search="JWT"
     Then I receive memories containing "JWT" in name or content
-    And the response includes search_method: "fts5"
+    And the response includes search_method reflecting the contributing channels
 
   Scenario: memory_query without search uses SQL filters only
     Given a space "projects/mind" with memories with different tags

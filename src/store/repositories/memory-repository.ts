@@ -205,7 +205,7 @@ export function createMemoryRepository(
         [id, ftsId, spaceId, name, content, tier, pinned ? 1 : 0, ts, ts, ts]
       );
 
-      fts.insert(ftsId, name, content);
+      fts.insert(id, ftsId, name, content);
 
       if (opts?.tags && opts.tags.length > 0) {
         const normalizedTags = normalizeTags(opts.tags);
@@ -371,7 +371,7 @@ export function createMemoryRepository(
       const mem = db.query('SELECT fts_id FROM memories WHERE id = ?').get(id) as {
         fts_id: number;
       };
-      fts.update(mem.fts_id, updates.name ?? row.name, updates.content ?? row.content);
+      fts.update(id, mem.fts_id, updates.name ?? row.name, updates.content ?? row.content);
     }
 
     // Regenerate embedding if RAG is enabled
@@ -425,7 +425,7 @@ export function createMemoryRepository(
         const mem = db.query('SELECT fts_id FROM memories WHERE id = ?').get(id) as {
           fts_id: number;
         };
-        fts.update(mem.fts_id, nextName, nextContent);
+        fts.update(id, mem.fts_id, nextName, nextContent);
       }
     });
 
@@ -450,14 +450,14 @@ export function createMemoryRepository(
     const ftsId = (
       db.query('SELECT fts_id FROM memories WHERE id = ?').get(id) as { fts_id: number }
     )?.fts_id;
-    if (ftsId) fts.delete(ftsId);
+    if (ftsId) fts.delete(id, ftsId);
     db.run('DELETE FROM memories WHERE id = ?', [id]);
   }
 
   function deleteMemoryByName(space: string, name: string): void {
     const mem = getMemory(space, name);
     if (!mem) throw new Error(`Memory "${name}" not found in space "${space}"`);
-    fts.delete(mem.fts_id!);
+    fts.delete(mem.id, mem.fts_id!);
     db.run('DELETE FROM memories WHERE id = ?', [mem.id]);
   }
 
@@ -604,7 +604,7 @@ export function createMemoryRepository(
         const mem = db.query('SELECT fts_id FROM memories WHERE id = ?').get(id) as {
           fts_id: number;
         };
-        fts.update(mem.fts_id, patch.name ?? row.name, patch.content ?? row.content);
+        fts.update(id, mem.fts_id, patch.name ?? row.name, patch.content ?? row.content);
       }
 
       if (patch.pinned !== undefined) {
@@ -743,7 +743,7 @@ export function createMemoryRepository(
                              VALUES (?, ?, ?, ?, ?, 2, ?, ?, ?)`,
               [id, ftsId, spaceId, memName, memory.description ?? '', ts, ts, ts]
             );
-            fts.insert(ftsId, memName, memory.description ?? '');
+            fts.insert(id, ftsId, memName, memory.description ?? '');
           }
         }
       }

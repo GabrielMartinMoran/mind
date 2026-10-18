@@ -62,4 +62,4 @@ Feature: MCP Search Tools
       And each result item exposes changed_at
       And each result item does not expose created_at
       And each result item does not expose updated_at
-      And search_method behavior remains unchanged
+      And search_method reflects the unified pipeline's contributing channels

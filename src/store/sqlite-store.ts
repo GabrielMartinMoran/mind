@@ -23,31 +23,77 @@ import {
   unsubscribeFromLogs,
 } from './repositories';
 import { initializeDatabase } from './schema';
-import { FtsHelper } from './shared';
+import {
+  bumpStoreGeneration,
+  FtsHelper,
+  recoverTrigramIndex,
+  trigramIndexProblems,
+} from './shared';
 
-/**
- * Run a quick integrity check and attempt FTS rebuild if the database is corrupted.
- * Returns true if the database is usable, false if unrecoverable.
- */
-function ensureIntegrity(db: Database, dbPath: string): boolean {
+/** True when SQLite reports the file is structurally healthy. */
+function quickCheckOk(db: Database): boolean {
   try {
     const result = db.query('PRAGMA quick_check(1)').get() as { quick_check: string } | null;
-    if (result?.quick_check === 'ok') return true;
+    return result?.quick_check === 'ok';
   } catch {
-    // quick_check itself failed — DB is definitely corrupted
+    return false;
+  }
+}
+
+/** Logical drift in the derived search indexes (empty = healthy). */
+function searchIndexProblems(db: Database): string[] {
+  return trigramIndexProblems(db);
+}
+
+/**
+ * Repair the search indexes in place: the contentless trigram index is wiped
+ * with `'delete-all'` and repopulated from `memories` (its `'rebuild'` command
+ * is unsupported), and the main porter index keeps its `'rebuild'`. The store's
+ * folded-vocabulary cache (P-A) is invalidated afterwards so the next search
+ * reloads from the repaired index. Memory rows are never modified.
+ */
+function repairSearchIndexes(db: Database, rebuildMainFts: boolean): void {
+  if (rebuildMainFts) {
+    db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')");
+  }
+  recoverTrigramIndex(db);
+  bumpStoreGeneration(db);
+}
+
+/**
+ * Run a quick integrity check. When SQLite reports corruption, rebuild the
+ * search indexes and recheck. When SQLite is healthy but the search indexes
+ * have drifted, repair them best-effort and keep the database usable (a
+ * derived-index problem must never discard memory data). Returns true if the
+ * database is usable, false if unrecoverable (corrupt beyond index repair).
+ */
+function ensureIntegrity(db: Database, dbPath: string): boolean {
+  const structurallyHealthy = quickCheckOk(db);
+
+  if (structurallyHealthy) {
+    try {
+      if (searchIndexProblems(db).length > 0) {
+        console.error('[mind] Search index drift detected, repairing derived indexes...');
+        repairSearchIndexes(db, false);
+      }
+    } catch (e) {
+      // A derived-index problem must not take down the store; report and move on.
+      console.error(`[mind] Search index repair skipped: ${e}`);
+    }
+    return true;
   }
 
-  // Attempt FTS rebuild first (most common corruption source with manual FTS sync)
+  // Attempt FTS/trigram rebuild (most common corruption source with manual
+  // FTS sync), then recheck.
   try {
-    console.error('[mind] Database corruption detected, attempting FTS rebuild...');
-    db.exec("INSERT INTO memories_fts(memories_fts) VALUES('rebuild')");
-    const recheck = db.query('PRAGMA quick_check(1)').get() as { quick_check: string } | null;
-    if (recheck?.quick_check === 'ok') {
-      console.error('[mind] FTS rebuild succeeded, database recovered.');
+    console.error('[mind] Database corruption detected, attempting search index rebuild...');
+    repairSearchIndexes(db, true);
+    if (quickCheckOk(db) && searchIndexProblems(db).length === 0) {
+      console.error('[mind] Search index rebuild succeeded, database recovered.');
       return true;
     }
   } catch {
-    // FTS rebuild failed too
+    // Search index rebuild failed too
   }
 
   // Last resort: backup corrupt file and start fresh
@@ -68,6 +114,28 @@ function ensureIntegrity(db: Database, dbPath: string): boolean {
     console.error(`[mind] Failed to backup corrupt database: ${e}`);
   }
   return false;
+}
+
+/** Hard cap on a single search page (D6). */
+export const SEARCH_MAX_LIMIT = 500;
+
+/**
+ * Apply optional pagination to an already-ordered search result list.
+ *
+ * No default is applied at the engine level: when neither `limit` nor `offset`
+ * is provided the full ordered set is returned unchanged (the evaluation
+ * harness relies on this neutrality). When provided, `limit` is clamped to
+ * `[1, SEARCH_MAX_LIMIT]` and `offset` to `>= 0`. Callers that report a `total`
+ * keep the pre-slice count; this helper only slices.
+ */
+export function paginateSearchResults<T>(results: T[], limit?: number, offset?: number): T[] {
+  if (limit === undefined && offset === undefined) return results;
+
+  const safeOffset = Math.max(0, Math.trunc(offset ?? 0));
+  if (limit === undefined) return results.slice(safeOffset);
+
+  const safeLimit = Math.max(1, Math.min(SEARCH_MAX_LIMIT, Math.trunc(limit)));
+  return results.slice(safeOffset, safeOffset + safeLimit);
 }
 
 export function createSqliteStore(dbPath: string): MindStore {
@@ -224,7 +292,10 @@ export function createSqliteStore(dbPath: string): MindStore {
     getLinks: memoryId => linkRepo.getLinks(memoryId),
 
     // Search (delegated to SearchRepository)
-    search: (query, filter) => searchRepo.searchMemories(query, filter),
+    search: (query, filter) =>
+      searchRepo
+        .searchMemories(query, filter)
+        .then(results => paginateSearchResults(results, filter?.limit, filter?.offset)),
     searchFallback: (query, filter) => searchRepo.searchFallback(query, filter),
     queryMemories: filter => searchRepo.queryMemories(filter),
     queryMemoriesCount: filter => searchRepo.queryMemoriesCount(filter),

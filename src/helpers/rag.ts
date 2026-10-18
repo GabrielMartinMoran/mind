@@ -6,6 +6,36 @@ export type EmbeddingVector = number[] | Float32Array;
 
 const MAX_ATTEMPTS = 3;
 
+/**
+ * How long an in-memory breaker stays open after a query-time embedding
+ * failure. While open, semantic search is skipped entirely so a failing
+ * provider (e.g. an expired key) cannot trigger a retry storm on every query.
+ */
+export const SEMANTIC_BREAKER_TTL_MS = 5 * 60 * 1000;
+
+let semanticBreakerUntil = 0;
+
+/**
+ * True when a recent embedding failure should suppress further semantic
+ * attempts. `nowMs` is injectable so the TTL is testable without real time.
+ */
+export function isSemanticBreakerOpen(nowMs: number = Date.now()): boolean {
+  return nowMs < semanticBreakerUntil;
+}
+
+/** Open the semantic breaker for `ttlMs` from `nowMs`. */
+export function recordSemanticFailure(
+  nowMs: number = Date.now(),
+  ttlMs: number = SEMANTIC_BREAKER_TTL_MS
+): void {
+  semanticBreakerUntil = nowMs + ttlMs;
+}
+
+/** Close the semantic breaker (test helper / explicit recovery). */
+export function resetSemanticBreaker(): void {
+  semanticBreakerUntil = 0;
+}
+
 export function isRagEnabled(): boolean {
   return resolveEmbeddingRuntime(CONFIG.rag) !== null;
 }
@@ -16,7 +46,13 @@ export async function getEmbedding(text: string): Promise<Float32Array | null> {
     return null;
   }
 
-  return requestEmbedding(text, runtime);
+  const embedding = await requestEmbedding(text, runtime);
+  if (embedding === null) {
+    // Runtime was configured, so a null result is a real failure — trip the
+    // breaker so subsequent queries skip the provider instead of retrying.
+    recordSemanticFailure();
+  }
+  return embedding;
 }
 
 export async function requestEmbedding(

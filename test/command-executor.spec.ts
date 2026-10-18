@@ -7,6 +7,12 @@ import type { MindStore } from '../src/store/mind-store';
 import { mockedLogger } from './mocks/mocked-logger';
 import { createTestStore } from './mocks/test-store';
 
+const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
+
+function stripAnsi(value: string): string {
+  return value.replace(ANSI_PATTERN, '');
+}
+
 let store: MindStore & { cleanup: () => void };
 
 afterEach(() => {
@@ -416,6 +422,82 @@ describe('Command Executor — Search', () => {
     const logs = logger.getLogs();
     expect(logs.some(l => l.message.includes('proj-a') && l.message.includes('auth'))).toBe(true);
     expect(logs.some(l => l.message.includes('proj-b') && l.message.includes('auth'))).toBe(false);
+  });
+
+  test('should annotate each result with a confidence bucket marker', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'auth', 'JWT authentication with refresh tokens', {
+      tags: ['test'],
+    });
+
+    await executeCommand(['search', 'authentication'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    expect(logs.some(m => /\[(high|medium|low)\]/.test(m))).toBe(true);
+    expect(logs.some(m => m.includes('[high]'))).toBe(true);
+  });
+
+  test('should default to 25 results and report the pre-limit total', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('test', `m-${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    await executeCommand(['search', 'token'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    const memoryLines = logs.filter(m => /^\s*\[.*\] \/ \[/.test(m));
+    expect(logs.some(m => m.includes('🔍 30 result(s) for "token":'))).toBe(true);
+    expect(memoryLines.length).toBe(25);
+    expect(logs.some(m => m.includes('Pagination | limit: 25 | offset: 0 | next offset: 25'))).toBe(
+      true
+    );
+  });
+
+  test('should honour --limit and --offset', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    for (let i = 0; i < 5; i++) {
+      await store.addMemory('test', `m-${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    await executeCommand(['search', 'token', '--limit', '2', '--offset', '1'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    const memoryLines = logs.filter(m => /^\s*\[.*\] \/ \[/.test(m));
+    expect(memoryLines.length).toBe(2);
+    expect(logs.some(m => m.includes('Pagination | limit: 2 | offset: 1 | next offset: 3'))).toBe(
+      true
+    );
+  });
+
+  test('should clamp --limit to the 500 max page size', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    for (let i = 0; i < 501; i++) {
+      await store.addMemory('test', `m-${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    await executeCommand(['search', 'token', '--limit', '1000'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    const memoryLines = logs.filter(m => /^\s*\[.*\] \/ \[/.test(m));
+    expect(logs.some(m => m.includes('🔍 501 result(s) for "token":'))).toBe(true);
+    expect(memoryLines.length).toBe(500);
+    expect(logs.some(m => m.includes('Pagination | limit: 500 | offset: 0'))).toBe(true);
+  });
+
+  test('should reject a non-positive --limit', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'auth', 'token content', { tags: ['test'] });
+
+    await expect(
+      executeCommand(['search', 'token', '--limit', '0'], store, logger)
+    ).rejects.toThrow('--limit must be a positive number.');
   });
 
   test('should show pagination with next offset in query output', async () => {

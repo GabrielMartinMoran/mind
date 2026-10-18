@@ -186,7 +186,7 @@ describe('Phase 6: Integration Tests — Complete Workflows', () => {
   // ==========================================================================
   // Test 4: memory_query with search parameter
   // ==========================================================================
-  test('memory_query with search parameter returns FTS5 results', async () => {
+  test('memory_query with search parameter returns unified-pipeline results', async () => {
     const memoryTools = createMemoryTools(store);
 
     // 1. Add memory with known content
@@ -218,8 +218,8 @@ describe('Phase 6: Integration Tests — Complete Workflows', () => {
     expect(res.memories.some((m: any) => m.name === 'unique-content-memory')).toBe(true);
     expect(res.memories.some((m: any) => m.name === 'other-memory')).toBe(false);
 
-    // 4. Verify search_method is 'fts5'
-    expect(res.search_method).toBe('fts5');
+    // 4. Verify search_method compat mapping: exact token + substring hits => 'mixed'
+    expect(res.search_method).toBe('mixed');
   });
 
   // ==========================================================================

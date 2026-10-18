@@ -730,6 +730,152 @@ describe('MindStore — Search', () => {
   });
 });
 
+describe('MindStore — Search relaxation ladder', () => {
+  test('OR union returns memories matching either side', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'alpha', 'alpha content', { tags: ['test'] });
+    await store.addMemory('test', 'beta', 'beta content', { tags: ['test'] });
+    await store.addMemory('test', 'gamma', 'gamma content', { tags: ['test'] });
+
+    const results = await store.search('alpha OR beta');
+    const names = results.map(r => r.name).sort();
+    expect(names).toEqual(['alpha', 'beta']);
+  });
+
+  test('phrase rung ranks adjacent matches above apart matches', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'adjacent', 'token color selector', { tags: ['test'] });
+    await store.addMemory('test', 'apart', 'token then some words then color', { tags: ['test'] });
+
+    const results = await store.search('token color');
+    expect(results.map(r => r.name)).toContain('adjacent');
+    expect(results.map(r => r.name)).toContain('apart');
+    expect(results[0]!.name).toBe('adjacent');
+  });
+
+  test('all-terms rung wins over partial matches', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'both', 'authentication jwt token', { tags: ['test'] });
+    await store.addMemory('test', 'only-auth', 'authentication only', { tags: ['test'] });
+
+    const results = await store.search('authentication jwt');
+    const names = results.map(r => r.name);
+    expect(names).toContain('both');
+    // 'both' matches the strict rungs; the relaxed rung stays quiet.
+    expect(results[0]!.name).toBe('both');
+    expect(names).not.toContain('only-auth');
+  });
+
+  test('any-term rung recovers a multi-word query with only partial terms', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'foundry-token', 'foundry token notes', { tags: ['test'] });
+    await store.addMemory('test', 'unrelated', 'nothing relevant here', { tags: ['test'] });
+
+    // 5-term query; only "foundry" and "token" exist (in one memory). The
+    // stricter rungs find nothing, so the any-term rung recovers the memory.
+    const results = await store.search('foundry token color selector highlight');
+    expect(results.map(r => r.name)).toEqual(['foundry-token']);
+  });
+
+  test('duplicate hits across rungs deduplicate to one result', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'adjacent', 'token color selector', { tags: ['test'] });
+
+    const results = await store.search('token color');
+    expect(results.filter(r => r.name === 'adjacent').length).toBe(1);
+  });
+
+  test('NOT excludes matching memories', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'auth-only', 'authentication token', { tags: ['test'] });
+    await store.addMemory('test', 'auth-jwt', 'authentication jwt token', { tags: ['test'] });
+
+    const results = await store.search('authentication NOT jwt');
+    const names = results.map(r => r.name);
+    expect(names).toContain('auth-only');
+    expect(names).not.toContain('auth-jwt');
+  });
+
+  test('trailing prefix wildcard expands a term', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'typed', 'typewriter typography', { tags: ['test'] });
+    await store.addMemory('test', 'other', 'unrelated content', { tags: ['test'] });
+
+    const results = await store.search('type*');
+    expect(results.map(r => r.name)).toEqual(['typed']);
+  });
+
+  test('single-term results are unchanged (parity)', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'auth-flow', 'JWT authentication with refresh tokens', {
+      tags: ['test'],
+    });
+    await store.addMemory('test', 'db-schema', 'PostgreSQL with Prisma ORM', { tags: ['test'] });
+
+    const results = await store.search('authentication');
+    expect(results.length).toBe(1);
+    expect(results[0]!.name).toBe('auth-flow');
+  });
+
+  test('malformed operator input degrades without throwing', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'mem', 'auth content', { tags: ['test'] });
+
+    const results = await store.search('OR OR auth NOT');
+    expect(Array.isArray(results)).toBe(true);
+  });
+
+  test('embedded-quote OR query parses and returns results', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'report-endpoint', 'report endpoint project validation', {
+      tags: ['test'],
+    });
+
+    const results = await store.search('report endpoint project validation OR "005-large-report"');
+    expect(results.map(r => r.name)).toContain('report-endpoint');
+  });
+
+  test('search ordering is deterministic across repeated runs', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'alpha', 'token color selector', { tags: ['test'] });
+    await store.addMemory('test', 'beta', 'token color highlight', { tags: ['test'] });
+
+    const first = (await store.search('token color')).map(r => r.name);
+    const second = (await store.search('token color')).map(r => r.name);
+    expect(first).toEqual(second);
+  });
+});
+
+describe('MindStore — Trigram substring sync', () => {
+  test('substring channel reflects add/update/delete', async () => {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    const mem = await store.addMemory('test', 'config-doc', 'configuration settings', {
+      tags: ['test'],
+    });
+
+    expect((await store.search('iguration')).map(r => r.name)).toEqual(['config-doc']);
+
+    await store.updateMemory(mem.id, { content: 'deployment pipeline' });
+    expect(await store.search('iguration')).toEqual([]);
+    expect((await store.search('ploymen')).map(r => r.name)).toEqual(['config-doc']);
+
+    store.deleteMemory(mem.id);
+    expect(await store.search('ploymen')).toEqual([]);
+  });
+});
+
 describe('MindStore — Query', () => {
   test('should default queryMemories page size to 25', async () => {
     store = createTestStore();

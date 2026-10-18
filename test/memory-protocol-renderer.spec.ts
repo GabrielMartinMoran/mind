@@ -81,6 +81,18 @@ describe('memory protocol renderer', () => {
     expect(rendered).not.toContain('memory is worse if not linked');
   });
 
+  test('renders search grammar and confidence guidance', () => {
+    const rendered = renderMemoryProtocol('opencode');
+
+    expect(rendered).toContain('### Searching effectively');
+    expect(rendered).toContain('Query grammar:');
+    expect(rendered).toContain('`OR` unions alternatives');
+    expect(rendered).toContain('`NOT` excludes the following term');
+    expect(rendered).toContain('A trailing `*` matches a prefix');
+    expect(rendered).toContain('Read `confidence`');
+    expect(rendered).toContain('When results are empty or mostly `low`');
+  });
+
   test('rendered protocols avoid workflow-specific orchestration language', () => {
     const renderedProtocols = [
       renderMemoryProtocol('opencode'),

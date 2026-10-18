@@ -250,3 +250,58 @@ describe('API Server — Static web root resolution', () => {
     expect(payload.total_memories).toBe(0);
   });
 });
+
+describe('API Routes — Search', () => {
+  test('returns fused results with score, confidence and methods (flat array)', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'auth-jwt', 'JWT authentication', { tags: ['test'] });
+
+    const payload = await requestJson('/api/search?q=authentication&space=proj');
+
+    expect(Array.isArray(payload)).toBe(true);
+    expect(payload.length).toBe(1);
+    expect(payload[0].name).toBe('auth-jwt');
+    expect(payload[0].space_name).toBe('proj');
+    expect(payload[0].score).toBeGreaterThan(0);
+    expect(payload[0].confidence).toMatch(/^(high|medium|low)$/);
+    expect(Array.isArray(payload[0].methods)).toBe(true);
+  });
+
+  test('defaults to 25 results and supports limit/offset', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('proj', `m${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    const defaultPage = await requestJson('/api/search?q=token&space=proj');
+    expect(defaultPage.length).toBe(25);
+
+    const limited = await requestJson('/api/search?q=token&space=proj&limit=5&offset=3');
+    expect(limited.length).toBe(5);
+
+    const all = await requestJson('/api/search?q=token&space=proj&limit=500');
+    expect(limited.map((r: any) => r.name)).toEqual(all.slice(3, 8).map((r: any) => r.name));
+  });
+
+  test('caps limit at 500', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'only', 'shared token', { tags: ['test'] });
+
+    const payload = await requestJson('/api/search?q=token&space=proj&limit=10000');
+    expect(payload.length).toBe(1);
+  });
+
+  test('space=* searches across all spaces', async () => {
+    store = createTestStore();
+    store.createSpace('proj-a', 'A', ['test']);
+    store.createSpace('proj-b', 'B', ['test']);
+    await store.addMemory('proj-a', 'a1', 'shared token', { tags: ['test'] });
+    await store.addMemory('proj-b', 'b1', 'shared token', { tags: ['test'] });
+
+    const payload = await requestJson('/api/search?q=token&space=*');
+    expect(payload.map((r: any) => r.space_name).sort()).toEqual(['proj-a', 'proj-b']);
+  });
+});

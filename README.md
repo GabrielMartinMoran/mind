@@ -153,14 +153,15 @@ Mind ships with a `.env.example` that contains all configurable options. The ins
 
 Edit `.env` to customize your setup:
 
-| Variable                  | Default   | Description                                                  |
-| ------------------------- | --------- | ------------------------------------------------------------ |
-| `MIND_PORT`               | `30303`   | Port for the web server                                      |
-| `MIND_DATA_DIR`           | `data/`   | Directory for SQLite database and data                       |
-| `MIND_RAG`                | _(empty)_ | Set to `true` to enable semantic search                      |
-| `MIND_EMBEDDING_PROVIDER` | `openai`  | Embedding provider for RAG: `openai` or `openrouter`         |
-| `OPENAI_API_KEY`          | _(empty)_ | Your OpenAI API key (required for RAG with `openai`)         |
-| `OPENROUTER_API_KEY`      | _(empty)_ | Your OpenRouter API key (required for RAG with `openrouter`) |
+| Variable                     | Default   | Description                                                  |
+| ---------------------------- | --------- | ------------------------------------------------------------ |
+| `MIND_PORT`                  | `30303`   | Port for the web server                                      |
+| `MIND_DATA_DIR`              | `data/`   | Directory for SQLite database and data                       |
+| `MIND_LOG_RETENTION_MINUTES` | `10080`   | Log retention in minutes (default 7 days)                    |
+| `MIND_RAG`                   | _(empty)_ | Set to `true` to enable semantic search                      |
+| `MIND_EMBEDDING_PROVIDER`    | `openai`  | Embedding provider for RAG: `openai` or `openrouter`         |
+| `OPENAI_API_KEY`             | _(empty)_ | Your OpenAI API key (required for RAG with `openai`)         |
+| `OPENROUTER_API_KEY`         | _(empty)_ | Your OpenRouter API key (required for RAG with `openrouter`) |
 
 **RAG / semantic search setup:**
 
@@ -208,6 +209,47 @@ For the full command list:
 ```bash
 mind help
 ```
+
+## Search
+
+Mind ships one unified relevance search across the CLI, MCP server, and HTTP
+API. The pipeline parses your query, runs several retrieval channels in
+parallel, and fuses the candidates into a single ranked list. Each result
+carries a confidence bucket so you can judge how strong the match is.
+
+Query grammar:
+
+- `"quoted text"` matches an exact phrase.
+- `OR` unions alternatives; adjacent terms are ANDed. `AND` is the explicit
+  form of the implicit AND.
+- `NOT` excludes the following term (`auth NOT jwt`).
+- A trailing `*` matches a prefix (`type*`).
+- Malformed operator usage never errors; it degrades to a safe literal match.
+
+Multi-word queries relax automatically. Exact phrase and all-term matches rank
+first, followed by near matches, substrings, and close spellings:
+
+- **Phrase** and **all-term** channels handle literal token matches.
+- **Trigram** and **fuzzy** channels handle substrings and typos
+  (Damerau–Levenshtein distance up to 2). The trigram index folds diacritics, so
+  accented and unaccented queries match both ways. The fuzzy channel requires a
+  shared 3-character prefix, so a typo in the first three characters of a word
+  isn't recovered.
+- **Token-set** coverage ranks partial multi-word matches.
+- A **semantic** channel blends in embeddings when you enable RAG.
+
+Every result includes a `confidence` bucket (`high`, `medium`, `low`) and a
+`methods` list naming the channels that matched it. The CLI prints the bucket as
+`[high]`, `[medium]`, or `[low]`. If RAG is off, search still works and just
+omits the semantic channel. If an embedding request fails, Mind skips semantic
+search for about five minutes instead of retrying on every query.
+
+Limits:
+
+- CLI `search` returns 25 results by default. Use `--limit` (maximum 500) and
+  `--offset` to page through results.
+- MCP `memory_query` and `GET /api/search` accept the same `limit` (default 25,
+  maximum 500) and `offset`.
 
 ## Usage
 
@@ -402,7 +444,7 @@ Stage 1 MCP structured tools now return the same payload in two forms:
 
 In this stage, `system_instructions` and the content-only delete/link tools keep their existing text responses.
 
-`memory_query` supports optional `search` for full-text search and returns pagination fields such as `limit` and `offset` in both `structuredContent` and YAML content. Its optional `tier` field also accepts `null`, which means the same thing as omitting the tier filter (all tiers).
+`memory_query` supports optional `search` for full-text search and returns pagination fields such as `limit` and `offset` in both `structuredContent` and YAML content. Search results also include `confidence` and `methods`, and the payload reports a `search_method` compatibility mapping. Its optional `tier` field also accepts `null`, which means the same thing as omitting the tier filter (all tiers).
 
 Memory MCP workflows also support bounded composite ergonomics while keeping atomic tools:
 
@@ -589,6 +631,13 @@ Run RAG integration test (requires `OPENAI_API_KEY`):
 
 ```bash
 make test-rag
+```
+
+Run the search relevance evaluation suite (deterministic fixture corpus, no API
+key required):
+
+```bash
+make search-eval
 ```
 
 ## Maintainers: Releases

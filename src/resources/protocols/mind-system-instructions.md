@@ -290,6 +290,41 @@ For list tools (`memory_query`):
 
 ---
 
+## Searching Effectively
+
+`memory_query { space: "<project>", search: "..." }` ranks results with the
+same fused pipeline used by the CLI and API. Each result carries a `confidence`
+bucket (`high`, `medium`, `low`) and a `methods` list naming the channels that
+matched it.
+
+Query grammar:
+
+- `"quoted text"` matches a phrase.
+- `OR` unions alternatives (`auth OR login`); adjacent terms are ANDed.
+- `AND` is the explicit form of the implicit AND.
+- `NOT` excludes the following term (`auth NOT jwt`).
+- A trailing `*` matches a prefix (`type*`).
+- Malformed operator usage degrades to a safe literal match and never errors.
+
+Multi-word queries relax automatically: exact phrase and all-term matches rank
+first, then near matches, substrings, and close spellings. Read `confidence`
+and `methods` to judge each result:
+
+- `high` — a strong exact or all-term match; trust it.
+- `medium` — a relaxed, substring, or semantic match; verify if it matters.
+- `low` — a weak or fuzzy single-channel match; treat it as a lead.
+
+When results are empty or mostly `low`:
+
+1. Simplify to the most distinctive term and drop operators.
+2. Broaden with `OR`, or shorten to a prefix (`conf*`).
+3. Drop filters (`tag`, `tier`, `from`, `to`) or search every space with
+   `space: "*"`.
+4. If search still misses, explore the repo directly, then add or link
+   memories so the knowledge is recoverable next time.
+
+---
+
 ## Session Workflow
 
 1. **Start**: `checkpoint_query` to find checkpoints, then `checkpoint_load { checkpointName: "<name>" }` to restore a specific one, then `space_get` (use repo name)
