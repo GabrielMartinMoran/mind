@@ -44,3 +44,4 @@ data/
 .lintstagedrc.json
 .mind/
 session-examples/
+.pas/

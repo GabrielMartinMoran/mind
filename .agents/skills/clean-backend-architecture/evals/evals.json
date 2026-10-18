@@ -1,0 +1,60 @@
+{
+  "skill_name": "clean-backend-architecture",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "I am building a Python CLI for managing agents and profiles. Propose a directory structure and the main contracts for creating an agent and listing agents. Use Pydantic for inputs, repository interfaces in the domain, use cases under application/services, and a filesystem implementation under infrastructure. Follow the one-public-concept-per-file rule and show where you would place internal helpers.",
+      "expected_output": "A structure organized around domain, application, and infrastructure, with config and entrypoints as support areas; separate commands, queries, and results; use cases outside dto; contracts separated from concrete implementations; and an explanation of the one-public-concept-per-module rule in Python.",
+      "files": [],
+      "expectations": [
+        "The structure separates domain, application, and infrastructure, with config and entrypoints as support areas.",
+        "Commands, queries, and results appear under application/dto.",
+        "Use cases appear under application/services and receive one command or query.",
+        "The filesystem implementation does not appear inside the domain.",
+        "A Python helper whose name starts with an underscore is allowed alongside a public class.",
+        "The response does not introduce Svelte, SvelteKit, or a database as a requirement."
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Design a TypeScript feature for creating and listing skills in a backend. Use Zod at the boundary, injected repositories, and a CQRS-lite separation. Identify the files for runtime schemas, command and query types, results, and use cases. Explain what belongs in an infrastructure HTTP boundary and what must remain outside the domain.",
+      "expected_output": "A TypeScript design that separates commands, queries, and results from use cases, separates the runtime schema and type when appropriate, and keeps HTTP concerns outside application and domain.",
+      "files": [],
+      "expectations": [
+        "Use cases live outside application/dto.",
+        "Commands and queries are distinct inputs, and results are explicit outputs.",
+        "The Zod schema and inferred type are not presented as two public concepts in the same file.",
+        "The infrastructure HTTP boundary validates, authenticates, delegates, and serializes without containing business rules.",
+        "CQRS is presented as CQRS-lite and does not require two databases or a bus."
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Review this backend architecture and list the most important problems: domain/entities.py imports the ORM; infrastructure/http/create.py directly creates the SQL repository; application/services.py contains CreateUserCommand, ListUsersQuery, UserResult, and three service classes; errors.py assigns HTTP 404 to domain errors; a queue consumer acknowledges the message before saving to the database; and all helpers are in src/helpers.py. Propose a concrete correction without over-architecting the project.",
+      "expected_output": "A prioritized review that identifies dependency violations, DTO and use-case mixing, HTTP coupling in domain errors, premature acknowledgment, a global helpers file, and the absence of an entrypoint that wires the system.",
+      "files": [],
+      "expectations": [
+        "It identifies that the domain must not import the ORM.",
+        "It identifies that an infrastructure boundary must not create concrete repositories directly.",
+        "It identifies that commands, queries, results, and public classes must be separated into appropriate modules.",
+        "It separates semantic errors from their HTTP mapping.",
+        "It identifies the risk of acknowledging the message before the change is durable.",
+        "It proposes helpers grouped by layer and concern instead of one global file."
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "I have a worker that consumes queue events to install skills. The provider delivers messages at least once, installation uses a filesystem and an external API, and the operation can take several minutes. Design the infrastructure boundaries, application use case, and domain responsibilities, including idempotency, timeout, retry, cancellation, dead-letter, logging, and shutdown policies. Do not assume a specific broker, framework, or language.",
+      "expected_output": "A transport-neutral design that treats the consumer as an infrastructure boundary, uses a use case, encapsulates filesystem/API implementations behind inner-owned contracts, and makes reliability and observability policies explicit.",
+      "files": [],
+      "expectations": [
+        "The queue consumer is modeled as an infrastructure boundary rather than as domain logic.",
+        "Installation is coordinated by a use case with injected dependencies.",
+        "The response covers idempotency and at-least-once delivery.",
+        "The response distinguishes retryable from non-retryable errors.",
+        "The response covers timeout, cancellation, dead-letter handling, correlation IDs, and graceful shutdown.",
+        "It does not impose a specific framework, broker, or language."
+      ]
+    }
+  ]
+}

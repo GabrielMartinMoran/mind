@@ -5,6 +5,24 @@
       "source": "pproenca/dot-skills",
       "sourceType": "github",
       "computedHash": "613e3421174049dfb4a528c072cafb5e805322a6d9e1522ec9b74077e07947d7"
+    },
+    "clean-backend-architecture": {
+      "source": "gabrielmartinmoran/skills",
+      "sourceType": "github",
+      "skillPath": "skills/clean-backend-architecture/SKILL.md",
+      "computedHash": "c1b07dd03d0942987ba8a224dfef8195b0b9bbb732d72108ec351e59749b73ee"
+    },
+    "clean-code": {
+      "source": "GabrielMartinMoran/skills",
+      "sourceType": "github",
+      "skillPath": "skills/clean-code/SKILL.md",
+      "computedHash": "20aadc36d60873da645455532234906de5dc34deb2bb5c792979e2a910c5e773"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "89496d5dd00f4810205f351759594fc2742bf8eea85a2f2b2d1de59f4bd91576"
     }
   }
 }
