@@ -14,6 +14,7 @@ import { describe, expect, test } from 'bun:test';
 import { buildV2Cases } from './search-eval/cases.expanded';
 import { V2_CORPUS } from './search-eval/corpus.expanded';
 import { runFixtureV2, type FixtureSnapshotV2 } from './search-eval/evaluator';
+import { stableHash, stableStringify } from './search-eval/hash';
 import { parseRef, refOf } from './search-eval/refs';
 import type { CaseLevel, CaseType } from './search-eval/types';
 
@@ -45,6 +46,55 @@ const AXIS_MINIMUMS: Partial<Record<CaseType, number>> = {
   anti_bias: 4,
   neutral: 5,
 };
+
+// ── Cross-runtime snapshot canonicalization (comparison only) ──
+//
+// The fused `score` is derived from FTS5 bm25 `rank`, whose last ULP depends on
+// the bundled SQLite version (Bun 1.3.14 → SQLite 3.53.0 vs Bun 1.4.3 → SQLite
+// 3.53.4). Every other recorded field — result order, `methods`, `confidence`,
+// and all metrics — is exact across runtimes. To keep the optimized-baseline
+// stability gate meaningful without weakening it, only `score` fields are
+// rounded (to 10 decimal places, which is byte-stable across both runtimes)
+// before comparison. This never mutates the snapshot stored by the builder.
+
+/** Decimal places used to canonicalize fused `score` fields for comparison. */
+const SCORE_CANONICAL_DP = 10;
+
+function roundToDecimalPlaces(value: number, dp: number): number {
+  const factor = 10 ** dp;
+  return Math.round(value * factor) / factor;
+}
+
+/** Recursively round every `score` field to `SCORE_CANONICAL_DP` decimal places. */
+function canonicalizeScores(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeScores);
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>;
+    const out: Record<string, unknown> = {};
+    for (const key of Object.keys(source)) {
+      const entry = source[key];
+      out[key] =
+        key === 'score' && typeof entry === 'number'
+          ? roundToDecimalPlaces(entry, SCORE_CANONICAL_DP)
+          : canonicalizeScores(entry);
+    }
+    return out;
+  }
+  return value;
+}
+
+/**
+ * Strip the runtime-dependent raw `hash` (and `schema`) so two snapshots can be
+ * compared canonically. The remaining shape mirrors the builder's hashed core.
+ */
+function snapshotCore(snapshot: FixtureSnapshotV2): Record<string, unknown> {
+  const core: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(snapshot)) {
+    if (key === 'schema' || key === 'hash') continue;
+    core[key] = value;
+  }
+  return core;
+}
 
 describe('v2 fixture taxonomy', () => {
   const cases = buildV2Cases();
@@ -139,10 +189,21 @@ describe('v2 determinism and baseline stability', () => {
     );
     const baseline = (await Bun.file(baselineFile).json()) as FixtureSnapshotV2;
     const current = await runFixtureV2();
-    // Pin the optimized (P-A-only fallback) v2 hash so a silent ranking change
-    // cannot pass by editing the file, then prove the live engine matches it.
+
+    // Integrity: the committed optimized baseline must be byte-for-byte the
+    // pinned content. `baseline.hash` is the stable hash of the raw (unrounded)
+    // core, so recomputing it from the loaded file proves the file was not
+    // edited to accommodate a ranking change.
     expect(baseline.hash).toBe('4494b323dce79e410f768f87ff54d0bd306a29c7525387dc0c5a3b87f8e38419');
-    expect(current.snapshot.hash).toBe(baseline.hash);
-    expect(JSON.stringify(current.snapshot)).toBe(JSON.stringify(baseline));
+    expect(stableHash(snapshotCore(baseline))).toBe(baseline.hash);
+
+    // Cross-runtime stability: FTS5 bm25 `rank` differs at the last ULP between
+    // bundled SQLite versions, so the fused `score` is not byte-stable. Compare
+    // everything (result order, topk, methods, confidence, all metrics) via a
+    // canonicalized deep equality + canonical hash; only `score` is rounded.
+    const currentCanonical = canonicalizeScores(snapshotCore(current.snapshot));
+    const baselineCanonical = canonicalizeScores(snapshotCore(baseline));
+    expect(stableStringify(currentCanonical)).toBe(stableStringify(baselineCanonical));
+    expect(stableHash(currentCanonical)).toBe(stableHash(baselineCanonical));
   });
 });
