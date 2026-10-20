@@ -7,6 +7,7 @@ import type { Scenario } from '../scenario';
 
 import { B1_SCENARIO } from './b1/index';
 import { B10_SCENARIO } from './b10/index';
+import { B11_SCENARIO } from './b11/index';
 import { B4_SCENARIO } from './b4/index';
 import { B5_SCENARIO } from './b5/index';
 import { B6_SCENARIO } from './b6/index';
@@ -23,6 +24,7 @@ export const SCENARIOS: readonly Scenario[] = [
   B9_SCENARIO,
   B8_SCENARIO,
   B10_SCENARIO,
+  B11_SCENARIO,
 ];
 
 export const SCENARIO_IDS: readonly string[] = SCENARIOS.map(scenario => scenario.id);

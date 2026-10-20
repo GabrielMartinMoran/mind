@@ -60,6 +60,9 @@ Example:
 - Added the B5–B10 real-agent scenarios to the benchmark harness (durable writing, relinking, supersession, tier maintenance, cross-session continuity, and semantic recall) with per-scenario RAG control, isolated databases, and `not_run` gating. Results are recorded in `docs/cognitive-memory-lifecycle-report.md`.
 - Added `docs/cognitive-memory-lifecycle.md` (memory model, tiers, lifecycle, writing, supersession, linking, living references, tool usage) and `docs/cognitive-memory-lifecycle-report.md` (implementation, tests, and measured B5–B10 validation).
 - Added `docs/skill-first-distribution.md` (single protocol source, complete skill, brief activation, installation model, lifecycle corrections) and `docs/skill-first-distribution-report.md` (implementation report with before/after dependencies, test evidence, and unverified behavior).
+- Added `docs/merge-readiness-report.md` with the scoped corrections, files, lockfile/CI changes, checkpoint atomicity guarantees, local test results, and the split between free OpenCode validation and unrun paid B11.
+- Added a free, gated OpenCode 2.0.28 skill-discovery integration test (`BENCH_INTEGRATION=1`) covering canonical skill discovery, brief L2 activation, MCP config/handshake, `/api/skill` polling, and the isolation allowlist without a model call.
+- Added a prepared, gated benchmark B11 scenario for skill-first activation and pending-work continuity. It is paid, not run, and its live result remains `not_run`.
 
 ### Changed
 
@@ -84,6 +87,11 @@ Example:
 - Changed supersession guidance and examples: create the replacement, preserve the historical content and original category tag, add `status:superseded`, link replacement to history with `contradicts`, and update living references. RECALL now starts with a natural query, and RELATE distinguishes generic `links_to` from specific `link_create`.
 - Changed the agent memory benchmark into an independent Bun subproject under `benchmarks/agent-memory/` with its own `package.json`, `bun.lock`, and `tsconfig.json`. It declares `@opencode/sdk@2.0.28` itself; the root project is not a workspace and does not install benchmark dependencies. CI adds a free benchmark job for typecheck, unit and contract tests, and experiments.
 - Changed Cursor and Gemini CLI L1 diagnostics to describe stdio command transport instead of a URL, and clarified that Antigravity has no L2 instruction injection; its skill remains a separate surface.
+- Changed skill installation to an exact-name policy: only `mind-management` in a managed path is installed or updated, with or without the ownership marker (the marker is provenance, not authorization); other skills are never touched, and content-signature heuristics were removed. Updates back up the previous `SKILL.md`, preserve extras, and handle foreign/broken symlinks and `ENOTDIR` paths safely.
+- Changed `checkpoint_done` to complete atomically: summary, inbound/outbound link copies with labels and directions, and checkpoint deletion commit in one synchronous SQLite transaction; any failure rolls back, and a retry cannot duplicate the summary.
+- Changed CI to use `bun run format:check`, `bun run typecheck`, Bun 1.3.14, and frozen root and benchmark installs. The audit step is absent because `bun audit --audit-level=high` fails on pre-existing advisories; dependency upgrades remain a separate follow-up.
+- Changed the root to Bun-only: `bun.lock` is the only lockfile and the release script no longer reads, writes, or aligns npm-lock versions.
+- Changed OpenCode skill-first status: free discovery/config/handshake is validated on 2.0.28; paid B11 and live model behavior remain unverified.
 
 ### Fixed
 
@@ -104,10 +112,14 @@ Example:
 - Fixed checkpoint partial updates erasing omitted goal, pending, and notes fields. Omitted fields now keep their values, and a no-op returns the checkpoint without touching `updated_at`.
 - Fixed `checkpoint_done` accepting incomplete work or a target that is not a checkpoint. It now rejects pending work with an actionable error, leaves the checkpoint active, and creates no summary until the work is complete.
 - Fixed the supersession example that rewrote a historical memory with the new truth. Every `memory_update` example that sends `status:superseded` now omits `content`.
+- Fixed skill updates writing through a foreign symlink, reporting a broken symlink as installed, raising `ENOTDIR` on a non-directory managed path, and relying on historical content signatures to recognize old copies.
+- Fixed `checkpoint_done` partial states: a link or delete failure no longer loses a relation, leaves both summary and checkpoint, or duplicates the summary on retry.
+- Fixed CI format checking so it detects drift instead of rewriting files, and removed the `npm audit || true` step that hid real advisories.
 
 ### Removed
 
 - Removed `@opencode/sdk` from the root dependencies; it now belongs to the benchmark subproject. Removed the unused `bun-style` dependency; terminal styling uses `ansi-styles`.
+- Removed the stale root `package-lock.json`; `bun.lock` is the only root lockfile. Removed npm-lock handling from `scripts/release.sh` and the matching test fixtures.
 
 ## [1.6.0] - 2026-06-30
 

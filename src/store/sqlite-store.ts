@@ -270,6 +270,7 @@ export function createSqliteStore(dbPath: string): MindStore {
     moveMemory: (id, updates) => memoryRepo.moveMemory(id, updates),
     deleteMemory: id => memoryRepo.deleteMemory(id),
     deleteMemoryByName: (space, name) => memoryRepo.deleteMemoryByName(space, name),
+    completeCheckpoint: input => memoryRepo.completeCheckpoint(input),
     recordAccess: id => memoryRepo.recordAccess(id),
     getLinkedMemorySummaries: id => memoryRepo.getLinkedMemorySummaries(id),
     patchMemory: (id, patch) => memoryRepo.patchMemory(id, patch),

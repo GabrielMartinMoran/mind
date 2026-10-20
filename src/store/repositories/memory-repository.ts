@@ -13,7 +13,7 @@ import type {
   MemorySummary,
   Tier,
 } from '../../types';
-import type { LinkedMemorySummary, MemoryPatchInput } from '../mind-store';
+import type { CompleteCheckpointInput, LinkedMemorySummary, MemoryPatchInput } from '../mind-store';
 import { FtsHelper, generateUuid, now, requireMemory } from '../shared';
 
 import type { LinkRepository } from './link-repository';
@@ -39,6 +39,7 @@ export interface MemoryRepository {
   ): Promise<Memory>;
   deleteMemory(id: string): void;
   deleteMemoryByName(space: string, name: string): void;
+  completeCheckpoint(input: CompleteCheckpointInput): Promise<Memory>;
   recordAccess(id: string): void;
   getLinkedMemorySummaries(memoryId: string): {
     links_to: LinkedMemorySummary[];
@@ -169,6 +170,54 @@ export function createMemoryRepository(
 
   // ── Memory operations ──
 
+  /**
+   * Synchronous memory insert shared by `addMemory` and `completeCheckpoint`.
+   * Callers own the enclosing transaction; this helper never commits. It
+   * includes tier-capacity eviction, FTS sync on both indexes, tags, and
+   * optional outbound links so a composed operation cannot leave a partial row.
+   */
+  function insertMemoryRowSync(
+    spaceId: string,
+    name: string,
+    content: string,
+    opts: { tags: string[]; tier: Tier; pinned?: boolean; linksToIds?: string[] }
+  ): string {
+    ensureCapacity(spaceId, opts.tier, true);
+
+    const ts = now();
+    const id = generateUuid();
+    const ftsId = nextFtsId(db);
+
+    db.run(
+      `INSERT INTO memories (id, fts_id, space_id, name, content, tier, pinned, created_at, updated_at, changed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, ftsId, spaceId, name, content, opts.tier, opts.pinned ? 1 : 0, ts, ts, ts]
+    );
+
+    fts.insert(id, ftsId, name, content);
+
+    const normalizedTags = normalizeTags(opts.tags);
+    const tagStmt = db.prepare('INSERT OR IGNORE INTO memory_tags (memory_id, tag) VALUES (?, ?)');
+    for (const tag of normalizedTags) {
+      tagStmt.run(id, tag);
+    }
+
+    const linksToIds = opts.linksToIds ?? [];
+    if (linksToIds.length > 0) {
+      const linkStmt = db.prepare(
+        'INSERT OR REPLACE INTO links (source_id, target_id, label, created_at) VALUES (?, ?, ?, ?)'
+      );
+      for (const targetId of linksToIds) {
+        if (targetId === id) {
+          throw new Error('Cannot add memory: add_links_to_ids cannot include self links.');
+        }
+        linkStmt.run(id, targetId, 'related', ts);
+      }
+    }
+
+    return id;
+  }
+
   async function addMemory(
     space: string,
     name: string,
@@ -181,6 +230,7 @@ export function createMemoryRepository(
       throw new Error('Tags are required and cannot be empty');
     }
 
+    const tags = opts.tags;
     const existing = db
       .query('SELECT 1 FROM memories WHERE space_id = ? AND name = ?')
       .get(spaceId, name);
@@ -199,43 +249,14 @@ export function createMemoryRepository(
       }
     }
 
-    const addMemoryTransaction = db.transaction(() => {
-      ensureCapacity(spaceId, tier, true);
-
-      const ts = now();
-      const id = generateUuid();
-      const ftsId = nextFtsId(db);
-
-      db.run(
-        `INSERT INTO memories (id, fts_id, space_id, name, content, tier, pinned, created_at, updated_at, changed_at)
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, ftsId, spaceId, name, content, tier, pinned ? 1 : 0, ts, ts, ts]
-      );
-
-      fts.insert(id, ftsId, name, content);
-
-      if (opts?.tags && opts.tags.length > 0) {
-        const normalizedTags = normalizeTags(opts.tags);
-        const stmt = db.prepare('INSERT OR IGNORE INTO memory_tags (memory_id, tag) VALUES (?, ?)');
-        for (const tag of normalizedTags) {
-          stmt.run(id, tag);
-        }
-      }
-
-      if (linksToIds.length > 0) {
-        const linkStmt = db.prepare(
-          'INSERT OR REPLACE INTO links (source_id, target_id, label, created_at) VALUES (?, ?, ?, ?)'
-        );
-        for (const targetId of linksToIds) {
-          if (targetId === id) {
-            throw new Error('Cannot add memory: add_links_to_ids cannot include self links.');
-          }
-          linkStmt.run(id, targetId, 'related', ts);
-        }
-      }
-
-      return id;
-    });
+    const addMemoryTransaction = db.transaction(() =>
+      insertMemoryRowSync(spaceId, name, content, {
+        tags,
+        tier,
+        pinned,
+        linksToIds,
+      })
+    );
 
     const id = addMemoryTransaction();
 
@@ -466,6 +487,85 @@ export function createMemoryRepository(
     if (!mem) throw new Error(`Memory "${name}" not found in space "${space}"`);
     fts.delete(mem.id, mem.fts_id!);
     db.run('DELETE FROM memories WHERE id = ?', [mem.id]);
+  }
+
+  async function completeCheckpoint(input: CompleteCheckpointInput): Promise<Memory> {
+    const { space, checkpointId, sessionName, sessionContent, tags, tier } = input;
+    const spaceId = getSpaceId(db, space);
+
+    const transformation = db.transaction(() => {
+      const checkpoint = db.query('SELECT * FROM memories WHERE id = ?').get(checkpointId) as
+        | { id: string; space_id: string; name: string }
+        | undefined;
+      if (!checkpoint) {
+        throw new Error(`Checkpoint with id ${checkpointId} could not be loaded.`);
+      }
+      if (checkpoint.space_id !== spaceId) {
+        throw new Error(`Checkpoint "${checkpoint.name}" does not belong to space "${space}".`);
+      }
+      if (!getTagsForMemory(db, checkpointId).includes('checkpoint')) {
+        throw new Error(
+          `Memory "${checkpoint.name}" in "${space}" is not a checkpoint; refusing to complete it.`
+        );
+      }
+
+      const duplicate = db
+        .query('SELECT 1 FROM memories WHERE space_id = ? AND name = ?')
+        .get(spaceId, sessionName);
+      if (duplicate) {
+        throw new Error(`Memory "${sessionName}" already exists in space "${space}"`);
+      }
+
+      // Capture relations before creating the summary so both directions keep
+      // their original source/target and label.
+      const checkpointLinks = db
+        .query('SELECT source_id, target_id, label FROM links WHERE source_id = ? OR target_id = ?')
+        .all(checkpointId, checkpointId) as {
+        source_id: string;
+        target_id: string;
+        label: string;
+      }[];
+
+      const summaryId = insertMemoryRowSync(spaceId, sessionName, sessionContent, {
+        tags,
+        tier,
+      });
+
+      const linkStmt = db.prepare(
+        'INSERT OR REPLACE INTO links (source_id, target_id, label, created_at) VALUES (?, ?, ?, ?)'
+      );
+      const ts = now();
+      for (const relation of checkpointLinks) {
+        const label = relation.label || 'related';
+        if (relation.source_id === checkpointId) {
+          linkStmt.run(summaryId, relation.target_id, label, ts);
+        }
+        if (relation.target_id === checkpointId) {
+          linkStmt.run(relation.source_id, summaryId, label, ts);
+        }
+      }
+
+      deleteMemory(checkpointId);
+
+      return summaryId;
+    });
+
+    const summaryId = transformation();
+
+    // Best-effort embedding after commit, mirroring addMemory. A null result
+    // simply leaves the summary without a vector.
+    if (isRagEnabled()) {
+      const embedding = await getEmbedding(`${sessionName} ${sessionContent}`);
+      if (embedding) {
+        db.run('UPDATE memories SET embedding = ? WHERE id = ?', [
+          vectorToBlob(embedding),
+          summaryId,
+        ]);
+      }
+    }
+
+    const row = db.query(`${memoryJoinSelect()} WHERE m.id = ?`).get(summaryId) as any;
+    return rowToMemory(db, row);
   }
 
   function recordAccess(id: string): void {
@@ -772,6 +872,7 @@ export function createMemoryRepository(
     moveMemory,
     deleteMemory,
     deleteMemoryByName,
+    completeCheckpoint,
     recordAccess,
     getLinkedMemorySummaries,
     patchMemory,

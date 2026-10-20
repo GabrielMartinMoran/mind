@@ -116,6 +116,9 @@ bun run test:experiments
 # Integration tests (reuses/creates pinned worktrees; no LLM)
 BENCH_INTEGRATION=1 bun test test
 
+# Free OpenCode skill-first discovery test (no LLM; skipped without opencode)
+BENCH_INTEGRATION=1 bun test test/skill-discovery.integration.spec.ts
+
 # Free T1 platform/isolation probes (no LLM calls)
 bun run probe
 
@@ -187,8 +190,8 @@ Paid benchmark B scenarios (require an explicit `--budget` + `--confirm`):
 
 ```sh
 bun run cli scenarios \
-  --scenarios b1,b4,b5,b6,b7,b8,b9,b10 --conditions no-memory,mind-v9,mind-v10 --budget 5 --confirm
-# or, from the repo root: make bench-agent-memory-scenarios SCENARIOS=b1,b4,b5,b6,b7,b8,b9,b10
+  --scenarios b1,b4,b5,b6,b7,b8,b9,b10,b11 --conditions no-memory,mind-v9,mind-v10 --budget 5 --confirm
+# or, from the repo root: make bench-agent-memory-scenarios SCENARIOS=b1,b4,b5,b6,b7,b8,b9,b10,b11
 # B5/B6/B7/B8/B9 need a Mind engine; under no-memory they are reported as not_run.
 # B10 also needs RAG + an embedding credential; otherwise it is not_run, never failed.
 ```
@@ -247,7 +250,7 @@ stored answers without re-answering. Both refuse to run without an explicit
 
 `scenarios` runs small, self-contained agent tasks with a production session and
 a need session, then evaluates them with concrete assertions over the workspace
-or the unit's Mind database — never by the agent's prose. Eight scenarios ship
+or the unit's Mind database — never by the agent's prose. Nine scenarios ship
 today:
 
 - **B1 — persistent architectural decision.** Session 1 analyses the fixture
@@ -324,10 +327,40 @@ today:
   provider: the two seed `mind add` calls make embedding requests billed by the
   provider, and the session itself is a normal paid OpenCode session. Offline
   dry-runs use synthetic DBs/workspaces and the gated integration test.
+- **B11 — skill-first activation and pending-work continuity (prepared, NOT
+  run).** Two sessions share the unit environment. The seed installs the real
+  canonical `mind-management` skill and its brief L2 activation through
+  `mind setup opencode` in the isolated HOME, then adds that activation to the
+  session config. Session 1 records an unresolved release-checklist item and
+  leaves an active checkpoint with pending work; session 2 resumes that pending
+  item and writes `resume.txt`. The assertion reads the raw transcript and the
+  unit database: a `skill` tool call with id `mind-management`, at least one Mind
+  memory/checkpoint tool call, no `system_instructions` call after the skill
+  load, an active checkpoint that still carries the pending item, and a
+  `resume.txt` that reflects it. It declares `requires: ['mind-memory']`, no RAG,
+  and `allowedSkills: ['opencode','report','mind-management']` so the isolation
+  gate treats the installed skill as expected rather than contamination. B11 is
+  **gated and paid**: it is never executed by the free suites, no paid run is
+  authorized, and its real result remains `not_run`.
 
-B5/B6/B7/B8/B9 declare `requires: ['mind-memory']`, so the `no-memory` condition
-records them as `not_run` with zero sessions instead of executing a memory task
-without a database. B10 additionally declares `rag: true` and
+  **What is verified for free vs unverified.** The gated
+  `test/skill-discovery.integration.spec.ts` runs real `mind setup opencode` in a
+  temporary HOME and verifies, with no model call, that OpenCode discovers
+  `mind-management` from `~/.agents/skills/mind-management`, that the L2
+  activation file is the brief instruction (not the full protocol), that the
+  setup config points at it and registers the `mind` MCP server, and that
+  `verifyIsolation` allows the installed skill. **Unverified without a paid
+  B11 run:** that a real model actually calls the `skill` tool with id
+  `mind-management`, uses the protocol instead of `system_instructions`, keeps a
+  checkpoint pending across sessions, and behaves correctly after compaction
+  (`OPENCODE_DISABLE_AUTOCOMPACT=1` also prevents testing compaction today).
+  Tool _arguments_ are read best-effort from the raw transcript; when a build or
+  provider omits them, the assertion reports the limitation instead of inventing
+  a skill id.
+
+B5/B6/B7/B8/B9/B11 declare `requires: ['mind-memory']`, so the `no-memory`
+condition records them as `not_run` with zero sessions instead of executing a
+memory task without a database. B10 additionally declares `rag: true` and
 `requires: ['mind-memory', 'semantic-recall']`, so it is `not_run` without a Mind
 condition **and** the embedding credential. Their seed/assertions use
 `MIND_DB_PATH`/`MIND_DATA_DIR` from the isolated unit environment, never the live

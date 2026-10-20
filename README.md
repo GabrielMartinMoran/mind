@@ -98,6 +98,9 @@ cd mind
 bun install
 ```
 
+Mind is Bun-only. `bun.lock` is the only root lockfile, and the project does
+not ship `package-lock.json`.
+
 ### Quick start
 
 This is the fastest way to see what Mind feels like in practice.
@@ -154,9 +157,12 @@ handshake are brief activation only. If the skill cannot be loaded, call the
 
 Agents load the skill once at session start and reload it after compaction.
 Mind does not track reads in a database, enforce a quota, or create a checkpoint
-just to record activation. See
-[`docs/skill-first-distribution.md`](docs/skill-first-distribution.md) and the
-[agent integration matrix](docs/agent-integration-matrix.md).
+just to record activation. Setup updates only the exact `mind-management` skill
+in its managed locations; it leaves other skills untouched and backs up a
+previous `SKILL.md` before replacing it. See
+[`docs/skill-first-distribution.md`](docs/skill-first-distribution.md), the
+[agent integration matrix](docs/agent-integration-matrix.md), and the
+[merge-readiness report](docs/merge-readiness-report.md).
 
 ### Post-install configuration
 
@@ -699,6 +705,11 @@ bun test experiments
 The root `make bench-agent-memory-test` target delegates to both suites. Paid
 benchmark stages require an explicit `--budget` cap and do not run in CI. The
 root project does not install `@opencode/sdk`; the benchmark declares it.
+
+CI runs the root and benchmark free suites from their frozen `bun.lock` files
+and pins Bun 1.3.14. It does not run a dependency audit: `bun audit` currently
+fails on pre-existing advisories, and dependency upgrades are a separate
+follow-up. See the [merge-readiness report](docs/merge-readiness-report.md).
 
 ## Maintainers: Releases
 

@@ -187,6 +187,7 @@ describe('runScenariosCommand dry-run', () => {
     expect(meta.stages['scenarios:b9:no-memory']!.status).toBe('skipped');
     expect(meta.stages['scenarios:b8:no-memory']!.status).toBe('skipped');
     expect(meta.stages['scenarios:b10:no-memory']!.status).toBe('skipped');
+    expect(meta.stages['scenarios:b11:no-memory']!.status).toBe('skipped');
     expect(meta.stages['scenarios:start']!.status).toBe('passed');
 
     const resultsPath = join(runDir, 'run-dry', 'results', 'scenarios-no-memory.json');
@@ -196,9 +197,9 @@ describe('runScenariosCommand dry-run', () => {
       status: string;
       sessions: unknown[];
     }[];
-    expect(results).toHaveLength(8);
+    expect(results).toHaveLength(9);
     expect(results.find(r => r.childCount === 1)).toBeDefined();
-    expect(results.filter(r => r.status === 'not_run')).toHaveLength(6);
+    expect(results.filter(r => r.status === 'not_run')).toHaveLength(7);
     for (const result of results.filter(r => r.status === 'not_run')) {
       expect(result.sessions).toHaveLength(0);
     }

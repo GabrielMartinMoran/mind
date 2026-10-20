@@ -91,6 +91,9 @@ export function withAutoExport(store: MindStore, options: SyncCoordinatorOptions
       target.deleteMemoryByName(space, name);
       void coordinator.autoExportSpaces([space]);
     },
+    async completeCheckpoint(input) {
+      return exportAfter(coordinator, [input.space], () => target.completeCheckpoint(input));
+    },
     async patchMemory(id, patch) {
       const beforeSpace = memorySpace(target, id);
       const result = await exportAfter(coordinator, [beforeSpace], () =>

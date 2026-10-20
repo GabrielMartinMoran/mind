@@ -64,22 +64,36 @@ dedicated copy.
 | Claude Code                       | `~/.claude/skills/mind-management`        | Symlink, copy fallback |
 | Antigravity                       | `~/.gemini/config/skills/mind-management` | Symlink, copy fallback |
 
-Setup treats the skill as a managed file. The contract is defensive:
+Setup follows an exact-name policy. Only `mind-management` in an explicit
+Mind-managed location (the canonical directory, Claude Code, Antigravity, and
+the listed legacy shadow directories) is updateable. Any same-name content in
+those locations is managed, with or without the ownership marker; a marker is
+provenance, not authorization. Setup does not scan content for historical
+signatures, and other skill directories are never modified.
 
-- An ownership marker identifies Mind-generated content.
-- A missing marker marks a foreign `SKILL.md`; setup leaves it untouched and
-  prints a warning.
-- A content change creates a timestamped backup before writing.
+The install contract is defensive:
+
+- Install when absent; leave byte-identical content untouched (no write, no
+  backup); back up and update when the bytes differ.
+- A regular `SKILL.md` backup is a timestamped sibling (`.bak.<timestamp>`).
+  When a managed directory contains extra resources, only `SKILL.md` is backed
+  up and replaced; the extras stay in place.
+- Classification uses `lstat`, so a symlink is never followed. A foreign or
+  broken directory symlink, and a file-level `SKILL.md` symlink, are recorded
+  as `LINK_TARGET=<target>` in a backup sidecar and replaced without copying or
+  writing through external content.
+- A non-directory at a managed path is backed up and repaired instead of
+  raising `ENOTDIR`.
 - Writes stage in a sibling temporary file and rename into place, so a crash
   cannot leave a partial file.
-- Identical bytes skip the write and the backup.
 - On Windows, setup creates a directory junction and falls back to a managed
   copy when linking is unavailable. It does not require elevated privileges.
 
-Setup also migrates Mind-managed shadow copies that would take precedence over
+Setup also migrates same-name shadow copies that would take precedence over
 the canonical skill, such as an old `~/.cursor/skills/mind-management`. It backs
-up the managed file, removes only the shadowing `SKILL.md`, and preserves
-unrelated resources in the directory.
+up the shadowing `SKILL.md`, removes it, and preserves unrelated resources in
+the directory. Detection uses `lstat`, so a broken managed link still marks the
+integration as installed and can be repaired on the next refresh.
 
 ## Checkpoint lifecycle corrections
 
@@ -97,12 +111,15 @@ session summary separately. It calls `checkpoint_done` only when the task is
 complete. The OpenCode plugin no longer creates or updates checkpoints with
 placeholder content.
 
-**Completion is validated.** `checkpoint_done` requires an empty `pending` field
-and a target that carries the `checkpoint` tag. Pending work produces an
-actionable error and leaves the checkpoint active. To abandon work, clear
-`pending` explicitly and record the reason in notes. On success, Mind creates a
-same-space `session-*` summary at T3 tagged `type:session` and `cat:summary`,
-copies inbound and outgoing links, and deletes the checkpoint.
+**Completion is validated and atomic.** `checkpoint_done` requires an empty
+`pending` field and a target that carries the `checkpoint` tag. Pending work
+produces an actionable error and leaves the checkpoint active. To abandon work,
+clear `pending` explicitly and record the reason in notes. On success, Mind
+creates a same-space `session-*` summary at T3 tagged `type:session` and
+`cat:summary`, copies inbound and outgoing links, and deletes the checkpoint in
+one synchronous SQLite transaction. A summary, link, or delete failure rolls
+back the whole transformation, so the checkpoint and its original links stay
+intact and a retry cannot duplicate the summary.
 
 Checkpoint lookup searches every tier, so a checkpoint that moved to T3 is still
 found and updated instead of spawning a duplicate. Linked memories are additive:
@@ -147,8 +164,11 @@ validation notes live in
 [`docs/agent-integration-matrix.md`](agent-integration-matrix.md). The important
 distinctions are:
 
-- OpenCode previously validated MCP, L2, and plugin behavior; skill discovery in
-  the current build was not re-validated here.
+- OpenCode previously validated MCP, L2, and plugin behavior. A free
+  `BENCH_INTEGRATION=1` check now also validates skill discovery, the brief L2
+  instruction, MCP configuration and handshake, and `/api/skill` polling on
+  OpenCode 2.0.28 without a model call. Paid B11 is prepared but not run, so
+  live model behavior remains unverified.
 - Codex, Cursor, Windsurf/Devin, Gemini CLI, VS Code/Copilot, and Pi use the
   shared canonical skill directly. Claude Code and Antigravity need a dedicated
   link or copy because they do not read global `~/.agents/skills`.
@@ -182,7 +202,13 @@ The root `Makefile` delegates to the subproject with `cd`, for example
 CI installs both projects from their frozen lockfiles. The `validate` job runs
 the root checks; the `benchmark-agent-memory` job runs the subproject
 typecheck, unit and contract tests, and experiment tests. Neither job runs a
-paid stage.
+paid stage. The root uses `bun.lock` only; `package-lock.json` is not part of
+the project.
+
+CI does not run a dependency audit. `bun audit --audit-level=high` currently
+fails on pre-existing advisories, and the workflow documents that instead of
+suppressing the failure. Dependency upgrades remain a separate follow-up. CI
+has not run on GitHub for this branch; only local static checks and suites ran.
 
 ## Limitations and unverified behavior
 
@@ -196,9 +222,12 @@ behavior.
 - The benchmark experiments are runnable but excluded from the subproject
   typecheck because of long-standing pre-existing type errors. They are not
   type-aware linted.
-- The stale root `package-lock.json` was not regenerated; Bun uses `bun.lock`.
+- The root is Bun-only: `bun.lock` is the only lockfile, and `package-lock.json`
+  was removed.
+- CI has not run on GitHub for this branch, and dependency advisories are an
+  open follow-up rather than a passing audit.
 - No paid benchmark stage, real user home, or live database was used for this
-  documentation task.
+  documentation task. Paid B11 remains prepared and not run.
 
 ## Related documentation
 
@@ -206,4 +235,5 @@ behavior.
 - [Cognitive memory lifecycle](cognitive-memory-lifecycle.md)
 - [Agent integration matrix](agent-integration-matrix.md)
 - [Implementation report](skill-first-distribution-report.md)
+- [Merge-readiness report](merge-readiness-report.md)
 - [Agent memory benchmark](../benchmarks/agent-memory/README.md)

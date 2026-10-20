@@ -63,9 +63,6 @@ export async function completeCheckpoint(
     );
   }
 
-  // Get links from the checkpoint (linked_memories are stored as links, not in content)
-  const checkpointLinks = store.getLinks(checkpointMemory.id);
-
   // Create session memory content
   const completedAt = now();
   const sessionContent = buildOfficialSessionSummaryContent({
@@ -85,35 +82,16 @@ export async function completeCheckpoint(
     },
   });
 
-  // Create session memory with name "session-{timestamp}"
-  // Links will be recreated after creating the session memory
-  const sessionMemory = await store.addMemory(
+  // Insert the summary, copy every relation, and delete the checkpoint in one
+  // transaction. Any failure rolls everything back for a safe retry.
+  const sessionMemory = await store.completeCheckpoint({
     space,
-    buildSessionSummaryName(new Date()),
+    checkpointId: checkpointMemory.id,
+    sessionName: buildSessionSummaryName(new Date()),
     sessionContent,
-    {
-      tags: [...SESSION_SUMMARY_TAGS],
-      tier: SESSION_SUMMARY_TIER,
-    }
-  );
-
-  // Recreate links from and to the checkpoint on the session memory
-  for (const link of checkpointLinks) {
-    try {
-      if (link.source_id === checkpointMemory.id) {
-        store.link(sessionMemory.id, link.target_id, link.label || 'related');
-      }
-
-      if (link.target_id === checkpointMemory.id) {
-        store.link(link.source_id, sessionMemory.id, link.label || 'related');
-      }
-    } catch {
-      // Ignore link errors (best-effort)
-    }
-  }
-
-  // Delete the original checkpoint (not just mark complete)
-  store.deleteMemory(checkpointMemory.id);
+    tags: [...SESSION_SUMMARY_TAGS],
+    tier: SESSION_SUMMARY_TIER,
+  });
 
   return {
     sessionMemory: {

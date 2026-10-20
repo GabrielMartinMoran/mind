@@ -10,7 +10,8 @@ import {
 import { tmpdir } from 'os';
 import { join } from 'path';
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 
 import { handleRequest } from '../src/api/server';
 import { executeCommand } from '../src/cli/command-executor';
@@ -354,6 +355,70 @@ describe('withAutoExport decorator', () => {
       entry => entry.path
     );
     expect(exportedFiles.some(path => path.startsWith('session-'))).toBe(true);
+  });
+
+  test('checkpoint completion exports once after commit and not on a rolled-back failure', async () => {
+    const { withAutoExport } = await import('../src/sync/auto-export-store');
+    const { SyncCoordinator } = await import('../src/sync/sync-coordinator');
+    store.createSpace('projects/test', 'Test', ['type:project']);
+    enableSync('projects/test');
+    const synced = withAutoExport(store, { projectRoot: root, source: 'mcp' });
+    const checkpoints = createCheckpointTools(synced);
+
+    const saved = await checkpoints.checkpoint_save.handler({
+      space: 'projects/test',
+      goal: 'Atomic autosync coverage',
+      pending: '',
+    });
+    const checkpointName = saved.checkpoint!.name;
+
+    const spy = spyOn(SyncCoordinator.prototype, 'autoExportSpaces');
+    const injector = new Database(store.getStatus().db_path);
+    try {
+      injector.exec(`
+        CREATE TRIGGER fail_session_insert
+        BEFORE INSERT ON memories
+        WHEN NEW.name LIKE 'session-%'
+        BEGIN
+          SELECT RAISE(ABORT, 'injected summary failure');
+        END;
+      `);
+
+      await expect(
+        checkpoints.checkpoint_done.handler({
+          space: 'projects/test',
+          checkpointName,
+          summary: 'Rolled back',
+        })
+      ).rejects.toThrow(/injected summary failure/);
+
+      expect(spy).not.toHaveBeenCalled();
+      expect(synced.queryMemories({ space: 'projects/test', tag: 'type:session' })).toHaveLength(0);
+      const failedExportFiles = Object.values(
+        readManifest(store, 'projects/test').entries ?? {}
+      ).map(entry => entry.path);
+      expect(failedExportFiles.some(path => path.startsWith('session-'))).toBe(false);
+
+      injector.exec('DROP TRIGGER fail_session_insert');
+      spy.mockClear();
+
+      const done = await checkpoints.checkpoint_done.handler({
+        space: 'projects/test',
+        checkpointName,
+        summary: 'Committed and exported',
+      });
+      expect(done.isError).not.toBe(true);
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0]?.[0]).toEqual(['projects/test']);
+      const exportedFiles = Object.values(readManifest(store, 'projects/test').entries ?? {}).map(
+        entry => entry.path
+      );
+      expect(exportedFiles.some(path => path.startsWith('session-'))).toBe(true);
+    } finally {
+      spy.mockRestore();
+      injector.close();
+    }
   });
 });
 

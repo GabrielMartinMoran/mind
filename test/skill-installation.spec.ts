@@ -16,6 +16,7 @@ import { dirname, join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { renderMindManagementSkill } from '../src/cli/mind-management-skill';
+import { isAgentIntegrationDetected } from '../src/cli/setup';
 import {
   type AgentSkillType,
   ensureCanonicalSkill,
@@ -24,7 +25,7 @@ import {
   getAgentSkillSignalPaths,
   getCanonicalSkillDir,
   installMindManagementSkill,
-  isManagedSkillContent,
+  resolveSymlinkType,
   SKILL_OWNERSHIP_MARKER,
 } from '../src/setup/skill-installation';
 
@@ -56,8 +57,12 @@ afterEach(() => {
   }
 });
 
+function canonicalDir(): string {
+  return getCanonicalSkillDir();
+}
+
 function canonicalFile(): string {
-  return join(getCanonicalSkillDir(), 'SKILL.md');
+  return join(canonicalDir(), 'SKILL.md');
 }
 
 function oldMindSkillContent(): string {
@@ -74,6 +79,10 @@ function oldMindSkillContent(): string {
   ].join('\n');
 }
 
+function markerOldContent(): string {
+  return [SKILL_OWNERSHIP_MARKER, '', '# Old managed skill', '', 'stale body', ''].join('\n');
+}
+
 function foreignSkillContent(): string {
   return [
     '---',
@@ -86,10 +95,24 @@ function foreignSkillContent(): string {
   ].join('\n');
 }
 
+function backupNames(dirPath: string, prefix: string): string[] {
+  return readdirSync(dirPath).filter(name => name.startsWith(prefix));
+}
+
 function backupDirsFor(dirPath: string): string[] {
   const parent = dirname(dirPath);
   const prefix = `${dirPath.split('/').pop()}.bak.`;
   return readdirSync(parent).filter(name => name.startsWith(prefix));
+}
+
+function skillBackupFiles(dirPath: string): string[] {
+  return backupNames(dirPath, 'SKILL.md.bak.');
+}
+
+function createSymlink(target: string, linkPath: string, type: 'dir' | 'file' = 'dir'): void {
+  mkdirSync(dirname(linkPath), { recursive: true });
+  rmSync(linkPath, { recursive: true, force: true });
+  symlinkSync(target, linkPath, type);
 }
 
 describe('canonical skill installation', () => {
@@ -115,13 +138,11 @@ describe('canonical skill installation', () => {
 
     expect(result.path).toBe(canonicalFile());
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(before);
-    expect(readdirSync(getCanonicalSkillDir()).filter(n => n.startsWith('SKILL.md.bak.'))).toEqual(
-      []
-    );
+    expect(skillBackupFiles(canonicalDir())).toEqual([]);
   });
 
-  test('backs up and migrates an old Mind-managed canonical skill', () => {
-    mkdirSync(getCanonicalSkillDir(), { recursive: true });
+  test('backs up and updates an old copy without the ownership marker', () => {
+    mkdirSync(canonicalDir(), { recursive: true });
     writeFileSync(canonicalFile(), oldMindSkillContent());
 
     const result = ensureCanonicalSkill();
@@ -129,39 +150,58 @@ describe('canonical skill installation', () => {
     expect(result.path).toBe(canonicalFile());
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
 
-    const backups = readdirSync(getCanonicalSkillDir()).filter(n => n.startsWith('SKILL.md.bak.'));
+    const backups = skillBackupFiles(canonicalDir());
     expect(backups).toHaveLength(1);
-    expect(readFileSync(join(getCanonicalSkillDir(), backups[0] as string), 'utf-8')).toBe(
+    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toBe(
       oldMindSkillContent()
     );
 
     ensureCanonicalSkill();
-    expect(
-      readdirSync(getCanonicalSkillDir()).filter(n => n.startsWith('SKILL.md.bak.'))
-    ).toHaveLength(1);
+    expect(skillBackupFiles(canonicalDir())).toHaveLength(1);
   });
 
-  test('never overwrites a foreign canonical skill and reports a warning', () => {
-    mkdirSync(getCanonicalSkillDir(), { recursive: true });
+  test('backs up and updates a marked copy whose content differs', () => {
+    mkdirSync(canonicalDir(), { recursive: true });
+    writeFileSync(canonicalFile(), markerOldContent());
+
+    const result = ensureCanonicalSkill();
+
+    expect(result.path).toBe(canonicalFile());
+    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
+
+    const backups = skillBackupFiles(canonicalDir());
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toBe(
+      markerOldContent()
+    );
+  });
+
+  test('updates a same-name canonical skill in the managed location', () => {
+    mkdirSync(canonicalDir(), { recursive: true });
     writeFileSync(canonicalFile(), foreignSkillContent());
 
     const result = ensureCanonicalSkill();
 
-    expect(result.path).toBeNull();
-    expect(result.warnings).toHaveLength(1);
-    expect(result.warnings[0]).toContain('foreign');
-    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(foreignSkillContent());
+    expect(result.path).toBe(canonicalFile());
+    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
 
-    const installation = installMindManagementSkill('opencode');
-    expect(installation.path).toBeNull();
-    expect(installation.warnings).toHaveLength(1);
-    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(foreignSkillContent());
+    const backups = skillBackupFiles(canonicalDir());
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toBe(
+      foreignSkillContent()
+    );
   });
 
-  test('recognizes the ownership marker and the old Mind signature only', () => {
-    expect(isManagedSkillContent(renderMindManagementSkill())).toBe(true);
-    expect(isManagedSkillContent(oldMindSkillContent())).toBe(true);
-    expect(isManagedSkillContent(foreignSkillContent())).toBe(false);
+  test('never modifies another skill beside mind-management', () => {
+    const otherDir = join(tempHome, '.agents', 'skills', 'other-skill');
+    const otherFile = join(otherDir, 'SKILL.md');
+    mkdirSync(otherDir, { recursive: true });
+    writeFileSync(otherFile, '# Other skill\n');
+
+    installMindManagementSkill('opencode');
+
+    expect(readFileSync(otherFile, 'utf-8')).toBe('# Other skill\n');
+    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
   });
 });
 
@@ -193,7 +233,7 @@ describe('agent skill destinations', () => {
 
       expect(result.warnings).toEqual([]);
       expect(lstatSync(targetDir).isSymbolicLink()).toBe(true);
-      expect(realpathSync(targetDir)).toBe(realpathSync(getCanonicalSkillDir()));
+      expect(realpathSync(targetDir)).toBe(realpathSync(canonicalDir()));
       expect(readFileSync(getAgentSkillPath(agent), 'utf-8')).toBe(renderMindManagementSkill());
     }
   });
@@ -261,7 +301,7 @@ describe('shadow migration', () => {
     );
   });
 
-  test('leaves a foreign shadow skill in place and warns', () => {
+  test('migrates a same-name shadow skill in the managed legacy location', () => {
     ensureCanonicalSkill();
     const shadowDir = join(tempHome, '.cursor', 'skills', 'mind-management');
     mkdirSync(shadowDir, { recursive: true });
@@ -269,13 +309,18 @@ describe('shadow migration', () => {
 
     const result = installMindManagementSkill('cursor');
 
-    expect(result.warnings.some(warning => warning.includes('foreign'))).toBe(true);
-    expect(readFileSync(join(shadowDir, 'SKILL.md'), 'utf-8')).toBe(foreignSkillContent());
+    expect(result.path).toBe(getAgentSkillPath('cursor'));
+    expect(existsSync(join(shadowDir, 'SKILL.md'))).toBe(false);
+    const backups = backupDirsFor(shadowDir);
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(dirname(shadowDir), backups[0] as string, 'SKILL.md'), 'utf-8')).toBe(
+      foreignSkillContent()
+    );
   });
 });
 
 describe('dedicated client directories', () => {
-  test('backs up and replaces an old Mind-managed Claude copy with a symlink', () => {
+  test('backs up and replaces an old managed Claude copy with a symlink', () => {
     ensureCanonicalSkill();
     const targetDir = getAgentSkillLayout('claude-code').targetDir;
     mkdirSync(targetDir, { recursive: true });
@@ -306,10 +351,10 @@ describe('dedicated client directories', () => {
     expect(lstatSync(targetDir).isSymbolicLink()).toBe(false);
     expect(readFileSync(join(targetDir, 'SKILL.md'), 'utf-8')).toBe(renderMindManagementSkill());
     expect(readFileSync(join(targetDir, 'extra.md'), 'utf-8')).toBe('keep me');
-    expect(readdirSync(targetDir).some(name => name.startsWith('SKILL.md.bak.'))).toBe(true);
+    expect(skillBackupFiles(targetDir)).toHaveLength(1);
   });
 
-  test('leaves a foreign dedicated client skill in place and reports it', () => {
+  test('updates a same-name dedicated client skill in the managed location', () => {
     ensureCanonicalSkill();
     const targetDir = getAgentSkillLayout('claude-code').targetDir;
     mkdirSync(targetDir, { recursive: true });
@@ -317,10 +362,9 @@ describe('dedicated client directories', () => {
 
     const result = installMindManagementSkill('claude-code');
 
-    expect(result.path).toBeNull();
-    expect(result.warnings.some(warning => warning.includes('foreign'))).toBe(true);
-    expect(lstatSync(targetDir).isSymbolicLink()).toBe(false);
-    expect(readFileSync(join(targetDir, 'SKILL.md'), 'utf-8')).toBe(foreignSkillContent());
+    expect(result.path).toBe(join(targetDir, 'SKILL.md'));
+    expect(readFileSync(join(targetDir, 'SKILL.md'), 'utf-8')).toBe(renderMindManagementSkill());
+    expect(backupDirsFor(targetDir)).toHaveLength(1);
   });
 
   test('falls back to a managed copy when directory symlinks are unavailable', () => {
@@ -338,12 +382,191 @@ describe('dedicated client directories', () => {
     expect(lstatSync(targetDir).isSymbolicLink()).toBe(false);
     expect(readFileSync(join(targetDir, 'SKILL.md'), 'utf-8')).toBe(renderMindManagementSkill());
 
-    const backupsBefore = readdirSync(targetDir).filter(n => n.startsWith('SKILL.md.bak.')).length;
+    const backupsBefore = skillBackupFiles(targetDir).length;
     const second = installMindManagementSkill('claude-code', { symlinkSync: failingSymlink });
 
     expect(second.warnings.filter(warning => /managed copy/i.test(warning))).toHaveLength(0);
-    expect(readdirSync(targetDir).filter(n => n.startsWith('SKILL.md.bak.')).length).toBe(
-      backupsBefore
+    expect(skillBackupFiles(targetDir)).toHaveLength(backupsBefore);
+  });
+});
+
+describe('symlink safety', () => {
+  test('replaces a foreign directory symlink without writing through it', () => {
+    const externalDir = join(tempHome, 'external-skill');
+    const externalFile = join(externalDir, 'SKILL.md');
+    mkdirSync(externalDir, { recursive: true });
+    writeFileSync(externalFile, 'EXTERNAL CONTENT');
+    const mtimeBefore = lstatSync(externalFile).mtimeMs;
+    createSymlink(externalDir, canonicalDir(), 'dir');
+
+    const result = ensureCanonicalSkill();
+
+    expect(result.path).toBe(canonicalFile());
+    expect(lstatSync(canonicalDir()).isDirectory()).toBe(true);
+    expect(lstatSync(canonicalDir()).isSymbolicLink()).toBe(false);
+    expect(readFileSync(externalFile, 'utf-8')).toBe('EXTERNAL CONTENT');
+    expect(lstatSync(externalFile).mtimeMs).toBe(mtimeBefore);
+
+    const backups = backupDirsFor(canonicalDir());
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(dirname(canonicalDir()), backups[0] as string), 'utf-8')).toContain(
+      `LINK_TARGET=${externalDir}`
     );
+  });
+
+  test('repairs a broken directory symlink and records the old target', () => {
+    const missingTarget = join(tempHome, 'missing-target');
+    createSymlink(missingTarget, canonicalDir(), 'dir');
+
+    const result = ensureCanonicalSkill();
+
+    expect(result.path).toBe(canonicalFile());
+    expect(lstatSync(canonicalDir()).isDirectory()).toBe(true);
+    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
+    const backups = backupDirsFor(canonicalDir());
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(dirname(canonicalDir()), backups[0] as string), 'utf-8')).toContain(
+      `LINK_TARGET=${missingTarget}`
+    );
+  });
+
+  test('replaces a file-level SKILL.md symlink without touching its target', () => {
+    mkdirSync(canonicalDir(), { recursive: true });
+    const externalFile = join(tempHome, 'external-SKILL.md');
+    writeFileSync(externalFile, 'EXTERNAL FILE CONTENT');
+    const mtimeBefore = lstatSync(externalFile).mtimeMs;
+    createSymlink(externalFile, canonicalFile(), 'file');
+
+    const result = ensureCanonicalSkill();
+
+    expect(result.path).toBe(canonicalFile());
+    expect(lstatSync(canonicalFile()).isFile()).toBe(true);
+    expect(readFileSync(externalFile, 'utf-8')).toBe('EXTERNAL FILE CONTENT');
+    expect(lstatSync(externalFile).mtimeMs).toBe(mtimeBefore);
+    const backups = skillBackupFiles(canonicalDir());
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toContain(
+      `LINK_TARGET=${externalFile}`
+    );
+  });
+
+  test('replaces a foreign dedicated symlink and records its target', () => {
+    ensureCanonicalSkill();
+    const targetDir = getAgentSkillLayout('claude-code').targetDir;
+    const externalDir = join(tempHome, 'external-claude-skill');
+    mkdirSync(externalDir, { recursive: true });
+    writeFileSync(join(externalDir, 'SKILL.md'), 'EXTERNAL CLAUDE CONTENT');
+    createSymlink(externalDir, targetDir, 'dir');
+
+    const result = installMindManagementSkill('claude-code');
+
+    expect(result.path).toBe(getAgentSkillPath('claude-code'));
+    expect(realpathSync(targetDir)).toBe(realpathSync(canonicalDir()));
+    expect(readFileSync(join(externalDir, 'SKILL.md'), 'utf-8')).toBe('EXTERNAL CLAUDE CONTENT');
+    const backups = backupDirsFor(targetDir);
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(dirname(targetDir), backups[0] as string), 'utf-8')).toContain(
+      `LINK_TARGET=${externalDir}`
+    );
+  });
+});
+
+describe('portable repair behavior', () => {
+  test('repairs a regular file used as the canonical skill directory without ENOTDIR', () => {
+    mkdirSync(dirname(canonicalDir()), { recursive: true });
+    writeFileSync(canonicalDir(), 'NOT A DIRECTORY');
+
+    const result = ensureCanonicalSkill();
+
+    expect(result.path).toBe(canonicalFile());
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(lstatSync(canonicalDir()).isDirectory()).toBe(true);
+    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
+    const backups = backupDirsFor(canonicalDir());
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(dirname(canonicalDir()), backups[0] as string), 'utf-8')).toBe(
+      'NOT A DIRECTORY'
+    );
+  });
+
+  test('repairs a regular file used as a dedicated skill path without ENOTDIR', () => {
+    ensureCanonicalSkill();
+    const targetDir = getAgentSkillLayout('claude-code').targetDir;
+    mkdirSync(dirname(targetDir), { recursive: true });
+    writeFileSync(targetDir, 'NOT A DIRECTORY');
+
+    const result = installMindManagementSkill('claude-code');
+
+    expect(result.path).toBe(getAgentSkillPath('claude-code'));
+    expect(result.warnings.length).toBeGreaterThan(0);
+    expect(lstatSync(targetDir).isSymbolicLink() || lstatSync(targetDir).isDirectory()).toBe(true);
+    expect(readFileSync(getAgentSkillPath('claude-code'), 'utf-8')).toBe(
+      renderMindManagementSkill()
+    );
+    expect(backupDirsFor(targetDir)).toHaveLength(1);
+  });
+
+  test('repairs a regular file at ~/.agents instead of throwing ENOTDIR', () => {
+    writeFileSync(join(tempHome, '.agents'), 'BLOCKING AGENTS FILE');
+
+    const result = ensureCanonicalSkill();
+
+    expect(result.path).toBe(canonicalFile());
+    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
+    const backups = backupNames(tempHome, '.agents.bak.');
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(tempHome, backups[0] as string), 'utf-8')).toBe(
+      'BLOCKING AGENTS FILE'
+    );
+  });
+
+  test('repairs a regular file at ~/.agents/skills instead of throwing ENOTDIR', () => {
+    mkdirSync(join(tempHome, '.agents'), { recursive: true });
+    writeFileSync(join(tempHome, '.agents', 'skills'), 'BLOCKING SKILLS FILE');
+
+    const result = ensureCanonicalSkill();
+
+    expect(result.path).toBe(canonicalFile());
+    expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
+    const backups = backupNames(join(tempHome, '.agents'), 'skills.bak.');
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(tempHome, '.agents', backups[0] as string), 'utf-8')).toBe(
+      'BLOCKING SKILLS FILE'
+    );
+  });
+
+  test('repairs a regular file at ~/.claude for Claude Code instead of throwing ENOTDIR', () => {
+    writeFileSync(join(tempHome, '.claude'), 'BLOCKING CLAUDE FILE');
+
+    const result = installMindManagementSkill('claude-code');
+    const targetDir = getAgentSkillLayout('claude-code').targetDir;
+
+    expect(result.path).toBe(getAgentSkillPath('claude-code'));
+    expect(lstatSync(targetDir).isSymbolicLink()).toBe(true);
+    expect(readFileSync(getAgentSkillPath('claude-code'), 'utf-8')).toBe(
+      renderMindManagementSkill()
+    );
+    const backups = backupNames(tempHome, '.claude.bak.');
+    expect(backups).toHaveLength(1);
+    expect(readFileSync(join(tempHome, backups[0] as string), 'utf-8')).toBe(
+      'BLOCKING CLAUDE FILE'
+    );
+  });
+
+  test('resolves the Windows link type through a pure seam', () => {
+    expect(resolveSymlinkType('win32')).toBe('junction');
+    expect(resolveSymlinkType('linux')).toBe('dir');
+    expect(resolveSymlinkType('darwin')).toBe('dir');
+  });
+});
+
+describe('skill detection', () => {
+  test('detects a dedicated client from a broken managed symlink so it can be repaired', () => {
+    installMindManagementSkill('claude-code');
+    const targetDir = getAgentSkillLayout('claude-code').targetDir;
+    createSymlink(join(tempHome, 'gone'), targetDir, 'dir');
+
+    expect(lstatSync(targetDir).isSymbolicLink()).toBe(true);
+    expect(isAgentIntegrationDetected('claude-code')).toBe(true);
   });
 });

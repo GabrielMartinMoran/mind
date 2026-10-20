@@ -40,6 +40,7 @@ import {
   B10_TARGET_CONTENT,
   makeAssertion as b10MakeAssertion,
 } from '../src/benchmarkB/scenarios/b10/index';
+import { B11_PROMPTS, B11_SCENARIO } from '../src/benchmarkB/scenarios/b11/index';
 import {
   B4_FIXTURE_TEST_FILE,
   B4_SCENARIO,
@@ -160,9 +161,9 @@ function child(memoryCalls: number): BChildResult {
 }
 
 describe('scenario registry', () => {
-  test('exposes b1, b4, b5, b6, b7, b9, b8 and b10 with identical prompts and assertions', () => {
-    expect(SCENARIO_IDS).toEqual(['b1', 'b4', 'b5', 'b6', 'b7', 'b9', 'b8', 'b10']);
-    expect(SCENARIOS).toHaveLength(8);
+  test('exposes b1, b4, b5, b6, b7, b9, b8, b10 and b11 with identical prompts and assertions', () => {
+    expect(SCENARIO_IDS).toEqual(['b1', 'b4', 'b5', 'b6', 'b7', 'b9', 'b8', 'b10', 'b11']);
+    expect(SCENARIOS).toHaveLength(9);
     for (const scenario of SCENARIOS) {
       const expectedSessions = scenario.id === 'b9' ? 3 : scenario.id === 'b10' ? 1 : 2;
       expect(scenario.sessions).toHaveLength(expectedSessions);
@@ -177,6 +178,7 @@ describe('scenario registry', () => {
     expect(selectScenarios(['b9']).map(s => s.id)).toEqual(['b9']);
     expect(selectScenarios(['b8']).map(s => s.id)).toEqual(['b8']);
     expect(selectScenarios(['b10']).map(s => s.id)).toEqual(['b10']);
+    expect(selectScenarios(['b11']).map(s => s.id)).toEqual(['b11']);
     expect(selectScenarios().map(s => s.id)).toEqual([
       'b1',
       'b4',
@@ -186,6 +188,7 @@ describe('scenario registry', () => {
       'b9',
       'b8',
       'b10',
+      'b11',
     ]);
     expect(() => selectScenarios(['nope'])).toThrow('unknown scenario');
   });
@@ -1383,6 +1386,7 @@ describe('B5/B6 prompts and seed', () => {
     expect(B8_SCENARIO.sessions.map(session => session.prompt)).toEqual(B8_PROMPTS);
     expect(B9_SCENARIO.sessions.map(session => session.prompt)).toEqual(B9_PROMPTS);
     expect(B10_SCENARIO.sessions.map(session => session.prompt)).toEqual(B10_PROMPTS);
+    expect(B11_SCENARIO.sessions.map(session => session.prompt)).toEqual(B11_PROMPTS);
     for (const prompt of [
       ...B5_PROMPTS,
       ...B6_PROMPTS,
@@ -1390,6 +1394,7 @@ describe('B5/B6 prompts and seed', () => {
       ...B8_PROMPTS,
       ...B9_PROMPTS,
       ...B10_PROMPTS,
+      ...B11_PROMPTS,
     ]) {
       expect(prompt).not.toMatch(/\bmind\b/i);
       expect(prompt).not.toMatch(/\bengine\b/i);
@@ -1415,6 +1420,7 @@ describe('B5/B6 prompts and seed', () => {
       B8_SCENARIO,
       B9_SCENARIO,
       B10_SCENARIO,
+      B11_SCENARIO,
     ]) {
       const { run } = await runProbe(scenario, {
         conditions: ['no-memory', 'mind-v9'],

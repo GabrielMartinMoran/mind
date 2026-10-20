@@ -44,6 +44,12 @@ Claude Code and Antigravity receive a symlink or managed copy because they do
 not read global `~/.agents/skills`. Setup migrates Mind-managed shadow copies
 and refuses to overwrite foreign files.
 
+The merge-readiness pass simplified the policy to the exact name
+`mind-management` in a managed path. The ownership marker is provenance, not
+authorization, so an old copy without the marker is still updateable. Setup no
+longer scans content for historical signatures, and other skills are never
+modified.
+
 ## 3. Clients and capabilities verified
 
 The capability model keeps L1 MCP, L2 instruction injection, and L3 hooks
@@ -86,12 +92,17 @@ discover `~/.agents` use it directly. Claude Code links or copies to
 `~/.claude/skills/mind-management`; Antigravity links or copies to
 `~/.gemini/config/skills/mind-management`.
 
-The installer writes an ownership marker, backs up content-changing writes,
-writes atomically through a temporary sibling file, and skips byte-identical
-content. A foreign `SKILL.md` is preserved with a warning. On Windows, setup
-creates a directory junction and falls back to a copy. Shadow copies in
-OpenCode, Cursor, Windsurf, VS Code, Gemini, Pi, and legacy Antigravity paths
-are backed up and removed only when Mind generated them.
+The installer writes an ownership marker as provenance, backs up
+content-changing writes, writes atomically through a temporary sibling file,
+and skips byte-identical content. A same-name `mind-management` file in a
+managed path is updateable with or without the marker; other skills are never
+touched. Classification uses `lstat`: a foreign or broken symlink is recorded as
+`LINK_TARGET=<target>` in a backup sidecar and replaced without writing through
+it, and a non-directory managed path is repaired instead of raising `ENOTDIR`.
+Auxiliary files stay in place. On Windows, setup creates a directory junction
+and falls back to a copy. Shadow copies in OpenCode, Cursor, Windsurf, VS Code,
+Gemini, Pi, and legacy Antigravity paths are backed up and removed only when
+Mind generated them.
 
 ## 6. MCP changes
 
@@ -168,26 +179,28 @@ Both projects have a Bun lockfile and install from it with
 - `benchmarks/agent-memory/bun.lock`: contains `@opencode/sdk@2.0.28` and the
   subproject's dev dependencies.
 
-The root `package-lock.json` is stale and was not regenerated. Bun does not use
-it. Regenerating it remains pending so it does not imply a second package
-manager.
+The root is Bun-only. `bun.lock` is the only root lockfile, and
+`package-lock.json` was removed in the merge-readiness pass. The release script
+no longer reads, writes, or aligns npm-lock versions, so the repository does
+not imply a second package manager.
 
 ## 11. Tests and results
 
 All checks below were free. No paid benchmark stage ran, no real user home was
 modified, and no live database was opened.
 
-| Check                    | Command                                                       | Result                    |
-| ------------------------ | ------------------------------------------------------------- | ------------------------- |
-| Root suite               | `bun test test/ web/test`                                     | 1340 pass, 7 skip, 0 fail |
-| Root typecheck           | `bun run typecheck`                                           | Pass                      |
-| Root lint                | `bun run lint`                                                | Pass                      |
-| Root format              | `bun run format:check`                                        | Pass                      |
-| Root frozen install      | `bun install --frozen-lockfile`                               | Pass                      |
-| Benchmark suite          | `cd benchmarks/agent-memory && bun test test`                 | 367 pass, 7 skip, 0 fail  |
-| Benchmark experiments    | `cd benchmarks/agent-memory && bun test experiments`          | 105 pass                  |
-| Benchmark typecheck      | `cd benchmarks/agent-memory && bun run typecheck`             | Pass                      |
-| Benchmark frozen install | `cd benchmarks/agent-memory && bun install --frozen-lockfile` | Pass                      |
+| Check                     | Command                                                                 | Result                    |
+| ------------------------- | ----------------------------------------------------------------------- | ------------------------- |
+| Root suite                | `bun test test/ web/test`                                               | 1386 pass, 8 skip, 0 fail |
+| Root typecheck            | `bun run typecheck`                                                     | Pass                      |
+| Root lint                 | `bun run lint`                                                          | Pass                      |
+| Root format               | `bun run format:check`                                                  | Pass                      |
+| Root frozen install       | `bun install --frozen-lockfile`                                         | Pass                      |
+| Benchmark suite           | `cd benchmarks/agent-memory && bun test test`                           | 388 pass, 8 skip, 0 fail  |
+| Benchmark experiments     | `cd benchmarks/agent-memory && bun test experiments`                    | 105 pass                  |
+| Free OpenCode integration | `BENCH_INTEGRATION=1 bun test test/skill-discovery.integration.spec.ts` | 1 pass                    |
+| Benchmark typecheck       | `cd benchmarks/agent-memory && bun run typecheck`                       | Pass                      |
+| Benchmark frozen install  | `cd benchmarks/agent-memory && bun install --frozen-lockfile`           | Pass                      |
 
 What the evidence proves:
 
@@ -198,9 +211,18 @@ What the evidence proves:
 - **Static or configuration validation.** Typecheck, lint, format, frozen
   installs, dependency-tree checks, path checks, and manifest inspection verify
   structure and text without exercising a live client.
-- **Not verified.** Live skill activation, live hook firing, Cursor payloads and
-  argv, and any paid benchmark stage. These remain unverified; no paid
+- **Free OpenCode validation.** The gated integration run uses OpenCode 2.0.28
+  with no model call and verifies skill discovery, the brief L2 instruction,
+  MCP configuration and handshake, `/api/skill` polling, and the isolation
+  allowlist.
+- **Not verified.** Live skill activation by a model, live hook firing, Cursor
+  payloads and argv, compaction (disabled by `OPENCODE_DISABLE_AUTOCOMPACT=1`),
+  and any paid benchmark stage including B11. These remain unverified; no paid
   subscription was used to claim otherwise.
+- **CI.** Workflow behavior is checked locally with static assertions. The
+  workflow has not run on GitHub for this branch. The audit step is absent
+  because `bun audit --audit-level=high` fails on pre-existing advisories;
+  dependency upgrades are a separate follow-up.
 
 ## 12. Limitations and unverified behavior
 
@@ -213,7 +235,13 @@ What the evidence proves:
   typecheck because of long-standing pre-existing type errors. The subproject
   has no lint script, and the root ESLint config lints them with a non-type-aware
   pass.
-- The root `package-lock.json` was not regenerated.
+- Paid B11 is prepared but not run, so live skill activation, protocol use,
+  and cross-session continuity remain unverified.
+- `OPENCODE_DISABLE_AUTOCOMPACT=1` prevents compaction validation today.
+- CI has not run on GitHub for this branch, and dependency advisories remain an
+  open follow-up rather than a passing audit.
+- The root is Bun-only; `package-lock.json` was removed and `bun.lock` is the
+  only lockfile.
 - No commit was made by this documentation task; the working tree remains for
   review.
 - Documentation correctness is checked by tests, format, lint, typecheck, and
@@ -230,4 +258,5 @@ reproducible client run records them.
 - [Skill-first distribution](skill-first-distribution.md)
 - [Cognitive memory lifecycle](cognitive-memory-lifecycle.md)
 - [Agent integration matrix](agent-integration-matrix.md)
+- [Merge-readiness report](merge-readiness-report.md)
 - [Agent memory benchmark](../benchmarks/agent-memory/README.md)

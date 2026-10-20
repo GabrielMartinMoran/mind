@@ -20,6 +20,7 @@ import {
   getAgentSkillLayout,
   getAgentSkillPath,
   getAgentSkillSignalPaths,
+  pathExistsLstat,
 } from '../setup/skill-installation';
 export { buildOpenCodeAutomationPlugin } from '../setup/opencode-automation-plugin';
 export { getAgentCapabilities, getAgentCapabilityMatrix } from './capabilities';
@@ -1073,12 +1074,18 @@ function hasAgentSkillSignal(agent: SupportedAgent): boolean {
   // Link-strategy clients have a dedicated directory, so only its SKILL.md is
   // a signal. The shared canonical copy must not make every client look
   // detected after a single install.
-  if (getAgentSkillLayout(agent).strategy === 'link') {
-    return fs.existsSync(getAgentSkillPath(agent));
+  const layout = getAgentSkillLayout(agent);
+  if (layout.strategy === 'link') {
+    // lstat also recognizes a broken managed symlink, so refresh can repair it.
+    return pathExistsLstat(layout.targetDir) || pathExistsLstat(getAgentSkillPath(agent));
   }
 
+  const managedDirs = [layout.canonicalDir, ...layout.shadowDirs];
   const skillPaths = getAgentSkillSignalPaths(agent);
-  if (!skillPaths.some(skillPath => fs.existsSync(skillPath))) {
+  if (
+    !managedDirs.some(managedPath => pathExistsLstat(managedPath)) &&
+    !skillPaths.some(skillPath => pathExistsLstat(skillPath))
+  ) {
     return false;
   }
 

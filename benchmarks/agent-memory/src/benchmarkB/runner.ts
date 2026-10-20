@@ -71,6 +71,8 @@ export interface BSessionJob {
   readonly mindDbPath: string | null;
   /** Engine binary the unit runs, or null for no-memory. */
   readonly mindBin: string | null;
+  /** Extra skills the scenario installs and the isolation gate must allow. */
+  readonly allowedSkills?: readonly string[];
 }
 
 export type BSessionExecutor = (job: BSessionJob) => Promise<BSessionOutcome>;
@@ -366,6 +368,7 @@ async function runUnit(
       env,
       mindDbPath: mindDb,
       mindBin,
+      ...(scenario.allowedSkills ? { allowedSkills: scenario.allowedSkills } : {}),
     };
 
     options.budget.assertCanSpend(0);

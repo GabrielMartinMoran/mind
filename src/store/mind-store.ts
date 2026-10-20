@@ -44,6 +44,16 @@ export interface MemoryPatchInput {
   removeLinksToIds?: string[];
 }
 
+/** Prepared input for the atomic checkpoint-to-session transformation. */
+export interface CompleteCheckpointInput {
+  space: string;
+  checkpointId: string;
+  sessionName: string;
+  sessionContent: string;
+  tags: string[];
+  tier: Tier;
+}
+
 /** Optional pagination for relevance search. Surfaces supply their own defaults. */
 export interface SearchPagination {
   /** Maximum results to return; clamped by the store to 1..500. Omit for unbounded. */
@@ -91,6 +101,15 @@ export interface MindStore {
   ): Promise<Memory>;
   deleteMemory(id: string): void;
   deleteMemoryByName(space: string, name: string): void;
+  /**
+   * Atomically transform a checkpoint into a session summary: revalidate the
+   * checkpoint, insert the summary, copy every inbound/outbound link keeping
+   * its direction and label, and delete the checkpoint in one transaction.
+   * The embedding is generated best-effort after commit. If any step fails the
+   * transaction rolls back, leaving no partial summary, copied links, or
+   * deletion.
+   */
+  completeCheckpoint(input: CompleteCheckpointInput): Promise<Memory>;
   /**
    * Record an access (bumps count + last_accessed_at).
    * Also auto-promotes non-pinned memories one tier up (with LRU eviction if destination is full).
