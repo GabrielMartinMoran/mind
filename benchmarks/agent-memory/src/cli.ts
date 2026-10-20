@@ -351,6 +351,8 @@ export interface DispatchDeps {
   readonly reportRunner?: ReportCliRunner;
   /** Injected by the entry point; runs the `full` orchestration. */
   readonly fullRunner?: FullCliRunner;
+  /** Injectable filesystem for `clean` (tests); defaults to the real one. */
+  readonly cleanFs?: CleanFs;
 }
 
 export type LocomoRunner = (options: CliOptions, deps: DispatchDeps) => Promise<number>;
@@ -424,7 +426,16 @@ export async function dispatch(options: CliOptions, deps: DispatchDeps): Promise
   }
 
   if (options.command === 'clean') {
-    const cleaned = cleanRuns(options);
+    // Relative runs/work roots are project-relative, not cwd-relative: the CLI
+    // must behave the same from the repo root, the subproject, or anywhere else.
+    const cleaned = cleanRuns(
+      {
+        runsRoot: resolve(deps.repoRoot, options.runsRoot),
+        workRoot: resolve(deps.repoRoot, options.workRoot),
+        all: options.all,
+      },
+      deps.cleanFs ?? realCleanFs
+    );
     deps.stdout(
       `removed ${cleaned.removedRuns.length} run dir(s)` +
         (options.all

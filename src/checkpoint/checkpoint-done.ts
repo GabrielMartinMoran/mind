@@ -3,6 +3,7 @@
  * Used by both CLI `checkpoint complete` and MCP `checkpoint_done`.
  */
 
+import { fetchCheckpointContent } from '../helpers/checkpoint-content';
 import {
   buildOfficialSessionSummaryContent,
   buildSessionSummaryName,
@@ -40,8 +41,27 @@ export async function completeCheckpoint(
     throw new Error(`Checkpoint with id ${checkpointMemoryId} could not be loaded.`);
   }
 
+  if (!checkpointMemory.tags.includes('checkpoint')) {
+    throw new Error(
+      `Memory "${checkpointMemory.name}" in "${space}" is not a checkpoint; refusing to complete it.`
+    );
+  }
+
   // Parse checkpoint content
-  const checkpointContent = JSON.parse(checkpointMemory.content);
+  const checkpointContent = fetchCheckpointContent(checkpointMemory);
+  if (!checkpointContent) {
+    throw new Error(
+      `Checkpoint "${checkpointMemory.name}" has invalid JSON content and cannot be completed.`
+    );
+  }
+
+  if (checkpointContent.pending.trim().length > 0) {
+    throw new Error(
+      `Checkpoint "${checkpointMemory.name}" still has pending work: "${checkpointContent.pending}". ` +
+        'Update the checkpoint to clear pending work before calling checkpoint_done. ' +
+        'If the work is being abandoned, clear pending explicitly and record why in notes.'
+    );
+  }
 
   // Get links from the checkpoint (linked_memories are stored as links, not in content)
   const checkpointLinks = store.getLinks(checkpointMemory.id);

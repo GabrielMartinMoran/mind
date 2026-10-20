@@ -133,6 +133,7 @@ mind setup windsurf
 mind setup gemini-cli
 mind setup vscode
 mind setup antigravity
+mind setup pi
 mind setup refresh      # refresh detected mind-managed integrations
 ```
 
@@ -141,6 +142,21 @@ integrations, where detection means mind finds an existing mind-owned signal,
 such as an MCP config, managed protocol block, hook/plugin/script, or installed
 mind-management skill. Use `--dry-run` to preview changes, `--all` to refresh
 all supported agents, or `--agent <name>` to target one agent.
+
+### Skill-first protocol
+
+Mind keeps one canonical protocol and one complete `mind-management` skill. The
+skill installs once at `~/.agents/skills/mind-management`; Claude Code and
+Antigravity receive a symlink or managed copy because they do not read the
+global directory. Client L2 instructions and the MCP `initialize.instructions`
+handshake are brief activation only. If the skill cannot be loaded, call the
+`system_instructions` MCP tool for the complete protocol at version `2.1.0`.
+
+Agents load the skill once at session start and reload it after compaction.
+Mind does not track reads in a database, enforce a quota, or create a checkpoint
+just to record activation. See
+[`docs/skill-first-distribution.md`](docs/skill-first-distribution.md) and the
+[agent integration matrix](docs/agent-integration-matrix.md).
 
 ### Post-install configuration
 
@@ -516,16 +532,24 @@ Status labels used here:
 - **Experimental**: declaration exists but integration is explicitly unstable/unverified
 - **Roadmap**: planned declaration only, no adapter wiring
 
-| **Agent**   | **Status** | **Capability reality**                                        |
-| :---------- | :--------- | :------------------------------------------------------------ |
-| OpenCode    | Complete   | L1 `supported`, L2 `supported`, L3 `supported`                |
-| Claude Code | Complete   | L1 `supported`, L2 `supported`, L3 `supported` (opt-in hooks) |
-| Codex       | Partial    | L1 `supported`, L2 `supported`, L3 `unsupported`              |
-| Cursor      | Partial    | L1 `supported`, L2 `unverified`, L3 `supported`               |
-| Windsurf    | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
-| Gemini CLI  | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
-| VSCode      | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
-| Antigravity | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
+| **Agent**         | **Status** | **Capability reality**                                        |
+| :---------------- | :--------- | :------------------------------------------------------------ |
+| OpenCode          | Complete   | L1 `supported`, L2 `supported`, L3 `supported`                |
+| Claude Code       | Complete   | L1 `supported`, L2 `supported`, L3 `supported` (opt-in hooks) |
+| Codex             | Partial    | L1 `supported`, L2 `supported`, L3 `unsupported`              |
+| Cursor            | Partial    | L1 `supported`, L2 `unverified`, L3 `unverified`              |
+| Windsurf / Devin  | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
+| Gemini CLI        | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
+| VS Code / Copilot | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
+| Antigravity       | Partial    | L1 `supported`, L2 `unsupported`, L3 `unsupported`            |
+| Pi Agent          | Partial    | L1 `supported`, L2 `supported`, L3 `unverified`               |
+
+Skill installation is reported separately from the L1/L2/L3 badges. Mind
+installs one canonical skill at `~/.agents/skills/mind-management`; Claude Code
+and Antigravity receive a symlink (or managed copy fallback), and managed
+shadow copies in client-specific skill directories are migrated. See
+[`docs/agent-integration-matrix.md`](docs/agent-integration-matrix.md) for the
+documented paths, instruction support, hooks, and unverified surfaces.
 
 Rollout policy:
 
@@ -533,9 +557,11 @@ Rollout policy:
 - Claude Code now includes managed **L2 protocol injection** by writing `~/.claude/instructions/mind-memory-protocol.md` and maintaining a managed block in `~/.claude/CLAUDE.md`
 - Claude Code **L3 hooks automation is opt-in and non-blocking** (default off). Enable with `MIND_SETUP_CLAUDE_ENABLE_HOOKS=true` before running setup.
 - Cursor **L2** remains intentionally **unverified** (no verified global user-rules injection path)
-- Cursor **L3** is implemented with global hooks wiring (`~/.cursor/hooks.json` + managed hook script)
+- Cursor **L3** writes the documented `{ "version": 1, "hooks": { ... } }` schema with `sessionStart`, `preCompact`, `sessionEnd`, and `stop`, but hook execution is marked **unverified** because it was not live-tested
 - Existing integrations outside Wave 1 remain wired in the same capability model with explicit status
-- Antigravity is now a **supported** agent with L1 MCP wiring and skill installation at `~/.gemini/antigravity/`
+- Windsurf/Devin writes `~/.config/devin/mcp_config.json` (the legacy `~/.windsurf/mcp.json` path is detection-only); VS Code/Copilot writes portable `~/.copilot/mcp-config.json`; Antigravity writes `~/.gemini/config/mcp_config.json` and uses `~/.gemini/config/skills`
+- Pi Agent is a **supported** L1/L2 integration with MCP at `~/.pi/agent/mcp.json`, a brief managed pointer in `~/.pi/agent/AGENTS.md`, and the shared `~/.agents` skill; Mind does not install a Pi plugin and marks L3 **unverified**
+- Codex, Gemini CLI, VS Code/Copilot, and Antigravity document hooks, but Mind does not implement L3 automation for them
 
 `mind setup opencode` is idempotent and non-destructive:
 
@@ -546,7 +572,7 @@ Rollout policy:
 - ensures that instruction file is present in OpenCode's `instructions` list
 - configures prudent L3 session/compaction automation by default and non-blocking, writing `~/.config/opencode/plugins/mind-automation.js` during setup. The generated plugin default-exports an OpenCode V2 plugin definition (`id` + `setup`) and also exposes V1 `server()` hooks, so the same file loads on OpenCode V2 and on V1 builds that support object plugin entrypoints (1.18.29+); older V1 builds keep loading it through the named `MindAutomationPlugin` export
 
-> **Setup safety contract:** all setup flows that touch a user-owned JSON/JSONC config file (opencode, claude fallback, cursor, windsurf, gemini-cli, vscode, antigravity) now go through `src/setup/safe-config.ts`. Existing files are parsed strictly — a parse failure aborts the run with a clear error rather than overwriting the file with an empty default. Content-changing writes are preceded by a timestamped sibling backup (`.bak.YYYYMMDDTHHMMSSmmmZ`) and the new content is staged in a sibling `.tmp` file and renamed into place so a crash mid-write cannot leave a partial file. The same contract applies to `mind setup refresh`.
+> **Setup safety contract:** all setup flows that touch a user-owned JSON/JSONC config file (opencode, claude fallback, cursor, windsurf/devin, gemini-cli, vscode/copilot, antigravity, pi) now go through `src/setup/safe-config.ts`. Existing files are parsed strictly — a parse failure aborts the run with a clear error rather than overwriting the file with an empty default. Content-changing writes are preceded by a timestamped sibling backup (`.bak.YYYYMMDDTHHMMSSmmmZ`) and the new content is staged in a sibling `.tmp` file and renamed into place so a crash mid-write cannot leave a partial file. The same contract applies to `mind setup refresh`.
 
 `mind setup codex` keeps setup idempotent and writes local MCP command args in `~/.codex/config.toml`:
 
@@ -556,11 +582,19 @@ Rollout policy:
 
 It also non-destructively upserts a managed Memory Protocol block in `~/.codex/AGENTS.md`.
 
-`mind setup cursor` keeps existing MCP setup behavior and now configures global L3 continuity hooks:
+`mind setup cursor` keeps existing MCP setup behavior and configures global L3 hooks using the documented envelope:
 
-- writes/updates `~/.cursor/hooks.json` with managed idempotent entries for `sessionStart`, `preCompact`, and `stop`
-- writes/refreshes executable hook script `~/.cursor/hooks/mind-session-continuity.sh`
-- preserves existing hook config keys/entries
+- writes/updates `~/.cursor/hooks.json` using the documented `{ "version": 1, "hooks": { ... } }` schema with managed idempotent entries for `sessionStart`, `preCompact`, `sessionEnd`, and `stop`
+- writes/refreshes a non-mutating shim script at `~/.cursor/hooks/mind-session-continuity.sh` for those events; it does not create, overwrite, or complete checkpoints
+- preserves unrelated hook config keys and entries, and migrates an older top-level event map into the documented envelope
+- hook execution and payload shape are marked **unverified** because they were not live-tested
+
+`mind setup pi` configures the Pi Agent with the minimal integration:
+
+- writes `~/.pi/agent/mcp.json` with `mcpServers.mind` over stdio
+- upserts a brief managed activation block in `~/.pi/agent/AGENTS.md` without touching unrelated content
+- installs the shared `~/.agents/skills/mind-management` skill and migrates a managed Pi-specific shadow copy
+- does not install a Pi plugin; Pi documents extensions, but Mind marks hook automation **unverified**
 
 Check server process status:
 
@@ -650,6 +684,21 @@ key required):
 ```bash
 make search-eval
 ```
+
+Run the agent memory benchmark's free suites. The benchmark is an independent
+Bun subproject with its own lockfile and dependencies, so install it separately:
+
+```bash
+cd benchmarks/agent-memory
+bun install --frozen-lockfile
+bun run typecheck
+bun test test
+bun test experiments
+```
+
+The root `make bench-agent-memory-test` target delegates to both suites. Paid
+benchmark stages require an explicit `--budget` cap and do not run in CI. The
+root project does not install `@opencode/sdk`; the benchmark declares it.
 
 ## Maintainers: Releases
 

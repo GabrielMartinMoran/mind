@@ -29,6 +29,9 @@ Example:
 
 ### Added
 
+- Added Pi Agent setup: MCP at `~/.pi/agent/mcp.json`, a managed brief activation block in `~/.pi/agent/AGENTS.md`, and the shared `~/.agents/skills/mind-management` skill. Mind installs no Pi plugin and marks Pi L3 unverified.
+- Added `docs/agent-integration-matrix.md` with documented MCP and skill paths, symlink strategy, `initialize.instructions` support, hooks, Mind strategy, and honest documented/implemented/validated/unverified status for every supported agent.
+- Added a separate skill-installation surface to setup diagnostics and `mind setup` output (`status`, path, and shared/symlink strategy), independent of the L1/L2/L3 badges.
 - Added `docs/memory-recall-improvement-analysis.md`, a decision-oriented technical analysis (Spanish, `[MEDIDO]`/`[CALCULADO]`/`[CÓDIGO]`/`[HIPÓTESIS]` evidence tags) of Mind memory recall: false-negative classification, focused-query and representation experiments, top-K/neighbor results, OpenCode consumption limits, write-side drift, consolidation costs, embeddings/admission findings, and a prioritized proposal table separating measured from expected impact.
 - Added a Spanish handoff analysis document `benchmarks/agent-memory/ANALYSIS.md` for the agent-memory benchmark: measured facts, declared gaps (write side, benchmark B, v9, single conversation), the measured refutation that embeddings are the #1 lever, and prioritized experiments, with `[MEDIDO]`/`[CALCULADO]`/`[CÓDIGO]`/`[LITERATURA]`/`[HIPÓTESIS]` evidence tags.
 - Added `--reps N` to the agent memory benchmark A2 stage (per (condition × question) repetitions, each in an isolated unit with its own per-question Mind DB copy) plus per-category A2 aggregation and `mind-v9`/`mind-v10` **delta vs the `no-memory` baseline**, reported in the restyled `REPORT.md` and the machine-readable `summary.json`.
@@ -56,9 +59,13 @@ Example:
 - Added a `references` block of living references to `space_get`, plus bounded T3 previews that report returned count and total availability instead of scanning the whole tier.
 - Added the B5–B10 real-agent scenarios to the benchmark harness (durable writing, relinking, supersession, tier maintenance, cross-session continuity, and semantic recall) with per-scenario RAG control, isolated databases, and `not_run` gating. Results are recorded in `docs/cognitive-memory-lifecycle-report.md`.
 - Added `docs/cognitive-memory-lifecycle.md` (memory model, tiers, lifecycle, writing, supersession, linking, living references, tool usage) and `docs/cognitive-memory-lifecycle-report.md` (implementation, tests, and measured B5–B10 validation).
+- Added `docs/skill-first-distribution.md` (single protocol source, complete skill, brief activation, installation model, lifecycle corrections) and `docs/skill-first-distribution-report.md` (implementation report with before/after dependencies, test evidence, and unverified behavior).
 
 ### Changed
 
+- Corrected documented agent MCP paths: Windsurf/Devin now writes `~/.config/devin/mcp_config.json` (legacy `~/.windsurf/mcp.json` is detection-only), VS Code/Copilot writes portable `~/.copilot/mcp-config.json`, and Antigravity writes `~/.gemini/config/mcp_config.json`.
+- Changed Cursor hooks to the documented `{ "version": 1, "hooks": { ... } }` schema with `sessionStart`, `preCompact`, `sessionEnd`, and `stop`, preserving unrelated entries and migrating the old top-level map. Cursor L3 is now marked unverified because hook execution was not live-tested.
+- Changed Codex, Gemini CLI, VS Code/Copilot, and Antigravity L3 evidence to state that those clients document hooks but Mind implements no automation for them.
 - Changed the trigram index to fold diacritics (`tokenize='trigram remove_diacritics 1'`) and to be contentless (`content='', contentless_delete=1`), fixing silent substring recall on accented text (`figuracio` now finds `configuración`) and reducing its storage (schema v10).
 - Changed the fuzzy channel to **P-A-only**: candidates come from the full folded document vocabulary, folded once and cached per store (invalidated by a write-generation counter), scored with a banded/early-exit OSA ≤2 and a deterministic order. This removes the previous query-dependent, unordered `LIMIT 2000` prefilter (determinism) and the per-query re-folding.
 - Refactored the fuzzy expansion scan to reuse the cached, already unique-and-sorted vocabulary instead of re-copying, de-duplicating and sorting it on every query. Expansion order and results are unchanged; on the real corpus (4 497 memories, `|V|≈29 890`) the scan itself is ~18–20× faster (p50 6.5 ms → 0.35 ms per token).
@@ -69,7 +76,14 @@ Example:
 - Changed the `MIND_LOG_RETENTION_MINUTES` default from 360 (6 hours) to 10080 (7 days) to match the documented value.
 - Changed `mind status` to report the active RAG embedding provider with provider-specific hints for a missing key, an invalid provider value, or disabled RAG.
 - Changed semantic search admission to be independent of the lexical gate: natural-language queries (one group, no `NOT`, only plain terms) admit semantic-only candidates at cosine ≥0.6 even when lexical results exist, while explicit phrases, prefixes, and operators stay lexical. RAG remains optional and off by default, and RAG-off results are unchanged.
-- Changed the agent protocol to a single canonical six-responsibility body (ORIENT, RECALL, LEARN, RELATE, MAINTAIN, HANDOFF) rendered into the L2 agent template, MCP `system_instructions`, and the installed `mind-management` skill. `instructions_version` is now `2.0.0`; the protocol no longer presents `system_instructions` as a required first call.
+- Changed the agent protocol to a single canonical six-responsibility body (ORIENT, RECALL, LEARN, RELATE, MAINTAIN, HANDOFF) rendered into the L2 agent template, MCP `system_instructions`, and the installed `mind-management` skill. `instructions_version` moved to `2.0.0` for that consolidated body; `2.1.0` is the current version after the later checkpoint, supersession, and skill-first changes, and the protocol no longer presents `system_instructions` as a required first call.
+- Changed skill distribution to one complete `mind-management` skill at `~/.agents/skills/mind-management`. Claude Code and Antigravity receive a symlink or managed copy; clients that read `~/.agents` use it directly; Mind-managed shadow copies are migrated with backups; foreign skill files are never overwritten. Writes use ownership markers, atomic temp-file renames, and a Windows junction/copy fallback.
+- Changed L2 setup instructions and MCP `initialize.instructions` to brief skill activation only. The installed skill carries the complete protocol, and `system_instructions` remains the complete fallback at `instructions_version: "2.1.0"`.
+- Changed checkpoint semantics: omitted fields are preserved, an empty string clears a field, defaults apply only on creation, and a no-op does not advance `updated_at`. Active checkpoints are found in every tier, and `linked_memories` is additive with `links_failed` reporting.
+- Changed `checkpoint_done` to require empty `pending` and a `checkpoint`-tagged target. Ending a session with pending work updates and keeps the checkpoint; the OpenCode plugin no longer creates placeholder checkpoints. On success, completion still creates a T3 `session-*` summary and copies links in both directions.
+- Changed supersession guidance and examples: create the replacement, preserve the historical content and original category tag, add `status:superseded`, link replacement to history with `contradicts`, and update living references. RECALL now starts with a natural query, and RELATE distinguishes generic `links_to` from specific `link_create`.
+- Changed the agent memory benchmark into an independent Bun subproject under `benchmarks/agent-memory/` with its own `package.json`, `bun.lock`, and `tsconfig.json`. It declares `@opencode/sdk@2.0.28` itself; the root project is not a workspace and does not install benchmark dependencies. CI adds a free benchmark job for typecheck, unit and contract tests, and experiments.
+- Changed Cursor and Gemini CLI L1 diagnostics to describe stdio command transport instead of a URL, and clarified that Antigravity has no L2 instruction injection; its skill remains a separate surface.
 
 ### Fixed
 
@@ -87,6 +101,13 @@ Example:
 - Fixed the agent-memory-bench Mind adapter to always reap its per-run `mind serve` (own process group; SIGTERM then SIGKILL with wait; `atexit` safety net), so no server process survives a run even when teardown is skipped.
 - Fixed the cross-harness comparison documentation (`COMPARISON.md`, `README.md`, `comparison.json`): removed the false claim that RAG-on improved temporal recall (it regressed 54.5 % → 50.0 %), corrected the `flush` row (it verifies embeddings when `--rag on`), scoped the 419/419 embeddings assertion to ingest-side document embeddings, and ordered the levers by impact (evidence granularity #1, embeddings #2). Added a sanitized embeddings-verification evidence file and a fail-closed unit test for `_verify_embeddings`.
 - Fixed link ordering to be deterministic (`created_at DESC, rowid DESC`) and aligned link documentation with the implementation: `link_create` relabels the same directed pair, `link_delete` is an idempotent no-op when the link is absent, and `memory_read` reports each relation's label and direction.
+- Fixed checkpoint partial updates erasing omitted goal, pending, and notes fields. Omitted fields now keep their values, and a no-op returns the checkpoint without touching `updated_at`.
+- Fixed `checkpoint_done` accepting incomplete work or a target that is not a checkpoint. It now rejects pending work with an actionable error, leaves the checkpoint active, and creates no summary until the work is complete.
+- Fixed the supersession example that rewrote a historical memory with the new truth. Every `memory_update` example that sends `status:superseded` now omits `content`.
+
+### Removed
+
+- Removed `@opencode/sdk` from the root dependencies; it now belongs to the benchmark subproject. Removed the unused `bun-style` dependency; terminal styling uses `ansi-styles`.
 
 ## [1.6.0] - 2026-06-30
 

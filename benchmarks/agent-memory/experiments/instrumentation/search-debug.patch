@@ -1,0 +1,457 @@
+--- a/src/store/repositories/search-repository.ts
++++ b/src/store/repositories/search-repository.ts
+@@ -1,4 +1,12 @@
+ // ── SearchRepository: handles all search operations ──
++//
++// E-WB instrumentation (test-only): this copy adds zero-reason reporting,
++// per-rung pre/post coverage counts, an admission breakdown, and an env-gated
++// ID-level debug sink (`MIND_SEARCH_DEBUG=<path>`). All additions are
++// side-channel observations; results, ordering, and the public contract are
++// unchanged. See `benchmarks/agent-memory/experiments/instrumentation/`.
++
++import { appendFileSync } from 'node:fs';
+ 
+ import type { Database } from 'bun:sqlite';
+ 
+@@ -78,6 +86,15 @@
+   candidates: number;
+ }
+ 
++/** E-WB: pre/post coverage-floor counts for one covered channel. */
++export interface SearchCoverageDiagnostic {
++  channel: SearchChannelMethod;
++  /** Candidates the channel produced before the coverage floor was applied. */
++  raw: number;
++  /** Candidates remaining after the coverage floor was applied. */
++  after_coverage: number;
++}
++
+ /** Content-free diagnostics aggregated for one `searchMemories` call. */
+ export interface SearchDiagnostics {
+   channels: SearchChannelDiagnostic[];
+@@ -88,11 +105,24 @@
+   /** Cross-connection `PRAGMA data_version` observed on this call's cache check. */
+   data_version: number;
+   /** Admission gate outcome: candidates kept vs. dropped. */
+-  admission: { kept: number; dropped: number };
++  admission: {
++    kept: number;
++    dropped: number;
++    /** E-WB: candidates removed by NOT exclusions. */
++    excluded_by_not: number;
++    /** E-WB: candidates removed by the admission predicate / relaxed coverage floor. */
++    dropped_by_predicate: number;
++    /** E-WB: which admission tier admitted the final set. */
++    admission_tier: 'strict' | 'relaxed' | 'last_resort';
++  };
+   /** Candidates collected across all channels before admission. */
+   total_candidates: number;
+   /** Wall-clock milliseconds for the whole `searchMemories` call. */
+   total_ms: number;
++  /** E-WB: why the call returned no candidates (`null` when it returned some). */
++  zero_reason: 'empty_query' | 'no_rungs' | 'no_candidates' | null;
++  /** E-WB: per-channel pre/post coverage-floor counts. */
++  coverage: SearchCoverageDiagnostic[];
+ }
+ 
+ export type SearchDiagnosticsSink = (diagnostics: SearchDiagnostics) => void;
+@@ -119,6 +149,56 @@
+   return null;
+ }
+ 
++// ── E-WB: ID-level debug sink (test-only; env-gated) ──
++//
++// `MIND_SEARCH_DEBUG=<path>` makes every `searchMemories` call append one JSONL
++// line with the ordered *memory names* at each pipeline stage. This is a
++// scratch-DB-only diagnostic for the replay workbench; with the env unset the
++// hot path pays only one `process.env` read per search. Enabling it never
++// changes results, ordering, or the public contract.
++
++/**
++ * Upper bound on the emitted `admitted_ranked_final` list. Set far above any
++ * observed admitted-set size so classification is never rank-ambiguous; the
++ * companion `admission_kept`/`admission_dropped` totals prove whether the cap
++ * could have hidden an item.
++ */
++const DEBUG_RANK_CAP = 1000;
++
++/** One query's ordered memory-name sets by pipeline stage (never content). */
++export interface SearchDebugRecord {
++  /** The raw query string (public benchmark question; scratch DB only). */
++  q: string;
++  /** Ordered names per channel (rank order within each channel). */
++  candidates_by_channel: Record<string, string[]>;
++  /** Ordered names after the coverage floor, per rung/channel. */
++  after_coverage_by_rung: Record<string, string[]>;
++  /** Ordered names remaining after NOT exclusions. */
++  after_not: string[];
++  /** Ordered names removed by NOT exclusions (from the candidate set). */
++  excluded_by_not: string[];
++  /** Ordered names admitted by the strict boolean predicate, before relaxation. */
++  admitted_strict: string[];
++  /** Final fused rank order (uncapped up to DEBUG_RANK_CAP). */
++  admitted_ranked_final: string[];
++  /** Admission gate totals, so a capped list is never ambiguous on its own. */
++  admission_kept: number;
++  admission_dropped: number;
++  zero_reason: 'empty_query' | 'no_rungs' | 'no_candidates' | null;
++  admission_tier: 'strict' | 'relaxed' | 'last_resort';
++}
++
++export type SearchDebugSink = (record: SearchDebugRecord) => void;
++
++/** Append a JSONL debug record when `MIND_SEARCH_DEBUG` names a file. */
++function activeDebugSink(): SearchDebugSink | null {
++  const path = process.env.MIND_SEARCH_DEBUG;
++  if (!path) return null;
++  return (record: SearchDebugRecord): void => {
++    appendFileSync(path, `${JSON.stringify(record)}\n`);
++  };
++}
++
+ /**
+  * Optimal string alignment (Damerau–Levenshtein) distance: insertions,
+  * deletions, substitutions and adjacent transpositions each cost 1.
+@@ -637,11 +717,78 @@
+     query: string,
+     filter?: { space?: string; tag?: string; tier?: Tier }
+   ): Promise<ScoredSearchResult[]> {
++    // ── E-WB instrumentation state (counts + ordered name sets) ──
++    // Declared up front so the zero-result paths below can report on them.
++    // Observational only: never reads or mutates result-affecting state.
++    const diagnostics = activeDiagnosticsSink();
++    const debugSink = activeDebugSink();
++    const diagnosticsStart = diagnostics || debugSink ? performance.now() : 0;
++    const channelDiagnostics: SearchChannelDiagnostic[] = [];
++    const coverageDiagnostics: SearchCoverageDiagnostic[] = [];
++    const candidatesByChannel: Record<string, string[]> = {};
++    const afterCoverageByRung: Record<string, string[]> = {};
++    const nameById = new Map<string, string>();
++    const rowsById = new Map<string, SearchRow>();
++    const excludedIds = new Set<string>();
++    let debugAfterNot: string[] = [];
++    let debugExcludedByNot: string[] = [];
++    let debugAdmittedStrict: string[] = [];
++    let fuzzyExpansions = 0;
++    let fuzzyCacheRebuilt = false;
++    let fuzzyCacheDataVersion = 0;
++    let admissionTier: 'strict' | 'relaxed' | 'last_resort' = 'strict';
++
++    /** Ordered memory names for a set of ids (falls back to the id). */
++    const namesOf = (ids: Iterable<string>): string[] => [...ids].map(id => nameById.get(id) ?? id);
++
++    const buildDebugRecord = (
++      zeroReason: SearchDebugRecord['zero_reason'],
++      finalNames: string[],
++      admission: { kept: number; dropped: number }
++    ): SearchDebugRecord => ({
++      q: query,
++      candidates_by_channel: candidatesByChannel,
++      after_coverage_by_rung: afterCoverageByRung,
++      after_not: debugAfterNot,
++      excluded_by_not: debugExcludedByNot,
++      admitted_strict: debugAdmittedStrict,
++      admitted_ranked_final: finalNames,
++      admission_kept: admission.kept,
++      admission_dropped: admission.dropped,
++      zero_reason: zeroReason,
++      admission_tier: admissionTier,
++    });
++
++    /** Emit the diagnostics/debug payloads for a zero-result return. */
++    const emitZero = (reason: SearchDebugRecord['zero_reason']): ScoredSearchResult[] => {
++      if (diagnostics) {
++        diagnostics({
++          channels: channelDiagnostics,
++          fuzzy_expansions: fuzzyExpansions,
++          fuzzy_cache_rebuilt: fuzzyCacheRebuilt,
++          data_version: fuzzyCacheDataVersion,
++          admission: {
++            kept: 0,
++            dropped: 0,
++            excluded_by_not: excludedIds.size,
++            dropped_by_predicate: 0,
++            admission_tier: admissionTier,
++          },
++          total_candidates: rowsById.size,
++          total_ms: performance.now() - diagnosticsStart,
++          zero_reason: reason,
++          coverage: coverageDiagnostics,
++        });
++      }
++      if (debugSink) debugSink(buildDebugRecord(reason, [], { kept: 0, dropped: rowsById.size }));
++      return [];
++    };
++
+     const ast = parseQuery(query);
+-    if (isEmptyQuery(ast)) return [];
++    if (isEmptyQuery(ast)) return emitZero('empty_query');
+ 
+     const rungs = buildRungs(ast);
+-    if (rungs.length === 0) return [];
++    if (rungs.length === 0) return emitZero('no_rungs');
+ 
+     // True parallel retrieval (D3/D4): every channel collects candidates
+     // independently with provenance, then fusion normalizes and combines them.
+@@ -653,14 +800,6 @@
+     const enforceCoverage = ast.groups.length === 1 && queryTokens.length >= 2;
+     const coverageFloorTokens = coverageFloor(queryTokens.length);
+ 
+-    const diagnostics = activeDiagnosticsSink();
+-    const diagnosticsStart = diagnostics ? performance.now() : 0;
+-    const channelDiagnostics: SearchChannelDiagnostic[] = [];
+-    let fuzzyExpansions = 0;
+-    let fuzzyCacheRebuilt = false;
+-    let fuzzyCacheDataVersion = 0;
+-
+-    const rowsById = new Map<string, SearchRow>();
+     const channels: ChannelScores[] = [];
+     const addChannel = (method: SearchChannelMethod, scores: Map<string, number>): void => {
+       if (scores.size > 0) channels.push({ method, scores });
+@@ -668,7 +807,6 @@
+ 
+     // NOT exclusions apply to *every* channel, including trigram/fuzzy/semantic
+     // which do not carry the FTS NOT clause themselves.
+-    const excludedIds = new Set<string>();
+     if (ast.exclude.length > 0) {
+       const parts = ast.exclude.map(node =>
+         node.type === 'phrase'
+@@ -679,14 +817,18 @@
+       );
+       const match = parts.join(' OR ');
+       if (match) {
+-        for (const row of runMatchQuery(match, filter)) excludedIds.add(row.id);
++        for (const row of runMatchQuery(match, filter)) {
++          excludedIds.add(row.id);
++          nameById.set(row.id, row.name);
++        }
+       }
+     }
+ 
+     // Lexical rungs: phrase → all → any.
+     for (const rung of rungs) {
+       const channelStart = diagnostics ? performance.now() : 0;
+-      let rows = runMatchQuery(rung.match, filter);
++      const rawRows = runMatchQuery(rung.match, filter);
++      let rows = rawRows;
+       if (rung.method === 'any' && enforceCoverage) {
+         rows = rows.filter(
+           row => matchedTokenCount(queryTokens, row.name, row.content) >= coverageFloorTokens
+@@ -695,6 +837,7 @@
+       const scores = new Map<string, number>();
+       for (const row of rows) {
+         rowsById.set(row.id, row);
++        nameById.set(row.id, row.name);
+         scores.set(row.id, -Number(row.rank) || 0);
+       }
+       addChannel(rung.method as SearchChannelMethod, scores);
+@@ -704,6 +847,15 @@
+           ms: performance.now() - channelStart,
+           candidates: scores.size,
+         });
++        coverageDiagnostics.push({
++          channel: rung.method as SearchChannelMethod,
++          raw: rawRows.length,
++          after_coverage: scores.size,
++        });
++      }
++      if (debugSink) {
++        candidatesByChannel[rung.method] = namesOf(scores.keys());
++        afterCoverageByRung[rung.method] = namesOf(scores.keys());
+       }
+     }
+ 
+@@ -712,12 +864,14 @@
+     if (trigramTokens.length > 0) {
+       const channelStart = diagnostics ? performance.now() : 0;
+       const match = trigramTokens.map(token => `"${token}"`).join(' OR ');
+-      const rows = runTrigramMatch(match, filter).filter(
++      const rawRows = runTrigramMatch(match, filter);
++      const rows = rawRows.filter(
+         row => substringCoverage(queryTokens, row.name, row.content) >= coverageFloorTokens
+       );
+       const scores = new Map<string, number>();
+       for (const row of rows) {
+         rowsById.set(row.id, row);
++        nameById.set(row.id, row.name);
+         scores.set(row.id, -Number(row.rank) || 0);
+       }
+       addChannel('trigram', scores);
+@@ -727,6 +881,15 @@
+           ms: performance.now() - channelStart,
+           candidates: scores.size,
+         });
++        coverageDiagnostics.push({
++          channel: 'trigram',
++          raw: rawRows.length,
++          after_coverage: scores.size,
++        });
++      }
++      if (debugSink) {
++        candidatesByChannel['trigram'] = namesOf(scores.keys());
++        afterCoverageByRung['trigram'] = namesOf(scores.keys());
+       }
+     }
+ 
+@@ -745,19 +908,30 @@
+       const expandedTerms = [...new Set([...expansions.values()].flat())].sort();
+       fuzzyExpansions = expandedTerms.length;
+       let fuzzyCandidates = 0;
++      let fuzzyRaw = 0;
+       if (expandedTerms.length > 0) {
+         const match = expandedTerms.map(term => `"${term}"`).join(' OR ');
+-        const rows = runMatchQuery(match, filter).filter(
++        const rawRows = runMatchQuery(match, filter);
++        fuzzyRaw = rawRows.length;
++        const rows = rawRows.filter(
+           row =>
+             fuzzyCoverage(queryTokens, expansions, row.name, row.content) >= coverageFloorTokens
+         );
+         const scores = new Map<string, number>();
+         for (const row of rows) {
+           rowsById.set(row.id, row);
++          nameById.set(row.id, row.name);
+           scores.set(row.id, -Number(row.rank) || 0);
+         }
+         addChannel('fuzzy', scores);
+         fuzzyCandidates = scores.size;
++        if (debugSink) {
++          candidatesByChannel['fuzzy'] = namesOf(scores.keys());
++          afterCoverageByRung['fuzzy'] = namesOf(scores.keys());
++        }
++      } else if (debugSink) {
++        candidatesByChannel['fuzzy'] = [];
++        afterCoverageByRung['fuzzy'] = [];
+       }
+       if (diagnostics) {
+         channelDiagnostics.push({
+@@ -765,6 +939,11 @@
+           ms: performance.now() - channelStart,
+           candidates: fuzzyCandidates,
+         });
++        coverageDiagnostics.push({
++          channel: 'fuzzy',
++          raw: fuzzyRaw,
++          after_coverage: fuzzyCandidates,
++        });
+       }
+     }
+ 
+@@ -778,6 +957,7 @@
+       const scores = new Map<string, number>();
+       for (const row of rows) {
+         rowsById.set(row.id, row);
++        nameById.set(row.id, row.name);
+         scores.set(row.id, matchedTokenCount(shortTokens, row.name, row.content));
+       }
+       addChannel('like', scores);
+@@ -788,6 +968,7 @@
+           candidates: scores.size,
+         });
+       }
++      if (debugSink) candidatesByChannel['like'] = namesOf(scores.keys());
+     }
+ 
+     // Semantic — RAG only; skipped when the breaker is open after a failure.
+@@ -800,7 +981,10 @@
+           const byId = new Map(candidateRows.map(row => [row.id, row]));
+           for (const id of semanticScores.keys()) {
+             const row = byId.get(id);
+-            if (row) rowsById.set(row.id, row);
++            if (row) {
++              rowsById.set(row.id, row);
++              nameById.set(row.id, row.name);
++            }
+           }
+           addChannel('semantic', semanticScores);
+         }
+@@ -811,6 +995,7 @@
+             candidates: semanticScores.size,
+           });
+         }
++        if (debugSink) candidatesByChannel['semantic'] = namesOf(semanticScores.keys());
+       } catch {
+         recordSemanticFailure();
+       }
+@@ -832,9 +1017,10 @@
+           candidates: scores.size,
+         });
+       }
++      if (debugSink) candidatesByChannel['token_set'] = namesOf(scores.keys());
+     }
+ 
+-    if (channels.length === 0 || rowsById.size === 0) return [];
++    if (channels.length === 0 || rowsById.size === 0) return emitZero('no_candidates');
+ 
+     if (excludedIds.size > 0) {
+       for (const id of excludedIds) {
+@@ -842,6 +1028,10 @@
+         for (const channel of channels) channel.scores.delete(id);
+       }
+     }
++    if (debugSink) {
++      debugExcludedByNot = namesOf(excludedIds);
++      debugAfterNot = namesOf(rowsById.keys());
++    }
+ 
+     // Relevance admission gate: keep only candidates that satisfy the query's
+     // boolean structure under folded matching. Weak partial matches surfaced by
+@@ -852,12 +1042,14 @@
+     for (const [id, row] of rowsById) {
+       if (documentSatisfiesQuery(ast, row.name, row.content)) finalRows.set(id, row);
+     }
++    if (debugSink) debugAdmittedStrict = namesOf(finalRows.keys());
+ 
+     // Relaxed tier: when no candidate satisfies the full query (e.g. tokens are
+     // semantically paraphrased rather than literally present), admit candidates
+     // that cover a majority of the query tokens — the same coverage floor the
+     // legacy cascade used, which keeps the relaxed set small and precise.
+     if (finalRows.size === 0 && queryTokens.length >= 2) {
++      admissionTier = 'relaxed';
+       const floor = coverageFloor(queryTokens.length);
+       for (const [id, row] of rowsById) {
+         if (countCoveredQueryTokens(queryTokens, row.name, row.content) >= floor)
+@@ -866,8 +1058,11 @@
+     }
+ 
+     // Last resort: no coverage tier matched, keep every channel candidate.
+-    if (finalRows.size === 0) finalRows = rowsById;
+-    if (finalRows.size === 0) return [];
++    if (finalRows.size === 0) {
++      admissionTier = 'last_resort';
++      finalRows = rowsById;
++    }
++    if (finalRows.size === 0) return emitZero('no_candidates');
+ 
+     const keptIds = new Set(finalRows.keys());
+     const keptChannels = channels
+@@ -884,11 +1079,28 @@
+         fuzzy_expansions: fuzzyExpansions,
+         fuzzy_cache_rebuilt: fuzzyCacheRebuilt,
+         data_version: fuzzyCacheDataVersion,
+-        admission: { kept: finalRows.size, dropped: rowsById.size - finalRows.size },
++        admission: {
++          kept: finalRows.size,
++          dropped: rowsById.size - finalRows.size,
++          excluded_by_not: excludedIds.size,
++          dropped_by_predicate: rowsById.size - finalRows.size,
++          admission_tier: admissionTier,
++        },
+         total_candidates: rowsById.size,
+         total_ms: performance.now() - diagnosticsStart,
++        zero_reason: null,
++        coverage: coverageDiagnostics,
+       });
+     }
++    if (debugSink) {
++      debugSink(
++        buildDebugRecord(
++          null,
++          fused.slice(0, DEBUG_RANK_CAP).map(entry => entry.name),
++          { kept: finalRows.size, dropped: rowsById.size - finalRows.size }
++        )
++      );
++    }
+     return fused;
+   }
+ 

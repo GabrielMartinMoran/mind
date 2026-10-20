@@ -22,7 +22,7 @@ Feature: MCP Checkpoint Tools
   Rule: checkpoint.done tool
 
     Scenario: checkpoint.done transforms checkpoint into session memory and deletes checkpoint
-      Given an active checkpoint in "projects/test" with goal "Complete API refactor" and pending "Write tests"
+      Given an active checkpoint in "projects/test" with goal "Complete API refactor" and no pending work
       And memories "mem1" and "mem2" exist in "projects/test"
       And the checkpoint has linked_memories ["mem1", "mem2"]
       When calling checkpoint_done with space "projects/test" checkpointName "current" summary "Completed login"
@@ -32,6 +32,14 @@ Feature: MCP Checkpoint Tools
       And the memory content includes "Complete API refactor"
       And the memory has linked references to "mem1" and "mem2"
       And the original checkpoint is deleted from "projects/test"
+
+    @integration
+    Scenario: checkpoint.done rejects pending work and keeps the checkpoint
+      Given an active checkpoint in "projects/test" with goal "Complete API refactor" and pending "Write tests"
+      When calling checkpoint_done with space "projects/test" checkpointName "current" summary "Partial"
+      Then the call fails with an actionable error
+      And the checkpoint remains active in "projects/test"
+      And no session memory is created
 
   Rule: checkpoint.load tool
 

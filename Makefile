@@ -49,23 +49,28 @@ release-major: ## Create a major release from main (real release)
 release-simulate: ## Simulate release flow without changing anything (TYPE=patch|minor|major)
 	@type=$${TYPE:-patch}; ./scripts/release.sh $$type --simulate
 
-# ── Agent memory benchmark (opt-in; see benchmarks/agent-memory/README.md) ──
+# ── Agent memory benchmark (independent Bun subproject) ──
+#
+# Install the subproject's own dependencies once:
+#   cd benchmarks/agent-memory && bun install
+# These targets are convenience wrappers; the subproject scripts are
+# authoritative. The root package does not install benchmark dependencies.
 
 bench-agent-memory-test: ## Run agent-memory harness unit + contract tests, then experiment specs (integration skipped)
-	bun test benchmarks/agent-memory/test
-	bun test benchmarks/agent-memory/experiments
+	cd benchmarks/agent-memory && bun test test
+	cd benchmarks/agent-memory && bun test experiments
 
 bench-agent-memory-probe: ## Run the free T1 platform/isolation probes (no LLM calls)
-	bash benchmarks/agent-memory/probes/run-t1-probes.sh
+	cd benchmarks/agent-memory && bun run probe
 
 bench-agent-memory-smoke: ## Paid credential smoke (ONE minimal prompt; reads key at runtime)
-	bun run benchmarks/agent-memory/probes/smoke-openrouter.ts
+	cd benchmarks/agent-memory && bun run smoke
 
 bench-agent-memory-locomo: ## Free LoCoMo A1 retrieval run (no LLM; SUBSET=pilot|full)
-	bun run benchmarks/agent-memory/src/cli.ts locomo --subset $(if $(SUBSET),$(SUBSET),pilot) --conditions mind-v9,mind-v10
+	cd benchmarks/agent-memory && bun run locomo --subset $(if $(SUBSET),$(SUBSET),pilot) --conditions mind-v9,mind-v10
 
 bench-agent-memory-scenarios: ## Paid agent scenario run (requires --budget; SCENARIOS=b1,b4)
-	bun run benchmarks/agent-memory/src/cli.ts scenarios \
+	cd benchmarks/agent-memory && bun run scenarios \
 		$(if $(CONDITIONS),--conditions $(CONDITIONS),) \
 		$(if $(SCENARIOS),--scenarios $(SCENARIOS),) \
 		$(if $(BUDGET),--budget $(BUDGET),) \
@@ -76,7 +81,7 @@ bench-agent-memory-answers: ## Paid A2 answering + judge for a prepared run (RUN
 		echo "bench-agent-memory-answers: RUN is required" >&2; \
 		exit 2; \
 	fi
-	bun run benchmarks/agent-memory/src/cli.ts locomo --answers \
+	cd benchmarks/agent-memory && bun run locomo --answers \
 		--run-id $(RUN) \
 		--conditions $(if $(CONDITIONS),$(CONDITIONS),no-memory,mind-v10) \
 		--reps $(if $(REPS),$(REPS),1) \
@@ -84,7 +89,7 @@ bench-agent-memory-answers: ## Paid A2 answering + judge for a prepared run (RUN
 		$(if $(CONFIRM),--confirm,)
 
 bench-agent-memory-full: ## Free A1 always; paid A2+scenarios with BUDGET=<usd> CONFIRM=1; then REPORT
-	bun run benchmarks/agent-memory/src/cli.ts full \
+	cd benchmarks/agent-memory && bun run full \
 		$(if $(SUBSET),--subset $(SUBSET),) \
 		$(if $(BUDGET),--budget $(BUDGET),) \
 		$(if $(REPS),--reps $(REPS),) \
@@ -96,7 +101,7 @@ bench-agent-memory-report: ## Generate REPORT.md from stored results (RUN=<run-i
 		echo "bench-agent-memory-report: RUN is required, e.g. make bench-agent-memory-report RUN=run-20261018-154202-xxxx" >&2; \
 		exit 2; \
 	fi
-	bun run benchmarks/agent-memory/src/cli.ts report --run-id $(RUN) $(if $(OUT),--out $(OUT),)
+	cd benchmarks/agent-memory && bun run report --run-id $(RUN) $(if $(OUT),--out $(OUT),)
 
 bench-agent-memory-clean: ## Remove benchmark run dirs (ALL=1 also removes .work/ worktrees + cache)
-	bun run benchmarks/agent-memory/src/cli.ts clean $(if $(filter 1,$(ALL)),--all,)
+	cd benchmarks/agent-memory && bun run clean $(if $(filter 1,$(ALL)),--all,)

@@ -182,6 +182,32 @@ describe('checkpoint linked memories', () => {
 });
 
 describe('link_create relabeling and link_delete idempotency', () => {
+  test('memory_add.links_to stores the generic related label', async () => {
+    await seedSpace();
+    const target = await store.addMemory('proj', 'target-memory', 'Target', { tags: ['test'] });
+    const tools = createMemoryTools(store);
+
+    const response = await tools.memory_add.handler({
+      space: 'proj',
+      name: 'source-memory',
+      content: 'Source',
+      tags: ['test'],
+      links_to: ['proj:target-memory'],
+    });
+
+    expect(response.links_created).toEqual([
+      { source: 'source-memory', target: 'target-memory', label: 'related' },
+    ]);
+    expect(response.links_failed).toEqual([]);
+
+    const source = store.getMemory('proj', 'source-memory')!;
+    const links = store.getLinks(source.id);
+    expect(links).toHaveLength(1);
+    expect(links[0]?.label).toBe('related');
+    expect(links[0]?.source_id).toBe(source.id);
+    expect(links[0]?.target_id).toBe(target.id);
+  });
+
   test('re-creating the same directed pair replaces the label and keeps one link', async () => {
     await seedSpace();
     const a = await store.addMemory('proj', 'a', 'A', { tags: ['test'] });

@@ -8,9 +8,12 @@ maintain it over time.
 
 The normative, compact instructions live in the canonical protocol at
 [`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md).
-This document is the reference and explanation layer around it. Read the
-protocol for the exact tool calls; read this page to understand why the calls
-are shaped that way. For the measured motivation behind these changes, see
+Agents load those instructions through the complete `mind-management` skill;
+see [`docs/skill-first-distribution.md`](skill-first-distribution.md) for the
+activation and installation model. This document is the reference and
+explanation layer around the protocol. Read the protocol for the exact tool
+calls; read this page to understand why the calls are shaped that way. For the
+measured motivation behind these changes, see
 [`docs/memory-recall-improvement-analysis.md`](memory-recall-improvement-analysis.md).
 
 ## Mind as a cognitive workspace
@@ -145,10 +148,13 @@ answer stays unambiguous.
 ### Handoff
 
 Before a session ends, or after a plan or blocker appears, save a checkpoint
-with the goal, pending work, notes, and recovery links. At the end of the
-session, convert the checkpoint into a session summary. The next session can
-then orient from current truth and recover the task without replaying the whole
-conversation.
+with the goal, pending work, notes, and recovery links. When the session ends
+with work still pending, update the checkpoint and keep it active; do not
+convert it into a session summary. Convert the checkpoint with
+`checkpoint_done` only when the task is complete (or explicitly abandoned and
+cleared). The next session then orients from the active checkpoint, the
+session summaries, or current truth and recovers the task without replaying the
+whole conversation.
 
 ## Writing high-quality memories
 
@@ -242,34 +248,52 @@ Tags: `type:reference`, `ref:architecture`, `status:living`.
 
 ### Replaced decision
 
-Do not overwrite history silently. If the old memory is kept for context, mark
-it superseded; write the new truth into the current memory.
+Do not overwrite the historical memory. A changed decision produces three
+distinct records:
+
+- **Historical memory** — the old decision, with its original content and
+  category tag, plus `status:superseded`.
+- **Current durable memory** — a new memory with the new decision and its own
+  `cat:*` tag.
+- **Living reference** — the current-truth map that summarizes the affected
+  area and links to its source memories.
 
 ```text
 Name: jwt-over-sessions
-What: JWT replaced by short-lived access tokens with server-side revocation.
-Why: Stateless JWT could not be revoked quickly.
+What: Use stateless JWTs for authentication.
+Why: Avoid server-side session storage during horizontal scaling.
 Where: src/auth/session.ts
 ```
 
-Tags: `cat:decision`, `auth`, `status:superseded`.
+Tags: `cat:decision`, `auth`, `status:superseded`. The historical content stays
+unchanged. The new truth lives in a separate memory, for example:
+
+```text
+Name: revocable-access-tokens
+What: Use short-lived access tokens with server-side revocation.
+Why: Stateless JWTs could not be revoked quickly.
+Where: src/auth/session.ts
+```
+
+Tags: `cat:decision`, `auth`, `status:validated`.
 
 ## Updating and superseding knowledge
 
 `memory_update` applies all requested changes in one atomic operation. The
 exact procedure for a changed decision is:
 
-1. Update the current-truth memory, or create the replacement memory, with the
-   new fact.
-2. Preserve the historical memory with `status:superseded` and its original
-   classification tags.
+1. Create the replacement memory with the new fact and its `cat:*` tags.
+2. Mark the historical memory `status:superseded` by sending its original tags
+   plus `status:superseded`. Do not change its content.
 3. Link the new memory to the old one with `contradicts`.
-4. Review the living references that describe the affected area.
+4. Review the living references that describe the affected area and update them
+   to the new truth.
 
 Two behaviors matter during updates:
 
 - `memory_update.tags` **replaces** the existing tag set. Re-include every tag
-  you want to keep. If you omit `tags`, the existing tags are unchanged.
+  you want to keep, including the original `cat:*` tag when marking a memory
+  `status:superseded`. If you omit `tags`, the existing tags are unchanged.
 - A transition and a content change in the same call succeed or fail together.
   If the target tier cannot accept the memory, nothing is partially written.
 
@@ -290,10 +314,16 @@ Common labels:
 - `contradicts` — the source replaces or conflicts with the target.
 - `relates_to` — a meaningful relation that none of the above describes.
 
+`memory_add.links_to` creates a generic `related` link from the new memory to
+each target. Use `link_create` when the relation needs a specific label and
+direction. Add links only when they help future work; unnecessary links add
+noise.
+
 `link_create` takes a source reference and a target reference. Re-creating the
 same directed pair replaces its label, so relabeling is one call, not a delete
-plus create. `link_delete` removes a relation and succeeds as a no-op when the
-link is absent.
+plus create. `link_delete` removes that direction and succeeds as a no-op when
+the link is absent. If the direction is wrong, create the correct direction and
+delete the stale one.
 
 `memory_read` returns direct relations in both directions. Each linked summary
 includes its `label` and `direction` (`outgoing` or `incoming`). The result is
@@ -353,9 +383,11 @@ easy to miss.
 
 ### Search
 
-`memory_query` with `search` accepts quoted phrases, `OR`, `AND`, `NOT`, and a
-trailing `*` prefix. Results include a `confidence` bucket and a `methods` list
-that names the channels that matched. Use `space: "*"` to search across spaces.
+Start with a natural, focused question; one query is usually enough. Refine only
+when the results are weak or ambiguous. For explicit constraints, `memory_query`
+with `search` also accepts quoted phrases, `OR`, `AND`, `NOT`, and a trailing
+`*` prefix. Results include a `confidence` bucket and a `methods` list that
+names the channels that matched. Use `space: "*"` to search across spaces.
 
 Semantic recall is optional. RAG is off by default. When it is enabled,
 natural-language queries can admit semantic-only matches at cosine similarity
@@ -417,10 +449,14 @@ Confirm the returned memory shows the expected tier and pinned state.
 ### Hand off a session
 
 Save a checkpoint with the goal, the pending work, the notes, and links to the
-memories needed to recover. At session end, convert it with `checkpoint_done`
-into a `session-*` summary at T3 tagged `type:session` and `cat:summary`. The
-next session orients with `space_get` and `checkpoint_query`, then loads the
-checkpoint if the task continues.
+memories needed to recover. If work remains pending at session end, update the
+checkpoint and leave it active; do not call `checkpoint_done` yet. When the
+task is complete, convert the checkpoint with `checkpoint_done` into a
+`session-*` summary at T3 tagged `type:session` and `cat:summary`, and include a
+meaningful summary of what was done. The next session orients with `space_get`
+and `checkpoint_query`, loads the checkpoint if the task continues, and falls
+back to recent `type:session`/`cat:summary` memories when no checkpoint exists.
+Do not create a placeholder checkpoint just to have one.
 
 ## Related documentation
 
@@ -428,6 +464,8 @@ checkpoint if the task continues.
   [`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md)
 - Implementation report:
   [`docs/cognitive-memory-lifecycle-report.md`](cognitive-memory-lifecycle-report.md)
+- Skill-first distribution:
+  [`docs/skill-first-distribution.md`](skill-first-distribution.md)
 - Recall analysis and measured motivation:
   [`docs/memory-recall-improvement-analysis.md`](memory-recall-improvement-analysis.md)
 - Search benchmark methodology:

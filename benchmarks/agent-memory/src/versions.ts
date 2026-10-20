@@ -6,10 +6,18 @@
 // run.
 
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import type { CommandRunner } from './exec';
 import type { ToolVersions } from './run';
+
+/**
+ * Root of the harness subproject (`benchmarks/agent-memory`). This is where the
+ * harness installs its own dependencies, including `@opencode/sdk`, so version
+ * capture must look here instead of the repository root.
+ */
+export const HARNESS_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Extract a semver-ish version from `opencode --version` output. */
 export function parseOpencodeVersion(stdout: string): string | null {
@@ -18,10 +26,10 @@ export function parseOpencodeVersion(stdout: string): string | null {
 }
 
 /** Read the installed `@opencode/sdk` version, or `null` when absent. */
-export function readSdkVersion(repoRoot: string): string | null {
+export function readSdkVersion(sdkRoot: string = HARNESS_ROOT): string | null {
   try {
     const parsed = JSON.parse(
-      readFileSync(join(repoRoot, 'node_modules/@opencode/sdk/package.json'), 'utf8')
+      readFileSync(join(sdkRoot, 'node_modules/@opencode/sdk/package.json'), 'utf8')
     ) as { version?: unknown };
     return typeof parsed.version === 'string' ? parsed.version : null;
   } catch {
@@ -30,7 +38,13 @@ export function readSdkVersion(repoRoot: string): string | null {
 }
 
 export interface CaptureVersionsOptions {
+  /** Repository root; used as the working directory for the `opencode` probe. */
   readonly repoRoot: string;
+  /**
+   * Root that owns the harness dependencies. Defaults to the harness root so a
+   * benchmark run reads the SDK installed next to it, not a stale root copy.
+   */
+  readonly sdkRoot?: string;
   readonly env?: Record<string, string | undefined>;
 }
 
@@ -55,5 +69,5 @@ export async function captureToolVersions(
   } catch {
     opencode = null;
   }
-  return { opencode, sdk: readSdkVersion(options.repoRoot), bun: Bun.version };
+  return { opencode, sdk: readSdkVersion(options.sdkRoot), bun: Bun.version };
 }

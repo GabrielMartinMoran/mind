@@ -707,8 +707,8 @@ describe('Command Executor — Checkpoint', () => {
     const logger = mockedLogger();
     store.createSpace('myproject', 'A project', ['test']);
 
-    // Create checkpoint
-    await executeCommand(['checkpoint', 'set', 'myproject', 'Goal', 'Pending'], store, logger);
+    // Create a completed checkpoint (pending cleared)
+    await executeCommand(['checkpoint', 'set', 'myproject', 'Goal', ''], store, logger);
     const memories = store.listMemories('myproject', { tag: 'checkpoint' });
     const cpName = memories[0]!.name;
 
@@ -734,6 +734,65 @@ describe('Command Executor — Checkpoint', () => {
 
     const logs = logger.getLogs();
     expect(logs.some(l => l.message.includes('transformed into session memory'))).toBe(true);
+  });
+
+  test('should refuse to complete a checkpoint with pending work', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('myproject', 'A project', ['test']);
+
+    await executeCommand(
+      ['checkpoint', 'set', 'myproject', 'Goal', 'Still pending'],
+      store,
+      logger
+    );
+    const memories = store.listMemories('myproject', { tag: 'checkpoint' });
+    const cpName = memories[0]!.name;
+
+    await executeCommand(
+      ['checkpoint', 'complete', 'myproject', cpName, 'Tried early'],
+      store,
+      logger
+    );
+
+    expect(store.getMemory('myproject', cpName)).not.toBeNull();
+    expect(store.queryMemories({ space: 'myproject', tag: 'type:session' })).toHaveLength(0);
+    const logs = logger.getLogs();
+    expect(logs.some(l => l.message.includes('pending work'))).toBe(true);
+  });
+
+  test('checkpoint set preserves existing notes when --notes is omitted', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('myproject', 'A project', ['test']);
+
+    await executeCommand(
+      [
+        'checkpoint',
+        'set',
+        'myproject',
+        'First goal',
+        'First pending',
+        '--notes',
+        'Original notes',
+      ],
+      store,
+      logger
+    );
+
+    await executeCommand(
+      ['checkpoint', 'set', 'myproject', 'Updated goal', 'Updated pending'],
+      store,
+      logger
+    );
+
+    const memories = store.listMemories('myproject', { tag: 'checkpoint' });
+    expect(memories).toHaveLength(1);
+    const mem = store.getMemoryById(memories[0]!.id);
+    const content = JSON.parse(mem!.content);
+    expect(content.goal).toBe('Updated goal');
+    expect(content.pending).toBe('Updated pending');
+    expect(content.notes).toBe('Original notes');
   });
 
   test('should list checkpoints', async () => {

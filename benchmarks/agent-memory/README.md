@@ -40,8 +40,13 @@ A and B are always reported separately.
 ## Requirements
 
 - [Bun](https://bun.sh) (repo uses Bun 1.3.x).
+- Install the harness's own dependencies once:
+  `cd benchmarks/agent-memory && bun install`. The subproject owns its
+  `package.json`, `bun.lock`, and `tsconfig.json`; the root `bun install` does
+  not install benchmark dependencies.
 - A real OpenCode install (`opencode --version`; the harness is verified against
-  **2.0.28**). The pinned SDK (`@opencode/sdk`) is a dev dependency of this repo.
+  **2.0.28**). The pinned SDK (`@opencode/sdk@2.0.28`) is a dependency of this
+  benchmark subproject, not of the root package.
 - For paid stages: a valid **OpenRouter** credential for the pilot model
   **`deepseek/deepseek-v4.1-flash`**. The harness reads the key at runtime from
   `~/.local/share/opencode/auth.json` (provider `openrouter`) into the child
@@ -97,39 +102,55 @@ it. A run aborts immediately when the cap would be crossed.
 
 ## Commands
 
+Everything below runs from the subproject directory. From the repository root,
+prefix with `cd benchmarks/agent-memory &&`, or use the `make` convenience
+targets (they delegate into the subproject).
+
 ```sh
+cd benchmarks/agent-memory && bun install
+
 # Unit + contract tests (fast; integration skipped)
-make bench-agent-memory-test
+bun test test
+bun run test:experiments
 
 # Integration tests (reuses/creates pinned worktrees; no LLM)
-BENCH_INTEGRATION=1 bun test benchmarks/agent-memory/test
+BENCH_INTEGRATION=1 bun test test
 
 # Free T1 platform/isolation probes (no LLM calls)
-make bench-agent-memory-probe
+bun run probe
 
-# Harness CLI (all flags: bun run benchmarks/agent-memory/src/cli.ts --help)
-bun run benchmarks/agent-memory/src/cli.ts probe
-bun run benchmarks/agent-memory/src/cli.ts clean           # remove run dirs
-bun run benchmarks/agent-memory/src/cli.ts clean --all      # + prepared worktrees
+# Harness CLI (all flags: bun run cli --help)
+bun run cli probe
+bun run cli clean           # remove run dirs
+bun run cli clean --all      # + prepared worktrees
 
 # Free LoCoMo A1 retrieval run (no LLM, no --budget): downloads the dataset
 # (sha256-pinned), ingests conv-26 into both pinned engines and scores retrieval.
-make bench-agent-memory-locomo                 # pilot (5 questions)
-make bench-agent-memory-locomo SUBSET=full     # full (30 questions)
+bun run cli locomo --subset pilot --conditions mind-v9,mind-v10   # 5 questions
+bun run cli locomo --subset full --conditions mind-v9,mind-v10    # 30 questions
 
 # Paid LoCoMo A2 answering + judge (require an existing free run + budget/confirm)
-bun run benchmarks/agent-memory/src/cli.ts locomo --answers --run-id <id> --budget 5 --confirm
-bun run benchmarks/agent-memory/src/cli.ts locomo --judge-only --run-id <id> --budget 5 --confirm
+bun run cli locomo --answers --run-id <id> --budget 5 --confirm
+bun run cli locomo --judge-only --run-id <id> --budget 5 --confirm
 
 # Paid credential smoke (ONE minimal prompt; reads the key at runtime, writes
 # sanitized evidence to probes/evidence/openrouter-smoke.json)
-bun run benchmarks/agent-memory/probes/smoke-openrouter.ts
+bun run smoke
 
 # Full orchestration: free A1 always; paid A2+scenarios only with BUDGET; then REPORT
+bun run full                       # free A1 + REPORT only
+bun run full --budget 5 --confirm  # + paid A2 + scenarios + REPORT
+```
+
+From the repository root, the same flows via Makefile convenience targets:
+
+```sh
+make bench-agent-memory-test
+make bench-agent-memory-probe
+make bench-agent-memory-locomo                 # SUBSET=pilot (default)
+make bench-agent-memory-locomo SUBSET=full
 make bench-agent-memory-full                       # free A1 + REPORT only
 make bench-agent-memory-full BUDGET=5 CONFIRM=1    # + paid A2 + scenarios + REPORT
-
-# Regenerate REPORT.md from an existing run (free)
 make bench-agent-memory-report RUN=<run-id>        # default benchmarks/agent-memory/REPORT.md
 make bench-agent-memory-report RUN=<run-id> OUT=path/to/REPORT.md
 ```
@@ -143,15 +164,15 @@ and reuse the printed id).
 
 ```sh
 # Stage 1 (FREE): worktrees + dataset + ingest + A1 retrieval for mind-v10 only
-bun run benchmarks/agent-memory/src/cli.ts locomo \
+bun run cli locomo \
   --subset pilot --conditions mind-v10 --run-id <RUN_ID>
 
 # Stage 2 (PAID, cap $5): A2 answering + blind judge for mind-v10 only
-bun run benchmarks/agent-memory/src/cli.ts locomo --answers \
+bun run cli locomo --answers \
   --run-id <RUN_ID> --conditions mind-v10 --budget 5 --confirm
 
 # Stage 3 (FREE): REPORT.md from the run artifacts
-bun run benchmarks/agent-memory/src/cli.ts report --run-id <RUN_ID>
+bun run cli report --run-id <RUN_ID>
 ```
 
 Artifacts: `benchmarks/agent-memory/runs/<RUN_ID>/{meta.json,subset.json,results/}`,
@@ -165,9 +186,9 @@ the ingested DB at `runs/<RUN_ID>/mind-v10/mind.db`, and
 Paid benchmark B scenarios (require an explicit `--budget` + `--confirm`):
 
 ```sh
-bun run benchmarks/agent-memory/src/cli.ts scenarios \
+bun run cli scenarios \
   --scenarios b1,b4,b5,b6,b7,b8,b9,b10 --conditions no-memory,mind-v9,mind-v10 --budget 5 --confirm
-# or: make bench-agent-memory-scenarios SCENARIOS=b1,b4,b5,b6,b7,b8,b9,b10
+# or, from the repo root: make bench-agent-memory-scenarios SCENARIOS=b1,b4,b5,b6,b7,b8,b9,b10
 # B5/B6/B7/B8/B9 need a Mind engine; under no-memory they are reported as not_run.
 # B10 also needs RAG + an embedding credential; otherwise it is not_run, never failed.
 ```
@@ -413,15 +434,15 @@ generate one; the printed id is echoed by the CLI).
 
 ```sh
 # Stage 1 (FREE): worktrees + dataset + ingest + A1 for mind-v10 (30Q subset)
-bun run benchmarks/agent-memory/src/cli.ts locomo \
+bun run cli locomo \
   --subset full --conditions mind-v10 --run-id <RUN_ID>
 
 # Stage 2 (PAID, cap $5): A2 answering + blind judge, 3 reps, mind-v10 + baseline
-bun run benchmarks/agent-memory/src/cli.ts locomo --answers \
+bun run cli locomo --answers \
   --run-id <RUN_ID> --conditions no-memory,mind-v10 --reps 3 --budget 5 --confirm
 
 # Stage 3 (FREE): restyled REPORT.md + curated export under results/<RUN_ID>/
-bun run benchmarks/agent-memory/src/cli.ts report --run-id <RUN_ID>
+bun run cli report --run-id <RUN_ID>
 ```
 
 ## Extending with another engine

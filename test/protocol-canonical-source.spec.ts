@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { renderMemoryProtocol } from '../src/cli/memory-protocol';
 import { renderMindManagementSkill } from '../src/cli/mind-management-skill';
+import { renderSkillActivation, renderSkillLoadNote } from '../src/cli/skill-activation';
 import { renderSystemInstructions } from '../src/cli/system-instructions';
 import { renderTemplate } from '../src/helpers/template-renderer';
 import { CheckpointDoneSchema } from '../src/mcp/schemas/checkpoint/done-checkpoint';
@@ -19,7 +20,11 @@ import { MemoryQuerySchema } from '../src/mcp/schemas/memories/query-memories';
 import { MemoryReadSchema } from '../src/mcp/schemas/memories/read-memory';
 import { MemoryUpdateSchema } from '../src/mcp/schemas/memories/update-memory';
 import { SpaceGetSchema } from '../src/mcp/schemas/spaces/get-space';
-import { ensureMindManagementSkill } from '../src/setup/skill-installation';
+import {
+  ensureMindManagementSkill,
+  getCanonicalSkillDir,
+  SKILL_OWNERSHIP_MARKER,
+} from '../src/setup/skill-installation';
 
 const CANONICAL_BODY_PATH = join(
   import.meta.dir,
@@ -96,6 +101,15 @@ function renderedOutputs(): Record<string, string> {
   };
 }
 
+function completeOutputs(): Record<string, string> {
+  return {
+    'mcp-system-instructions': renderSystemInstructions(),
+    skill: renderMindManagementSkill(),
+  };
+}
+
+const L2_AGENTS = ['opencode', 'claude-code', 'codex'] as const;
+
 describe('canonical cognitive protocol source', () => {
   test('canonical body is token-free and carries the body marker once', () => {
     const body = readCanonicalBody();
@@ -105,10 +119,10 @@ describe('canonical cognitive protocol source', () => {
     expect(body).not.toContain('}}');
   });
 
-  test('every rendered output embeds the canonical body exactly once', () => {
+  test('the skill and fallback embed the canonical body exactly once', () => {
     const body = readCanonicalBody();
 
-    for (const [name, output] of Object.entries(renderedOutputs())) {
+    for (const [name, output] of Object.entries(completeOutputs())) {
       expect({ name, bodyOccurrences: countOccurrences(output, body) }).toEqual({
         name,
         bodyOccurrences: 1,
@@ -120,8 +134,48 @@ describe('canonical cognitive protocol source', () => {
     }
   });
 
-  test('no normative paragraph is duplicated within any rendered output', () => {
-    for (const [name, output] of Object.entries(renderedOutputs())) {
+  test('L2 instructions are a brief activation without the canonical body', () => {
+    const body = readCanonicalBody();
+
+    for (const agent of L2_AGENTS) {
+      const output = renderMemoryProtocol(agent);
+
+      expect({ agent, bodyOccurrences: countOccurrences(output, body) }).toEqual({
+        agent,
+        bodyOccurrences: 0,
+      });
+      expect({ agent, markerOccurrences: countOccurrences(output, BODY_MARKER) }).toEqual({
+        agent,
+        markerOccurrences: 0,
+      });
+      expect(output).not.toContain('## ORIENT');
+      expect(output).not.toContain('**Trigger:**');
+      expect(output).not.toContain('```json tool:');
+    }
+  });
+
+  test('L2 instructions name the skill and the fallback', () => {
+    for (const agent of L2_AGENTS) {
+      const output = renderMemoryProtocol(agent);
+
+      expect(output).toContain(renderSkillActivation());
+      expect(output).toContain('mind-management');
+      expect(output).toContain('system_instructions');
+    }
+  });
+
+  test('the skill preserves YAML frontmatter and the skill load note', () => {
+    const skill = renderMindManagementSkill();
+
+    expect(skill.startsWith('---\n')).toBe(true);
+    expect(skill).toContain('name: mind-management');
+    expect(skill).toContain('license: MIT');
+    expect(skill).toContain(renderSkillLoadNote());
+    expect(skill.indexOf(renderSkillLoadNote())).toBeLessThan(skill.indexOf(BODY_MARKER));
+  });
+
+  test('no normative paragraph is duplicated within the complete outputs', () => {
+    for (const [name, output] of Object.entries(completeOutputs())) {
       expect({
         name,
         paragraphOccurrences: countOccurrences(output, KNOWN_LONG_PARAGRAPH),
@@ -199,6 +253,43 @@ describe('canonical cognitive protocol source', () => {
     }
   });
 
+  test('superseded memory_update examples preserve the historical content', () => {
+    const examples = fencedToolExamples(readCanonicalBody());
+    const supersededUpdates = examples.filter(example => {
+      if (example.tool !== 'memory_update') {
+        return false;
+      }
+      const tags = (example.payload as { tags?: unknown }).tags;
+      return Array.isArray(tags) && tags.includes('status:superseded');
+    });
+
+    expect(supersededUpdates.length).toBeGreaterThan(0);
+
+    for (const example of supersededUpdates) {
+      expect({
+        payload: example.payload,
+        hasContent: Object.prototype.hasOwnProperty.call(example.payload, 'content'),
+      }).toEqual({ payload: example.payload, hasContent: false });
+    }
+  });
+
+  test('the protocol teaches natural-first recall and explicit linking semantics', () => {
+    const body = readCanonicalBody();
+
+    for (const fragment of [
+      'Why did we choose JWT for authentication?',
+      'One query is usually enough',
+      '`memory_add.links_to` creates a generic `related` link',
+      '`link_create` when the relation has a',
+      '`memory_update.tags` replaces the whole set',
+    ]) {
+      expect({ fragment, present: body.includes(fragment) }).toEqual({
+        fragment,
+        present: true,
+      });
+    }
+  });
+
   test('every fenced tool example validates against its real schema', () => {
     const examples = fencedToolExamples(readCanonicalBody());
 
@@ -248,15 +339,21 @@ describe('mind-management skill installation', () => {
     }
   });
 
-  test('installs the rendered skill for OpenCode', () => {
+  test('installs the rendered skill once at the canonical path for OpenCode', () => {
     const installedPath = ensureMindManagementSkill('opencode');
 
     expect(installedPath).not.toBeNull();
+    expect(installedPath as string).toBe(join(getCanonicalSkillDir(), 'SKILL.md'));
+    expect(
+      existsSync(join(tempHome, '.config', 'opencode', 'skills', 'mind-management', 'SKILL.md'))
+    ).toBe(false);
+
     const content = readFileSync(installedPath as string, 'utf-8');
     expect(content).toBe(renderMindManagementSkill());
     expect(content.startsWith('---\n')).toBe(true);
     expect(content).toContain('name: mind-management');
     expect(content).toContain('license: MIT');
+    expect(content).toContain(SKILL_OWNERSHIP_MARKER);
     expect(content).toContain(BODY_MARKER);
   });
 
@@ -264,6 +361,7 @@ describe('mind-management skill installation', () => {
     const installedPath = ensureMindManagementSkill('codex');
 
     expect(installedPath).not.toBeNull();
+    expect(installedPath as string).toBe(join(getCanonicalSkillDir(), 'SKILL.md'));
     expect(installedPath as string).toContain(
       join('.agents', 'skills', 'mind-management', 'SKILL.md')
     );
@@ -271,6 +369,7 @@ describe('mind-management skill installation', () => {
     expect(content).toBe(renderMindManagementSkill());
     expect(content.startsWith('---\n')).toBe(true);
     expect(content).toContain('name: mind-management');
+    expect(content).toContain(SKILL_OWNERSHIP_MARKER);
     expect(content).toContain(BODY_MARKER);
   });
 });

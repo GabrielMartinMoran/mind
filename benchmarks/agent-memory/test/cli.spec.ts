@@ -1,3 +1,5 @@
+import { join } from 'node:path';
+
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -326,6 +328,47 @@ describe('clean guard', () => {
       '/tmp/opencode/bench/.work/run-1',
       '/tmp/opencode/bench/.work/dataset',
     ]);
+  });
+});
+
+describe('dispatch clean root resolution', () => {
+  test('resolves relative runs/work roots against repoRoot, not cwd', async () => {
+    const calls: string[] = [];
+    const d = {
+      ...deps(),
+      repoRoot: '/repo',
+      cleanFs: {
+        listDir: (path: string) =>
+          path.endsWith(join('worktrees'))
+            ? ['v9']
+            : path.endsWith('.work')
+              ? ['dataset']
+              : ['run-1'],
+        removeDir: (path: string) => void calls.push(path),
+      } satisfies CleanFs,
+    };
+    expect(await dispatch(parseCliArgs(['clean', '--all']), d)).toBe(0);
+    expect(calls).toEqual([
+      join('/repo', 'benchmarks/agent-memory/runs/run-1'),
+      join('/repo', 'benchmarks/agent-memory/.work/worktrees/v9'),
+      join('/repo', 'benchmarks/agent-memory/.work/dataset'),
+    ]);
+  });
+
+  test('keeps an absolute runs root unchanged', async () => {
+    const calls: string[] = [];
+    const d = {
+      ...deps(),
+      repoRoot: '/repo',
+      cleanFs: {
+        listDir: () => ['run-1'],
+        removeDir: (path: string) => void calls.push(path),
+      } satisfies CleanFs,
+    };
+    expect(
+      await dispatch(parseCliArgs(['clean', '--runs-root', '/tmp/opencode/bench/runs']), d)
+    ).toBe(0);
+    expect(calls).toEqual(['/tmp/opencode/bench/runs/run-1']);
   });
 });
 

@@ -332,7 +332,7 @@ describe('withAutoExport decorator', () => {
     const saveResult = await checkpoints.checkpoint_save.handler({
       space: 'projects/test',
       goal: 'Autosync checkpoint coverage',
-      pending: 'Complete assertions',
+      pending: '',
       notes: 'Created by test',
       linked_memories: [],
     });

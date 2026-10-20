@@ -22,7 +22,12 @@ import {
   createFakeSessionDriver,
   type FakeCommandResolver,
 } from '../src/testing/fakes';
-import { captureToolVersions, parseOpencodeVersion, readSdkVersion } from '../src/versions';
+import {
+  HARNESS_ROOT,
+  captureToolVersions,
+  parseOpencodeVersion,
+  readSdkVersion,
+} from '../src/versions';
 
 // ── (a) mcp-list warm-up retry ───────────────────────────────────────────────
 
@@ -136,23 +141,34 @@ describe('redaction', () => {
 // ── (c) version capture ──────────────────────────────────────────────────────
 
 describe('captureToolVersions', () => {
-  test('parses opencode --version and reads sdk + bun', async () => {
+  test('parses opencode --version and reads the harness sdk + bun', async () => {
     expect(parseOpencodeVersion('opencode v2.0.28')).toBe('2.0.28');
-    const repo = mkdtempSync(join(tmpdir(), 'bench-t7c-repo-'));
-    mkdirSync(join(repo, 'node_modules/@opencode/sdk'), { recursive: true });
+
+    // A synthetic harness root proves the SDK is read from the given root...
+    const harness = mkdtempSync(join(tmpdir(), 'bench-t7c-harness-'));
+    mkdirSync(join(harness, 'node_modules/@opencode/sdk'), { recursive: true });
     writeFileSync(
-      join(repo, 'node_modules/@opencode/sdk/package.json'),
-      '{"name":"@opencode/sdk","version":"2.0.28"}\n'
+      join(harness, 'node_modules/@opencode/sdk/package.json'),
+      '{"name":"@opencode/sdk","version":"9.9.9"}\n'
     );
-    expect(readSdkVersion(repo)).toBe('2.0.28');
+    expect(readSdkVersion(harness)).toBe('9.9.9');
+    expect(readSdkVersion(join(harness, 'missing'))).toBeNull();
+
+    // ...and that a run with no explicit sdkRoot resolves the harness root (the
+    // subproject), never the repository root.
+    expect(HARNESS_ROOT.endsWith(join('benchmarks', 'agent-memory'))).toBe(true);
+    expect(readSdkVersion()).toBe('2.0.28');
 
     const { runner } = createFakeRunner(inv =>
       inv.args.includes('--version') ? { stdout: 'opencode v2.0.28\n' } : undefined
     );
-    const versions = await captureToolVersions(runner, { repoRoot: repo });
+    const versions = await captureToolVersions(runner, { repoRoot: harness, sdkRoot: harness });
     expect(versions.opencode).toBe('2.0.28');
-    expect(versions.sdk).toBe('2.0.28');
+    expect(versions.sdk).toBe('9.9.9');
     expect(versions.bun).toBe(Bun.version);
+
+    const harnessVersions = await captureToolVersions(runner, { repoRoot: harness });
+    expect(harnessVersions.sdk).toBe('2.0.28');
   });
 });
 

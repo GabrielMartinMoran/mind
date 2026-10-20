@@ -126,7 +126,7 @@ describe('MCP System Tools', () => {
     const response = await tool.handler();
     expect(response).toEqual({
       content: [{ type: 'text', text: renderSystemInstructions() }],
-      instructions_version: '2.0.0',
+      instructions_version: '2.1.0',
     });
   });
 
@@ -137,7 +137,7 @@ describe('MCP System Tools', () => {
     const sourceText = readFileSync(SYSTEM_INSTRUCTIONS_SOURCE_PATH, 'utf-8');
     const expected = `${sourceText.replace('{{protocolBody}}', loadCanonicalProtocolBody()).trimEnd()}\n`;
 
-    expect(response.instructions_version).toBe('2.0.0');
+    expect(response.instructions_version).toBe('2.1.0');
     expect(response.content[0]?.type).toBe('text');
     expect(response.content[0]?.text).toBe(expected);
   });

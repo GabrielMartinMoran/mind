@@ -17,16 +17,50 @@ export default [
 
   // Config for TypeScript files in src/ and test/ (with full TypeScript project support)
   {
-    files: [
-      'src/**/*.ts',
-      'test/**/*.ts',
-      'benchmarks/agent-memory/src/**/*.ts',
-      'benchmarks/agent-memory/test/**/*.ts',
-    ],
+    files: ['src/**/*.ts', 'test/**/*.ts'],
     languageOptions: {
       parser: tsparser,
       parserOptions: {
         project: './tsconfig.json',
+        tsconfigRootDir: __dirname,
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+      import: importPlugin,
+      prettier,
+    },
+    rules: {
+      ...eslintConfigPrettier.rules,
+      'prettier/prettier': 'error',
+      'import/order': [
+        'error',
+        {
+          groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+          'newlines-between': 'always',
+          alphabetize: { order: 'asc' },
+        },
+      ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      'no-undef': 'off',
+    },
+  },
+
+  // Benchmark subproject (its own package/tsconfig/lockfile)
+  {
+    files: ['benchmarks/agent-memory/src/**/*.ts', 'benchmarks/agent-memory/test/**/*.ts'],
+    languageOptions: {
+      parser: tsparser,
+      parserOptions: {
+        project: './benchmarks/agent-memory/tsconfig.json',
         tsconfigRootDir: __dirname,
       },
     },

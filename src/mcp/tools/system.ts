@@ -11,7 +11,7 @@ export function createSystemTools(): SystemTools {
     system_instructions: {
       schema: SystemInstructionsSchema,
       description:
-        'Returns the complete Mind protocol: ORIENT, RECALL, LEARN, RELATE, MAINTAIN, and HANDOFF guidance with tool examples. Read it when you need the full reference.',
+        'Returns the complete Mind protocol as a fallback when the `mind-management` skill cannot be loaded.',
       annotations: { readOnlyHint: true },
       handler: getSystemInstructionsHandler,
     },

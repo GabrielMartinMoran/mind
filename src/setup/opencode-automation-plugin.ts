@@ -208,19 +208,6 @@ function runMindCommand(args) {
   };
 }
 
-function ensureSessionScaffold(space, checkpointNotes) {
-  runMindCommand(['create', space, 'Managed by OpenCode prudent automation']);
-  runMindCommand([
-    'checkpoint',
-    'set',
-    space,
-    'Active OpenCode session',
-    'Keep the current goal, pending work, and next action explicit',
-    '--notes',
-    checkpointNotes,
-  ]);
-}
-
 function buildEventNotes(ctx, payload, extra) {
   const repo = buildProjectName(ctx);
   const sessionId = extractSessionId(payload);
@@ -298,17 +285,6 @@ function persistSessionSummary(ctx, payload, summary, state) {
 export const MindAutomationPlugin = async (ctx) => {
   const state = loadState();
 
-  const checkpointForEvent = (eventPayload, extra) => {
-    const projectSpace = getProjectSpace(ctx);
-    const checkpointKey = projectSpace + ':' + extractSessionId(eventPayload);
-    if (!hasIntervalPassed(state.checkpoints, checkpointKey, MIN_CHECKPOINT_INTERVAL_MS)) {
-      return;
-    }
-
-    const notes = buildEventNotes(ctx, eventPayload, extra);
-    ensureSessionScaffold(projectSpace, notes);
-  };
-
   return {
     event: async ({ event }) => {
       try {
@@ -317,12 +293,12 @@ export const MindAutomationPlugin = async (ctx) => {
         }
 
         if (event.type === 'session.created') {
-          checkpointForEvent(event, 'Ensure project space and checkpoint at session start');
+          // Session start does not create or overwrite a checkpoint. A
+          // checkpoint only exists when the agent records real work state.
           return;
         }
 
         if (event.type === 'session.compacted') {
-          checkpointForEvent(event, 'Post-compaction checkpoint refresh and context recovery');
           recoverCheckpointContext(getProjectSpace(ctx));
           return;
         }
@@ -346,14 +322,13 @@ export const MindAutomationPlugin = async (ctx) => {
           return;
         }
 
-        checkpointForEvent(payload, 'Pre-compaction checkpoint capture and signal preservation');
         const recovered = recoverCheckpointContext(getProjectSpace(ctx));
         const escaped = (recovered ?? '').replace(/\\n/g, '\\n');
 
         if (Array.isArray(output?.context)) {
           output.context.push(
             '## mind Prudent Continuity',
-            '- Before compaction: key context was checkpointed using mind checkpoint set.',
+            '- Keep an active checkpoint updated with the goal, pending work, and recovery links.',
             '- After compaction: use \`checkpoint list <project-space> --status active\` and then \`checkpoint recover <project-space> --name <checkpoint-name>\` if needed.',
             escaped ? '\\nRecovered context snapshot:\\n' + escaped : '\\nRecovered context snapshot unavailable; follow manual mind protocol.'
           );
@@ -425,18 +400,6 @@ const buildV2Setup = async (ctx) => {
   };
   const state = loadState();
 
-  const checkpointForEvent = (eventPayload, extra) => {
-    const projectCtx = ctxFor(eventPayload);
-    const projectSpace = getProjectSpace(projectCtx);
-    const checkpointKey = projectSpace + ':' + extractSessionId(eventPayload);
-    if (!hasIntervalPassed(state.checkpoints, checkpointKey, MIN_CHECKPOINT_INTERVAL_MS)) {
-      return;
-    }
-
-    const notes = buildEventNotes(projectCtx, eventPayload, extra);
-    ensureSessionScaffold(projectSpace, notes);
-  };
-
   const controller = new AbortController();
   void (async () => {
     try {
@@ -447,9 +410,9 @@ const buildV2Setup = async (ctx) => {
           }
 
           if (event.type === 'session.created') {
-            checkpointForEvent(event, 'Ensure project space and checkpoint at session start');
+            // Session start does not create or overwrite a checkpoint. A
+            // checkpoint only exists when the agent records real work state.
           } else if (event.type === 'session.compacted' || event.type === 'session.compaction.ended') {
-            checkpointForEvent(event, 'Post-compaction checkpoint refresh and context recovery');
             recoverCheckpointContext(getProjectSpace(ctxFor(event)));
           } else if (event.type === 'session.deleted') {
             const projectCtx = ctxFor(event);
@@ -504,11 +467,10 @@ const buildV2Setup = async (ctx) => {
         return;
       }
 
-      checkpointForEvent(payload, 'Pre-compaction checkpoint capture and signal preservation');
       const recovered = recoverCheckpointContext(getProjectSpace(projectCtx));
       const text = [
         '## mind Prudent Continuity',
-        '- Before compaction: key context was checkpointed using mind checkpoint set.',
+        '- Keep an active checkpoint updated with the goal, pending work, and recovery links.',
         '- After compaction: use \`checkpoint list <project-space> --status active\` and then \`checkpoint recover <project-space> --name <checkpoint-name>\` if needed.',
         recovered && recovered.length > 0
           ? '\\nRecovered context snapshot:\\n' + recovered

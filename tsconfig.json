@@ -26,11 +26,6 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "include": [
-    "src/**/*",
-    "test/**/*",
-    "benchmarks/agent-memory/src/**/*",
-    "benchmarks/agent-memory/test/**/*"
-  ],
+  "include": ["src/**/*", "test/**/*"],
   "exclude": ["node_modules"]
 }

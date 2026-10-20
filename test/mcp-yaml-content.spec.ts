@@ -144,7 +144,7 @@ describe('MCP YAML content stage 1', () => {
     const checkpointSave = await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'Ship stage 1',
-      pending: 'Update MCP YAML responses',
+      pending: '',
       linked_memories: ['yaml-memory'],
     });
     expectYamlParity(checkpointSave);

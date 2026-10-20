@@ -31,22 +31,38 @@ Use `checkpoint_query { space: "projects/mind" }` to list active checkpoints.
 To restore one, call
 `checkpoint_load { space: "projects/mind", checkpointName: "<name>" }`.
 
+If there is no active checkpoint, look for recent session summaries
+(`type:session` + `cat:summary`) in the project space and orient from them. Do
+not create an artificial checkpoint just to satisfy the ritual.
+
 ## RECALL
 
 **Trigger:** You need a decision, root cause, convention, or prior context.
 
-Query first, then read only the memories you will use.
+Start with a natural, focused question. One query is usually enough; refine only
+when the results are weak or ambiguous.
 
 ```json tool:memory_query
 {
   "space": "projects/mind",
-  "search": "auth \"token rotation\" OR jwt NOT legacy",
+  "search": "Why did we choose JWT for authentication?",
   "limit": 10
 }
 ```
 
+For explicit constraints, use structured syntax as an additional tool.
 `memory_query` supports quoted phrases, `OR`, `AND`, `NOT`, and a trailing `*`
-prefix. Results include `confidence` (`high`, `medium`, `low`) and `methods`.
+prefix.
+
+```json tool:memory_query
+{
+  "space": "projects/mind",
+  "search": "jwt NOT legacy",
+  "limit": 10
+}
+```
+
+Results include `confidence` (`high`, `medium`, `low`) and `methods`.
 Use `space: "*"` to search across spaces. `memory_query` does not record access
 or promote tiers.
 
@@ -132,29 +148,63 @@ Current knowledge as a living reference:
 }
 ```
 
-Replaced decision:
+### Supersede a changed decision
+
+Do not overwrite the historical memory. Keep the old record and create a new one
+for the current truth.
+
+Create the replacement with the new decision and its `cat:*` tags:
+
+```json tool:memory_add
+{
+  "space": "projects/mind",
+  "name": "revocable-access-tokens",
+  "content": "**What**: Short-lived access tokens with server-side revocation replace stateless JWTs.\n**Why**: JWTs could not be revoked quickly.\n**Where**: src/auth/session.ts",
+  "tags": ["cat:decision", "auth", "status:validated"]
+}
+```
+
+Mark the historical memory `status:superseded` by sending its original tags plus
+`status:superseded`. `memory_update.tags` replaces the whole set, so re-include
+every original tag. Do not send `content`.
 
 ```json tool:memory_update
 {
   "space": "projects/mind",
   "name": "jwt-over-sessions",
-  "content": "**What**: JWT replaced by short-lived access tokens with server-side revocation.\n**Why**: Stateless JWT could not be revoked quickly.\n**Where**: src/auth/session.ts",
   "tags": ["cat:decision", "auth", "status:superseded"]
 }
 ```
+
+Link the replacement to the historical memory with `contradicts`:
+
+```json tool:link_create
+{
+  "sourceRef": "projects/mind:revocable-access-tokens",
+  "targetRef": "projects/mind:jwt-over-sessions",
+  "label": "contradicts"
+}
+```
+
+Then update the living references that state the old decision.
 
 ## RELATE
 
 **Trigger:** Two memories have a meaningful relation.
 
-Use a direction and a label. Common labels are `depends_on`, `caused_by`,
-`extends`, `implements`, `contradicts`, and `relates_to`.
+Add a link only when it helps future work; unnecessary links add noise.
 
-`link_create` is directional: source to target. Use `space:name` refs, or a bare
-name to resolve in the source space. Re-creating the same directed pair replaces
-its label, so relabel by calling `link_create` again. `link_delete` removes a
-relation and succeeds as a no-op when it is absent. `memory_read` returns each
-relation's label and direction (`outgoing` or `incoming`).
+`memory_add.links_to` creates a generic `related` link from the new memory to
+each target. Use `link_create` when the relation has a specific label and
+direction.
+
+Common labels are `depends_on`, `caused_by`, `extends`, `implements`,
+`contradicts`, and `relates_to`. `link_create` is directional: source to
+target. Use `space:name` refs, or a bare name to resolve in the source space.
+Re-creating the same directed pair replaces its label, so relabel by calling
+`link_create` again. `link_delete` removes that direction and succeeds as a no-op when it is absent.
+If the direction is wrong, create the correct direction and delete the stale one.
+`memory_read` returns each relation's label and direction (`outgoing` or `incoming`).
 
 ```json tool:link_create
 {
@@ -192,11 +242,9 @@ the tags you want to keep.
 
 ### Supersede a changed decision
 
-1. Update the living reference or current knowledge to the new truth.
-2. Preserve the historical decision with `status:superseded` and its original
-   tags.
-3. Link the new decision to the old one with `contradicts`.
-4. Review the living references affected by the change.
+Create the replacement, mark the historical memory `status:superseded` without
+changing its content, link the pair with `contradicts`, then update the affected
+living references. The LEARN section shows the exact calls.
 
 ### Living references
 
@@ -245,17 +293,29 @@ the memories needed to recover:
 { "space": "projects/mind", "checkpointName": "checkpoint-2026-10-19T10-00-00-000Z" }
 ```
 
-At session end, call `checkpoint_done` to turn the active checkpoint into a
+At session end, the checkpoint reflects whether work is still pending. When
+pending work remains, update the checkpoint and do **not** call
+`checkpoint_done`; the next session can recover the task. When the task is
+complete, call `checkpoint_done` to turn the active checkpoint into a
 same-space `session-*` summary at T3 with `type:session` and `cat:summary`.
-After compaction or a context reset, query and load the active checkpoint, then
-recall the task keywords before editing files.
+Clear `pending` only when the work is finished or explicitly abandoned, and
+record the reason in notes. Provide a meaningful summary of what was done.
 
 ```json tool:checkpoint_done
 {
   "space": "projects/mind",
   "checkpointName": "checkpoint-2026-10-19T10-00-00-000Z",
-  "summary": "**Goal**: Replace JWT sessions. **Done**: Decision and links recorded. **Pending**: Middleware tests."
+  "summary": "**Goal**: Replace JWT sessions. **Done**: Decision and links recorded. **Pending**: none."
 }
+```
+
+After compaction or a context reset, load the active checkpoint and the
+memories it links to, then recall the task keywords before editing files. If no
+checkpoint exists, look for recent session summaries; do not perform a closing
+ritual or create a placeholder checkpoint.
+
+```json tool:checkpoint_load
+{ "space": "projects/mind", "checkpointName": "checkpoint-2026-10-19T10-00-00-000Z" }
 ```
 
 ## Appendix: tools, tags, and anti-patterns

@@ -16,25 +16,6 @@ export interface AgentConfigEntry {
   capabilities: CapabilityMap;
 }
 
-// VSCode config path resolver (must be a function since it depends on platform)
-function getVSCodeUserConfigPath(): string {
-  const platform = process.platform;
-  if (platform === 'win32') {
-    return path.join(process.env.APPDATA || '', 'Code', 'User', 'mcp.json');
-  } else if (platform === 'darwin') {
-    return path.join(
-      process.env.HOME ?? homedir(),
-      'Library',
-      'Application Support',
-      'Code',
-      'User',
-      'mcp.json'
-    );
-  } else {
-    return path.join(process.env.HOME ?? homedir(), '.config', 'Code', 'User', 'mcp.json');
-  }
-}
-
 function getHomeDir(): string {
   return process.env.HOME ?? homedir();
 }
@@ -134,7 +115,9 @@ const AGENT_CONFIGS: AgentConfigInternal[] = [
   {
     agent: 'windsurf',
     name: getSupportedAgentDefinition('windsurf').name,
-    pathComponents: ['.windsurf', 'mcp.json'],
+    // Documented Windsurf/Devin path. The old ~/.windsurf/mcp.json path is
+    // handled as a read-only legacy detection fallback in setup.ts.
+    pathComponents: ['.config', 'devin', 'mcp_config.json'],
     format: 'json',
     build: buildJsonMcpConfig,
     capabilities: getAgentCapabilities('windsurf'),
@@ -150,7 +133,10 @@ const AGENT_CONFIGS: AgentConfigInternal[] = [
   {
     agent: 'vscode',
     name: getSupportedAgentDefinition('vscode').name,
-    pathComponents: [], // Platform-dependent, computed dynamically
+    // Portable documented GitHub Copilot MCP path. VS Code's native
+    // <userData>/mcp.json with a top-level `servers` object remains an
+    // alternative documented shape, but Mind writes only one file.
+    pathComponents: ['.copilot', 'mcp-config.json'],
     format: 'json',
     build: buildJsonMcpConfig,
     capabilities: getAgentCapabilities('vscode'),
@@ -158,10 +144,18 @@ const AGENT_CONFIGS: AgentConfigInternal[] = [
   {
     agent: 'antigravity',
     name: getSupportedAgentDefinition('antigravity').name,
-    pathComponents: ['.gemini', 'antigravity', 'mcp_config.json'],
+    pathComponents: ['.gemini', 'config', 'mcp_config.json'],
     format: 'json',
     build: buildJsonMcpConfig,
     capabilities: getAgentCapabilities('antigravity'),
+  },
+  {
+    agent: 'pi',
+    name: getSupportedAgentDefinition('pi').name,
+    pathComponents: ['.pi', 'agent', 'mcp.json'],
+    format: 'json',
+    build: buildJsonMcpConfig,
+    capabilities: getAgentCapabilities('pi'),
   },
 ];
 
@@ -191,14 +185,10 @@ export function getAgentConfig(agent: SupportedAgent): AgentConfigEntry {
   }
 
   // Compute configPath dynamically at call time (not module load time)
-  let configPath: string;
-  if (config.pathAlternatives && config.pathAlternatives.length > 0) {
-    configPath = resolvePreferredPath(config.pathAlternatives);
-  } else if (config.pathComponents.length > 0) {
-    configPath = path.join(getHomeDir(), ...config.pathComponents);
-  } else {
-    configPath = getVSCodeUserConfigPath(); // VSCode uses platform-specific path
-  }
+  const configPath =
+    config.pathAlternatives && config.pathAlternatives.length > 0
+      ? resolvePreferredPath(config.pathAlternatives)
+      : path.join(getHomeDir(), ...config.pathComponents);
 
   return {
     name: config.name,
@@ -212,14 +202,10 @@ export function getAgentConfig(agent: SupportedAgent): AgentConfigEntry {
 // Returns all agent configs (for iteration), with configPath resolved at call time
 export function getAllAgentConfigs(): AgentConfigEntry[] {
   return AGENT_CONFIGS.map(config => {
-    let configPath: string;
-    if (config.pathAlternatives && config.pathAlternatives.length > 0) {
-      configPath = resolvePreferredPath(config.pathAlternatives);
-    } else if (config.pathComponents.length > 0) {
-      configPath = path.join(getHomeDir(), ...config.pathComponents);
-    } else {
-      configPath = getVSCodeUserConfigPath();
-    }
+    const configPath =
+      config.pathAlternatives && config.pathAlternatives.length > 0
+        ? resolvePreferredPath(config.pathAlternatives)
+        : path.join(getHomeDir(), ...config.pathComponents);
     return {
       name: config.name,
       configPath,
