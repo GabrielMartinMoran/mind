@@ -1,5 +1,5 @@
 import type { MindStore } from '../../store/mind-store';
-import type { Tier } from '../../types';
+import type { MemorySummary, Tier } from '../../types';
 
 import { presentHotMemoryResponse } from './memory-response';
 
@@ -12,7 +12,12 @@ export interface TrendingTierBlock {
   memories: ReturnType<typeof presentHotMemoryResponse>[];
 }
 
-const TRENDING_BATCH_SIZE = 500;
+export interface ReferencesBlock {
+  total: number;
+  returned_count: number;
+  coverage: TrendingCoverage;
+  memories: ReturnType<typeof presentHotMemoryResponse>[];
+}
 
 export function determineTrendingCoverage(
   returnedCount: number,
@@ -25,36 +30,45 @@ export function determineTrendingCoverage(
   return 'subset';
 }
 
-export async function buildTrendingTierBlock(
+function presentHotMemories(
+  memories: MemorySummary[]
+): ReturnType<typeof presentHotMemoryResponse>[] {
+  return memories.map(memory => presentHotMemoryResponse(memory));
+}
+
+export function buildTrendingTierBlock(
   store: MindStore,
   space: string,
   tier: Tier,
   previewLimit: number
-): Promise<TrendingTierBlock> {
-  const totalInTier = await store.queryMemoriesCount({ space, tier });
-  const filteredMemories: Array<ReturnType<typeof presentHotMemoryResponse>> = [];
-
-  for (let offset = 0; offset < totalInTier; offset += TRENDING_BATCH_SIZE) {
-    const memories = store.queryMemories({
-      space,
-      tier,
-      limit: TRENDING_BATCH_SIZE,
-      offset,
-    });
-
-    filteredMemories.push(
-      ...memories
-        .filter(memory => !memory.tags.includes('checkpoint'))
-        .map(memory => presentHotMemoryResponse(memory))
-    );
-  }
-
-  const memories = filteredMemories.slice(0, previewLimit);
+): TrendingTierBlock {
+  const { total_count: totalCount, memories: summaries } = store.getTrendingMemories(
+    space,
+    tier,
+    previewLimit
+  );
+  const memories = presentHotMemories(summaries);
 
   return {
-    total_count: filteredMemories.length,
+    total_count: totalCount,
     returned_count: memories.length,
-    coverage: determineTrendingCoverage(memories.length, filteredMemories.length),
+    coverage: determineTrendingCoverage(memories.length, totalCount),
+    memories,
+  };
+}
+
+export function buildReferencesBlock(
+  store: MindStore,
+  space: string,
+  limit: number
+): ReferencesBlock {
+  const { total_count: total, memories: summaries } = store.getLivingReferences(space, limit);
+  const memories = presentHotMemories(summaries);
+
+  return {
+    total,
+    returned_count: memories.length,
+    coverage: determineTrendingCoverage(memories.length, total),
     memories,
   };
 }

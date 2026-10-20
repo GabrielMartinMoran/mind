@@ -85,6 +85,37 @@ Feature: MCP Memory Tools
       When calling memory_update with space "test-space" name "mem1" tags ["cat:bugfix"]
       Then the memory tags are replaced
 
+    @integration
+    Scenario: memory.update pins and unpins a memory
+      When calling memory_update with space "test-space" name "mem1" pinned true
+      Then the memory is pinned in its current tier
+      When calling memory_update with space "test-space" name "mem1" pinned false
+      Then the memory is unpinned in its current tier
+
+    @integration
+    Scenario: memory.update promotes and demotes a memory
+      Given a memory "mem1" in tier 2
+      When calling memory_update with space "test-space" name "mem1" tierTransition "promote"
+      Then the memory moves to tier 1
+      When calling memory_update with space "test-space" name "mem1" tierTransition "demote"
+      Then the memory moves to tier 2
+
+    @integration
+    Scenario: memory.update keeps an explicit tier transition atomic
+      Given a full tier 1 where every memory is pinned
+      And a memory "mem1" in tier 2
+      When calling memory_update with space "test-space" name "mem1" content "new content" tierTransition "promote"
+      Then the update fails with a capacity error
+      And the memory content is unchanged
+      And the memory remains in tier 2
+
+    @integration
+    Scenario: memory.update moves a pinned memory when the transition is explicit
+      Given a pinned memory "mem1" in tier 2
+      When calling memory_update with space "test-space" name "mem1" tierTransition "promote"
+      Then the memory moves to tier 1
+      And the memory remains pinned
+
     Scenario: memory.add, memory.read, and memory.update expose normalized memory payloads
       When calling memory_add with space "test-space" name "normalized" content "content" tags ["cat:decision"]
       Then the response exposes space "test-space"

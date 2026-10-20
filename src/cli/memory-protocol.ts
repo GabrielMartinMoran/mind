@@ -13,6 +13,18 @@ const MEMORY_PROTOCOL_TEMPLATE_PATH = path.resolve(
   'mind-memory-protocol.template.md'
 );
 
+const CANONICAL_PROTOCOL_BODY_PATH = path.resolve(
+  __dirname,
+  '..',
+  'resources',
+  'protocols',
+  'mind-cognitive-protocol.md'
+);
+
+export function loadCanonicalProtocolBody(): string {
+  return loadMarkdownResource(CANONICAL_PROTOCOL_BODY_PATH);
+}
+
 function getProtocolContext(agent: SetupProtocolAgent): Record<string, string | boolean> {
   if (agent === 'opencode') {
     return {
@@ -21,6 +33,7 @@ function getProtocolContext(agent: SetupProtocolAgent): Record<string, string | 
       connectedAgentLabel: '',
       useBeforeToolsWording: true,
       useCallBeforeSessionWording: false,
+      protocolBody: loadCanonicalProtocolBody(),
     };
   }
 
@@ -31,6 +44,7 @@ function getProtocolContext(agent: SetupProtocolAgent): Record<string, string | 
       connectedAgentLabel: 'Claude Code',
       useBeforeToolsWording: false,
       useCallBeforeSessionWording: true,
+      protocolBody: loadCanonicalProtocolBody(),
     };
   }
 
@@ -40,10 +54,11 @@ function getProtocolContext(agent: SetupProtocolAgent): Record<string, string | 
     connectedAgentLabel: 'Codex',
     useBeforeToolsWording: false,
     useCallBeforeSessionWording: true,
+    protocolBody: loadCanonicalProtocolBody(),
   };
 }
 
 export function renderMemoryProtocol(agent: SetupProtocolAgent): string {
   const template = loadMarkdownResource(MEMORY_PROTOCOL_TEMPLATE_PATH);
-  return renderTemplate(template, getProtocolContext(agent));
+  return `${renderTemplate(template, getProtocolContext(agent)).trimEnd()}\n`;
 }

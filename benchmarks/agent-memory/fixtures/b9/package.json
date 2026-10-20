@@ -1,0 +1,11 @@
+{
+  "name": "buildpipeline",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run src/build.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

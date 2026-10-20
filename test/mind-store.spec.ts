@@ -706,7 +706,7 @@ describe('MindStore — Search', () => {
     ragEnabledSpy.mockRestore();
   });
 
-  test('should use semantic threshold fallback when FTS has no hits and RAG is enabled', async () => {
+  test('does not admit weak semantic fallback candidates when RAG is enabled', async () => {
     store = createTestStore();
     store.createSpace('test', 'Test', ['test']);
     await store.addMemory('test', 'alpha', 'one', { tags: ['test'] });
@@ -721,9 +721,10 @@ describe('MindStore — Search', () => {
       { id: betaId, score: 0.25 },
     ]);
 
+    // 0.35 clears the broad candidate floor (0.3) but not the semantic-only
+    // admission floor (0.6), so the lexical last resort must not admit it.
     const results = await store.search('query-with-no-fts-hit', { space: 'test' });
-    expect(results.length).toBe(1);
-    expect(results[0]!.name).toBe('alpha');
+    expect(results).toEqual([]);
 
     semanticSpy.mockRestore();
     ragEnabledSpy.mockRestore();

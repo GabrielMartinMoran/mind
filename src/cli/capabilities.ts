@@ -83,7 +83,7 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
         status: 'supported',
         confidence: 'high',
         evidence:
-          'Injects managed mind-memory-protocol.md path first, exact-once, with mind_system_instructions directive.',
+          'Injects managed mind-memory-protocol.md path first, exact-once, with the shared Mind protocol body.',
         fallback: 'N/A',
       },
       L3_HOOKS: {

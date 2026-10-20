@@ -50,6 +50,8 @@ export interface MemorySummary {
   changed_at: string;
 }
 
+export type LinkDirection = 'outgoing' | 'incoming';
+
 export interface Link {
   source_id: string;
   target_id: string;
@@ -67,6 +69,11 @@ export interface TierChange {
   from: Tier;
   to: Tier;
   reason: 'promote' | 'demote' | 'auto_promote';
+}
+
+export interface BoundedMemorySummaryResult {
+  total_count: number;
+  memories: MemorySummary[];
 }
 
 export interface HotMemorySummary {

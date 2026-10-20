@@ -1,6 +1,8 @@
 import { getAgentCapabilities, type Agent, type CapabilityMap } from '../cli/capabilities';
+import { buildLinkedMemoriesArray } from '../helpers/link-building';
 import { isSessionLikeMemory } from '../helpers/session-summary';
 import type { MindStore } from '../store/mind-store';
+import type { LinkDirection } from '../types';
 
 export type RecoveryFormat = 'text' | 'md' | 'json';
 
@@ -11,7 +13,12 @@ interface RecoveryCheckpoint {
   space: string;
   tags: string[];
   content: CheckpointContent;
-  links: Array<{ targetSpace: string; targetName: string; label: string }>;
+  links: Array<{
+    targetSpace: string;
+    targetName: string;
+    label: string;
+    direction: LinkDirection;
+  }>;
 }
 
 export interface RecoveryPack {
@@ -124,16 +131,17 @@ export async function buildRecoveryPack(
       const memory = store.getMemoryById(latest.id);
       if (memory) {
         const content = parseCheckpointContent(memory.content);
-        const links = store.getLinks(latest.id).slice(0, 5);
+        const linkedMemories = buildLinkedMemoriesArray(store, latest.id, 5);
         checkpoint = {
           name: memory.name,
           space: memory.space_name,
           tags: memory.tags,
           content,
-          links: links.map(link => ({
-            targetSpace: link.target_space,
-            targetName: link.target_name,
+          links: linkedMemories.map(link => ({
+            targetSpace: link.space,
+            targetName: link.name,
             label: link.label,
+            direction: link.direction,
           })),
         };
 

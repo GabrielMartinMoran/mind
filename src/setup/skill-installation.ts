@@ -3,6 +3,8 @@ import * as fs from 'fs';
 import { homedir } from 'os';
 import * as path from 'path';
 
+import { renderMindManagementSkill } from '../cli/mind-management-skill';
+
 // Supported agent types that can have skills installed
 export type AgentSkillType =
   | 'opencode'
@@ -72,7 +74,7 @@ export function ensureMindManagementSkill(agent: AgentSkillType): string | null 
   const destPath = path.join(skillsDir, 'SKILL.md');
 
   ensureDir(skillsDir);
-  const skillContent = fs.readFileSync(skillFile, 'utf-8');
+  const skillContent = renderMindManagementSkill();
   fs.writeFileSync(destPath, skillContent);
 
   return destPath;

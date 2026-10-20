@@ -9,4 +9,9 @@ export const MemoryUpdateSchema = z.object({
     .array(z.string())
     .optional()
     .describe('New tags array (replaces existing). Omit to keep existing tags.'),
+  pinned: z.boolean().optional().describe('Pin or unpin the memory in its current tier.'),
+  tierTransition: z
+    .enum(['promote', 'demote'])
+    .optional()
+    .describe('Move the memory one tier up (promote) or down (demote).'),
 });

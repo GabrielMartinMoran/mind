@@ -7,6 +7,7 @@ import type {
   Memory,
   MemorySummary,
   Link,
+  LinkDirection,
   Tier,
   SearchFilter,
   MemoryQueryFilter,
@@ -15,6 +16,7 @@ import type {
   SpaceGraphResult,
   LegacyBrain,
   HotMemorySummary,
+  BoundedMemorySummaryResult,
 } from '../types';
 
 import type { ScoredSearchResult } from './repositories/search-repository';
@@ -27,6 +29,8 @@ export interface LinkedMemorySummary {
   tier: Tier;
   tags: string[];
   pinned: boolean;
+  label: string;
+  direction: LinkDirection;
 }
 
 export interface MemoryPatchInput {
@@ -151,6 +155,10 @@ export interface MindStore {
     from?: string;
     to?: string;
   }): Promise<number>;
+
+  // Bounded space-orientation queries (checkpoints excluded, pinned first)
+  getTrendingMemories(space: string, tier: Tier, limit: number): BoundedMemorySummaryResult;
+  getLivingReferences(space: string, limit: number): BoundedMemorySummaryResult;
 
   // Graph view (includes T1..T3 only)
   getSpaceGraph(space: string, opts?: { limit?: number; maxLimit?: number }): SpaceGraphResult;

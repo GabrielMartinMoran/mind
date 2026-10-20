@@ -125,6 +125,12 @@ describe('Phase 2.1: Spaces Tools Redesign', () => {
           tags: expect.arrayContaining(['checkpoint', 'active']),
         })
       );
+      expect(res.references).toEqual({
+        total: 0,
+        returned_count: 0,
+        coverage: 'complete',
+        memories: [],
+      });
     });
 
     test('2.1.4 space.get trending tier blocks exclude checkpoint-tagged memories and internal access fields', async () => {
@@ -188,6 +194,12 @@ describe('Phase 2.1: Spaces Tools Redesign', () => {
         memories: [],
       });
       expect(res.active_checkpoints).toEqual({ total: 0, checkpoints: [] });
+      expect(res.references).toEqual({
+        total: 0,
+        returned_count: 0,
+        coverage: 'complete',
+        memories: [],
+      });
     });
 
     test('space.get marks tier coverage as subset when the preview is truncated', async () => {

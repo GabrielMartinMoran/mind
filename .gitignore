@@ -45,3 +45,12 @@ data/
 .mind/
 session-examples/
 .pas/
+
+benchmarks/*
+!benchmarks/agent-memory/
+benchmarks/agent-memory/*
+!benchmarks/agent-memory/src/
+!benchmarks/agent-memory/test/
+!benchmarks/agent-memory/fixtures/
+!benchmarks/agent-memory/README.md
+!benchmarks/agent-memory/ANALYSIS.md

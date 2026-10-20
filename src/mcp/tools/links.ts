@@ -7,9 +7,9 @@ import type { ToolDefinition } from '../tool-types';
 
 const LINK_TOOL_DESCRIPTIONS: Record<string, string> = {
   link_create:
-    'Create a directional link between two memories. Use when a memory depends on, extends, or relates to another.',
+    'Create a directional link from sourceRef to targetRef. label describes the relation (depends_on, caused_by, extends, implements, contradicts, relates_to). Re-creating the same directed pair replaces its label.',
   link_delete:
-    'Remove a directional link between two memories. The memories themselves are unaffected.',
+    'Remove a directional link between two memories. Deleting an absent link succeeds as a no-op; the memories themselves are unaffected.',
 };
 
 export interface LinkTools {

@@ -228,8 +228,8 @@ describe('OpenCode setup integration', () => {
     const injectedText = readFileSync(injectedPath, 'utf-8');
     expect(injectedText).toBe(renderMemoryProtocol('opencode'));
     expect(injectedText).toContain('Mind Memory Protocol');
-    expect(injectedText).toContain('Post-Compaction');
-    expect(injectedText).toContain('system_instructions');
+    expect(injectedText).toContain('## ORIENT');
+    expect(injectedText).not.toContain('Required First Actions');
   });
 
   test('is idempotent for repeated setup runs', async () => {

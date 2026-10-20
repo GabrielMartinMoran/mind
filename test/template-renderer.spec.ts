@@ -12,6 +12,14 @@ describe('template renderer strict mode', () => {
     expect(output).toBe('Hello mind !');
   });
 
+  test('renders a composed protocolBody placeholder', () => {
+    const output = renderTemplate('# Wrapper\n\n{{protocolBody}}', {
+      protocolBody: '## Body\n\nContent.',
+    });
+
+    expect(output).toBe('# Wrapper\n\n## Body\n\nContent.');
+  });
+
   test('throws when a placeholder key is missing', () => {
     expect(() => renderTemplate('Hello {{name}}', {})).toThrow(/name/);
   });

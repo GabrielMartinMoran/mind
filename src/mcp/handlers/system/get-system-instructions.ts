@@ -5,6 +5,6 @@ const FULL_INSTRUCTIONS = renderSystemInstructions();
 export async function getSystemInstructionsHandler() {
   return {
     content: [{ type: 'text', text: FULL_INSTRUCTIONS }],
-    instructions_version: '1.4.0',
+    instructions_version: '2.0.0',
   };
 }

@@ -307,10 +307,14 @@ describe('MCP Memory Tools', () => {
     expect(res.linked_by.length).toBe(1);
     // Links include ref string instead of id
     expect(Object.keys(res.links_to[0] ?? {}).sort()).toEqual(
-      ['changed_at', 'name', 'pinned', 'ref', 'space', 'tags', 'tier'].sort()
+      ['changed_at', 'direction', 'label', 'name', 'pinned', 'ref', 'space', 'tags', 'tier'].sort()
     );
     expect(res.links_to[0]?.ref).toBe('proj:outgoing');
+    expect(res.links_to[0]?.label).toBe('related');
+    expect(res.links_to[0]?.direction).toBe('outgoing');
     expect(res.linked_by[0]?.ref).toBe('proj:incoming');
+    expect(res.linked_by[0]?.label).toBe('related');
+    expect(res.linked_by[0]?.direction).toBe('incoming');
   });
 
   test('memory_query should use default pagination values', async () => {
@@ -766,6 +770,12 @@ describe('MCP Spaces Tools', () => {
       (res.trending_memories.tier_1.memories[0] as Record<string, unknown>)?.updated_at
     ).toBeUndefined();
     expect(res.active_checkpoints).toEqual({ total: 0, checkpoints: [] });
+    expect(res.references).toEqual({
+      total: 0,
+      returned_count: 0,
+      coverage: 'complete',
+      memories: [],
+    });
   });
 
   test('space_update should update description', async () => {

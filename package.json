@@ -29,6 +29,7 @@
     ]
   },
   "devDependencies": {
+    "@opencode/sdk": "2.0.28",
     "@types/bun": "latest",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",

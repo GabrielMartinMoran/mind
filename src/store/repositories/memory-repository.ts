@@ -5,7 +5,14 @@ import type { Database } from 'bun:sqlite';
 import { TIER_LIMITS } from '../../config';
 import { blobToVector, getEmbedding, isRagEnabled, vectorToBlob } from '../../helpers/rag';
 import { normalizeTags } from '../../helpers/tags';
-import type { HotMemorySummary, LegacyBrain, Memory, MemorySummary, Tier } from '../../types';
+import type {
+  HotMemorySummary,
+  LegacyBrain,
+  LinkDirection,
+  Memory,
+  MemorySummary,
+  Tier,
+} from '../../types';
 import type { LinkedMemorySummary, MemoryPatchInput } from '../mind-store';
 import { FtsHelper, generateUuid, now, requireMemory } from '../shared';
 
@@ -490,7 +497,7 @@ export function createMemoryRepository(
 
     const linksToRows = db
       .query(
-        `SELECT m.id, m.name, s.name as space_name, m.changed_at, m.tier, m.pinned
+        `SELECT m.id, m.name, s.name as space_name, m.changed_at, m.tier, m.pinned, l.label
                  FROM links l
                  JOIN memories m ON m.id = l.target_id
                  JOIN spaces s ON s.id = m.space_id
@@ -501,7 +508,7 @@ export function createMemoryRepository(
 
     const linkedByRows = db
       .query(
-        `SELECT m.id, m.name, s.name as space_name, m.changed_at, m.tier, m.pinned
+        `SELECT m.id, m.name, s.name as space_name, m.changed_at, m.tier, m.pinned, l.label
                  FROM links l
                  JOIN memories m ON m.id = l.source_id
                  JOIN spaces s ON s.id = m.space_id
@@ -510,7 +517,7 @@ export function createMemoryRepository(
       )
       .all(memoryId) as any[];
 
-    const toSummary = (row: any): LinkedMemorySummary => ({
+    const toSummary = (row: any, direction: LinkDirection): LinkedMemorySummary => ({
       id: row.id,
       name: row.name,
       space_name: row.space_name,
@@ -518,11 +525,13 @@ export function createMemoryRepository(
       tier: row.tier as Tier,
       tags: getTagsForMemory(db, row.id),
       pinned: row.pinned === 1,
+      label: row.label,
+      direction,
     });
 
     return {
-      links_to: linksToRows.map(toSummary),
-      linked_by: linkedByRows.map(toSummary),
+      links_to: linksToRows.map(row => toSummary(row, 'outgoing')),
+      linked_by: linkedByRows.map(row => toSummary(row, 'incoming')),
     };
   }
 

@@ -1,0 +1,219 @@
+// Offline tests for the paid A2 command wiring. No network, no real driver:
+// the judge stage and the judge-only path are exercised with fakes.
+
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { describe, expect, test } from 'bun:test';
+
+import {
+  groupCandidates,
+  readStoredResults,
+  resolveWorktrees,
+  runA2Command,
+  runJudgeStage,
+} from '../src/benchmarkA/command';
+import type { A2QuestionResult } from '../src/benchmarkA/judge';
+import type { ConditionId } from '../src/config';
+import type { SubsetItem } from '../src/locomo/subset';
+import { createFakeSessionDriver } from '../src/testing/fakes';
+
+function subsetItem(id: string, question: string, answer: string | null, adversarial: boolean) {
+  return {
+    id,
+    sampleId: 'conv-26',
+    questionIndex: 0,
+    category: adversarial ? 5 : 1,
+    categoryName: adversarial ? 'adversarial' : 'multi-hop',
+    question,
+    answer,
+    evidence: [],
+    adversarial,
+  } as unknown as SubsetItem;
+}
+
+function result(
+  id: string,
+  condition: ConditionId,
+  answer: string,
+  adversarial: boolean
+): A2QuestionResult {
+  return {
+    id,
+    category: adversarial ? 5 : 1,
+    categoryName: adversarial ? 'adversarial' : 'multi-hop',
+    adversarial,
+    condition,
+    answer,
+    reference: adversarial ? null : 'ref',
+    deterministic: { klass: 'incorrect', f1: null, abstained: false },
+    judge: null,
+    memoryCalls: 0,
+    tokens: null,
+    costUsd: 0,
+    latencyMs: 1,
+    error: null,
+  };
+}
+
+const subset: SubsetItem[] = [
+  subsetItem('q1', 'What color is the hat?', 'red', false),
+  subsetItem('q2', 'What is the code?', null, true),
+];
+
+const conditions: readonly ConditionId[] = ['mind-v9', 'mind-v10'];
+
+describe('groupCandidates', () => {
+  test('groups each condition answer under the matching question', () => {
+    const results = [
+      result('q1', 'mind-v9', 'red', false),
+      result('q1', 'mind-v10', 'a hat', false),
+      result('q2', 'mind-v9', 'no information available', true),
+      result('q2', 'mind-v10', 'invented', true),
+    ];
+    const questions = groupCandidates(results, subset);
+    expect(questions.map(q => q.id)).toEqual(['q1', 'q2']);
+    expect(questions[0]!.candidates.map(c => c.condition)).toEqual(['mind-v9', 'mind-v10']);
+    expect(questions[1]!.adversarial).toBe(true);
+  });
+});
+
+describe('runJudgeStage', () => {
+  test('maps verdicts back to conditions and aggregates per condition', async () => {
+    const driver = createFakeSessionDriver([
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct","score":1},{"candidate":2,"class":"partial","score":0.5}]}',
+      },
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct_abstention","score":1},{"candidate":2,"class":"hallucination","score":0}]}',
+      },
+    ]);
+    const results = [
+      result('q1', 'mind-v9', 'red', false),
+      result('q1', 'mind-v10', 'a hat', false),
+      result('q2', 'mind-v9', 'no information available', true),
+      result('q2', 'mind-v10', 'invented', true),
+    ];
+    const stage = await runJudgeStage(results, subset, {
+      driver,
+      workspaceDir: '/tmp/ws',
+      limits: { steps: 1, timeoutMs: 1000 },
+    });
+    expect(stage.promptCount).toBe(2);
+    expect(stage.manualQueue).toEqual([]);
+    expect(stage.results.every(r => r.judge !== null)).toBe(true);
+    // Every judged result now carries a verdict; aggregates are per condition.
+    expect(stage.aggregates.map(a => a.condition).sort()).toEqual(['mind-v10', 'mind-v9']);
+  });
+});
+
+describe('runA2Command --judge-only', () => {
+  function setupRun(): { runDir: string; repoRoot: string; runsRoot: string } {
+    const root = mkdtempSync(join(tmpdir(), 'bench-a2cmd-'));
+    const runsRoot = join(root, 'runs');
+    const runDir = join(runsRoot, 'run-x');
+    mkdirSync(join(runDir, 'results'), { recursive: true });
+    writeFileSync(
+      join(runDir, 'meta.json'),
+      `${JSON.stringify({
+        runId: 'run-x',
+        stages: {},
+        limits: { sessionSteps: 1, timeoutMs: 1000 },
+      })}\n`,
+      'utf8'
+    );
+    writeFileSync(join(runDir, 'subset.json'), `${JSON.stringify({ items: subset })}\n`, 'utf8');
+    for (const condition of conditions) {
+      writeFileSync(
+        join(runDir, 'results', `a2-${condition}.json`),
+        `${JSON.stringify([
+          result('q1', condition, condition === 'mind-v9' ? 'red' : 'a hat', false),
+          result('q2', condition, 'no information available', true),
+        ])}\n`,
+        'utf8'
+      );
+    }
+    return { runDir, repoRoot: root, runsRoot: 'runs' };
+  }
+
+  test('re-judges stored answers, writes results and a passed meta stage', async () => {
+    const { runDir, repoRoot, runsRoot } = setupRun();
+    const driver = createFakeSessionDriver([
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct","score":1},{"candidate":2,"class":"partial","score":0.5}]}',
+      },
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct_abstention","score":1},{"candidate":2,"class":"correct_abstention","score":1}]}',
+      },
+    ]);
+    const out: string[] = [];
+    const code = await runA2Command(
+      {
+        runId: 'run-x',
+        runsRoot,
+        workRoot: 'work',
+        conditions,
+        budgetUsd: 5,
+        judgeOnly: true,
+      },
+      {
+        repoRoot,
+        runner: async inv => ({ ...inv, stdout: '', stderr: '', exitCode: 0 }),
+        stdout: line => out.push(line),
+        stderr: () => undefined,
+        judgeDriver: driver,
+        judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+      }
+    );
+    expect(code).toBe(0);
+    expect(out.join('\n')).toContain('judge:');
+
+    const stored = readStoredResults(runDir, conditions);
+    expect(stored.every(r => r.judge !== null)).toBe(true);
+
+    const meta = JSON.parse(readFileSync(join(runDir, 'meta.json'), 'utf8')) as {
+      stages: Record<string, { status: string }>;
+    };
+    expect(meta.stages['judge:start']!.status).toBe('passed');
+  });
+
+  test('fails cleanly when the run directory does not exist', async () => {
+    const err: string[] = [];
+    const code = await runA2Command(
+      {
+        runId: 'missing',
+        runsRoot: 'runs',
+        workRoot: 'work',
+        conditions,
+        budgetUsd: 5,
+        judgeOnly: true,
+      },
+      {
+        repoRoot: mkdtempSync(join(tmpdir(), 'bench-a2cmd-')),
+        runner: async inv => ({ ...inv, stdout: '', stderr: '', exitCode: 0 }),
+        stdout: () => undefined,
+        stderr: line => err.push(line),
+      }
+    );
+    expect(code).toBe(1);
+    expect(err.join('\n')).toContain('not found');
+  });
+});
+
+describe('A2 mind-current resolution', () => {
+  test('fails closed when the local checkout has no mind entry point', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'bench-a2-current-'));
+    expect(() => resolveWorktrees(repoRoot, join(repoRoot, '.work'), ['mind-current'])).toThrow(
+      'local checkout'
+    );
+  });
+
+  test('maps mind-current to the local checkout when mind exists', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'bench-a2-current-ok-'));
+    writeFileSync(join(repoRoot, 'mind'), '#!/bin/sh\n', 'utf8');
+    expect(resolveWorktrees(repoRoot, join(repoRoot, '.work'), ['mind-current'])).toEqual({
+      current: repoRoot,
+    });
+  });
+});

@@ -21,76 +21,71 @@ const PRODUCT_PROTOCOL_FORBIDDEN_TERMS = [
 ];
 
 describe('memory protocol renderer', () => {
-  test('renders durable memory and living reference guidance for agents', () => {
+  test('renders the six responsibilities with trigger and example guidance', () => {
     const rendered = renderMemoryProtocol('opencode');
 
-    expect(rendered).toContain('Durable memory threshold');
-    expect(rendered).toContain('Living reference memories');
-    expect(rendered).toContain('status:living');
-    expect(rendered).toContain(
-      'Required tags: `type:reference`, exactly one `ref:*`, and `status:living`.'
-    );
-    expect(rendered).toContain(
-      'The `ref:*` tag defines the reference category; the memory name is the readable identifier.'
-    );
-    expect(rendered).toContain(
-      'Recommended names: `architecture-overview`, `project-map`, `style-guide`, `domain-model`, and `workflow-notes`.'
-    );
-    expect(rendered).not.toContain('Recommended names: `ref-project-map`');
-    expect(rendered).toMatch(/routine\s+validation results with no new findings/);
+    for (const responsibility of ['ORIENT', 'RECALL', 'LEARN', 'RELATE', 'MAINTAIN', 'HANDOFF']) {
+      expect(rendered).toContain(`## ${responsibility}`);
+    }
+    expect(rendered).toContain('**Trigger:**');
+    expect(rendered).toContain('```json tool:memory_add');
+  });
+
+  test('renders durable memory and living reference guidance', () => {
+    const rendered = renderMemoryProtocol('opencode');
+
+    expect(rendered).toContain('Every memory needs at least one tag.');
     expect(rendered).toMatch(
-      /verified root causes, regressions, risk decisions, or durable validation\s+patterns/
+      /Check for a related or equivalent memory before creating a new one when\s+duplication is reasonably possible\./
     );
-    expect(rendered).toContain('Before creating a durable memory');
-    expect(rendered).toContain('Future utility');
-    expect(rendered).toContain('Evidence');
-    expect(rendered).toContain('Stability');
-    expect(rendered).toContain('Living reference taxonomy and maintenance');
+    expect(rendered).toContain('type:reference');
+    expect(rendered).toContain('status:living');
     expect(rendered).toContain('ref:key-decisions');
     expect(rendered).toContain('ref:known-pitfalls');
-    expect(rendered).toContain('30 days');
-    expect(rendered).toContain('project-map');
+    expect(rendered).toContain('not on a calendar quota');
   });
 
-  test('renders concise mind-only memory type decision guidance', () => {
+  test('renders checkpoint events and required space parameters', () => {
     const rendered = renderMemoryProtocol('opencode');
 
-    expect(rendered).toMatch(/\| Need\s+\| Use\s+\| Result\s+\|/);
-    expect(rendered).toMatch(
-      /\| Live goal, pending work, blockers, or next action\s+\| `checkpoint_save`\s+\| Active checkpoint\s+\|/
-    );
-    expect(rendered).toMatch(
-      /\| Stable decisions, root causes, patterns, preferences, config, or domain facts\s+\| `memory_add` \/ `memory_update`\s+\| Durable memory\s+\|/
-    );
-    expect(rendered).toContain(
-      'Checkpoints hold live state; `checkpoint_done` completes the active checkpoint'
-    );
-    expect(rendered).toContain('Durable memories are separate from session summaries.');
-    expect(rendered).not.toContain('do not create session summaries manually');
+    expect(rendered).toContain('A plan is approved, a subtask finishes, a decision or blocker');
+    expect(rendered).toContain('checkpoint_query { space:');
+    expect(rendered).toContain('checkpoint_load { space:');
+    expect(rendered).not.toContain('less than 30 minutes old');
   });
 
-  test('renders compact link guidance with creation result checks', () => {
+  test('renders link meaning, direction, and relabel guidance', () => {
     const rendered = renderMemoryProtocol('opencode');
 
-    expect(rendered).toContain(
-      'When a new memory depends on, updates, or explains another memory, pass related memories in `links_to`.'
-    );
-    expect(rendered).toContain(
-      'After adding with `links_to`, check `links_created` and `links_failed`; retry important failed links with `link_create`.'
-    );
-    expect(rendered).not.toContain('memory is worse if not linked');
+    expect(rendered).toContain('depends_on');
+    expect(rendered).toContain('caused_by');
+    expect(rendered).toContain('contradicts');
+    expect(rendered).toContain('Re-creating the same directed pair replaces');
+    expect(rendered).toContain('`outgoing` or `incoming`');
+    expect(rendered).toContain('succeeds as a no-op when it is absent');
+  });
+
+  test('renders tier, pin, and explicit transition semantics', () => {
+    const rendered = renderMemoryProtocol('opencode');
+
+    expect(rendered).toContain('T3 is not a ranking penalty');
+    expect(rendered).toContain('explicit `tierTransition` still moves it');
+    expect(rendered).toContain('noPromote: true');
+    expect(rendered).toContain('`memory_query` does not record access');
+    expect(rendered).not.toContain('Move old memories to T3');
   });
 
   test('renders search grammar and confidence guidance', () => {
     const rendered = renderMemoryProtocol('opencode');
 
-    expect(rendered).toContain('### Searching effectively');
-    expect(rendered).toContain('Query grammar:');
-    expect(rendered).toContain('`OR` unions alternatives');
-    expect(rendered).toContain('`NOT` excludes the following term');
-    expect(rendered).toContain('A trailing `*` matches a prefix');
-    expect(rendered).toContain('Read `confidence`');
-    expect(rendered).toContain('When results are empty or mostly `low`');
+    expect(rendered).toContain('## RECALL');
+    expect(rendered).toContain('quoted phrases');
+    expect(rendered).toContain('`OR`');
+    expect(rendered).toContain('`NOT`');
+    expect(rendered).toContain('trailing `*`');
+    expect(rendered).toContain('`confidence`');
+    expect(rendered).toContain('`methods`');
+    expect(rendered).toContain('RAG is optional and off by default');
   });
 
   test('rendered protocols avoid workflow-specific orchestration language', () => {

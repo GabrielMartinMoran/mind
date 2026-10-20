@@ -34,6 +34,8 @@ moves across tools, sessions, and compaction boundaries.
 
 - **Structured memory you can revisit.** Organize information into spaces,
   tags, directional links, tiers, pins, checkpoints, and session summaries.
+- **A lifecycle, not a dump.** Capture durable knowledge, relate it, maintain
+  current truth, supersede what changed, and hand off work across sessions.
 - **Recovery built into the workflow.** Restore context after compaction,
   resume work from checkpoints, and keep important state visible over time.
 - **Shared interfaces, one memory layer.** Use the CLI, MCP server, HTTP API,
@@ -52,6 +54,10 @@ time.
 
 If you want semantic search, you can enable optional embeddings from OpenAI or
 OpenRouter. They are off by default.
+
+To learn how to decide what to remember, write durable memories, maintain tiers
+and links, supersede old decisions, and keep living references current, see
+[Cognitive memory lifecycle](docs/cognitive-memory-lifecycle.md).
 
 ## Installation
 
@@ -236,7 +242,9 @@ first, followed by near matches, substrings, and close spellings:
   shared 3-character prefix, so a typo in the first three characters of a word
   isn't recovered.
 - **Token-set** coverage ranks partial multi-word matches.
-- A **semantic** channel blends in embeddings when you enable RAG.
+- A **semantic** channel blends in embeddings when you enable RAG. Natural-language
+  queries can admit semantic-only matches at cosine ≥0.6 even when lexical
+  results exist; explicit phrases, prefixes, and operators stay lexical.
 
 Every result includes a `confidence` bucket (`high`, `medium`, `low`) and a
 `methods` list naming the channels that matched it. The CLI prints the bucket as
@@ -449,7 +457,9 @@ In this stage, `system_instructions` and the content-only delete/link tools keep
 Memory MCP workflows also support bounded composite ergonomics while keeping atomic tools:
 
 - `memory_add` supports optional `pinned` and `links_to` (best-effort — check `links_failed` in response).
-- `memory_read` returns directional linked summaries via `links_to` and `linked_by` with high-signal fields (`name`, `changed_at`, `tier`, `tags`, `pinned`, `ref`). Use `noPromote:true` to read without side effects.
+- `memory_read` returns directional linked summaries via `links_to` and `linked_by` with each relation's `label` and `direction` (`outgoing`/`incoming`). Use `noPromote:true` to inspect without promotion.
+- `memory_update` updates `newName`/`content`/`tags`, sets `pinned`, and moves one tier with `tierTransition` (`promote`/`demote`). `tags` replaces the existing set.
+- `link_create` is directional (`sourceRef` → `targetRef`) with a label; re-creating the same directed pair replaces the label. `link_delete` is a no-op when the link is absent.
 - Memory MCP payloads use `changed_at` and do not expose `access_count`,
   `last_accessed_at`, `created_at`, or `updated_at`.
 
@@ -458,9 +468,10 @@ Memory MCP workflows also support bounded composite ergonomics while keeping ato
 - `overview` with total memory count, active checkpoint count, and per-tier
   counts
 - `trending_memories` grouped into `tier_1`, `tier_2`, and `tier_3`, ranked by
-  `changed_at`
+  `changed_at`, with a bounded T3 preview plus total availability
 - per-tier `coverage` metadata so agents can tell whether each preview is
   complete or only a subset
+- a `references` block of living references (`type:reference` + `status:living`)
 - plural `active_checkpoints` with checkpoint items matching `checkpoint_query`
 
 Checkpoint MCP tools are also available for session continuity:
@@ -478,7 +489,7 @@ Checkpoint MCP tools are also available for session continuity:
 
 System tools for agent protocol:
 
-- `system_instructions` — returns the complete mind usage protocol
+- `system_instructions` — returns the complete Mind protocol (six responsibilities and tool examples) as an optional reference
 - `status` — get storage status
 
 ### Agent integration details

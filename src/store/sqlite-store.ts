@@ -299,6 +299,8 @@ export function createSqliteStore(dbPath: string): MindStore {
     searchFallback: (query, filter) => searchRepo.searchFallback(query, filter),
     queryMemories: filter => searchRepo.queryMemories(filter),
     queryMemoriesCount: filter => searchRepo.queryMemoriesCount(filter),
+    getTrendingMemories: (space, tier, limit) => searchRepo.getTrendingMemories(space, tier, limit),
+    getLivingReferences: (space, limit) => searchRepo.getLivingReferences(space, limit),
     getSpaceGraph: (space, opts) => searchRepo.getSpaceGraph(space, opts),
 
     // Status

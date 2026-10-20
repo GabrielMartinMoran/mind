@@ -49,8 +49,8 @@ function createMcpServer(store: MindStore): Server {
       tools: Object.entries(allTools).map(([name, tool]) => ({
         name,
         description: tool.description
-          ? `${tool.description}\n\nSee system_instructions for full mind usage guidelines.`
-          : `Call system_instructions first to get full mind usage guidelines.\n\nTool: ${name}`,
+          ? `${tool.description}\n\nSee system_instructions for the full Mind protocol.`
+          : `Tool: ${name}.\n\nSee system_instructions for the full Mind protocol.`,
         inputSchema: tool.schema
           ? zodToJsonSchema(tool.schema)
           : { type: 'object', properties: {} },
