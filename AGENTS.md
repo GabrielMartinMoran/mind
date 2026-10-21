@@ -622,19 +622,19 @@ living pages explain it but do not replace it.
 
 ### Documentation locations
 
-| Content                       | Location                            |
-| ----------------------------- | ----------------------------------- |
-| Documentation index           | `docs/README.md`                    |
-| Living behavior and concepts  | `docs/*.md`                         |
-| Exceptional retained evidence | `docs/history/<feature>/*.md`       |
-| Release history               | `docs/release-notes/*.md`           |
-| User-facing install and usage | `README.md`                         |
-| Project purpose and principles | `docs/mind-philosophy.md`            |
-| Contributor workflow            | `CONTRIBUTING.md`                    |
-| Agent architecture and guidance | `AGENTS.md`                          |
-| Change log                    | `CHANGELOG.md`                      |
-| Benchmark methodology         | `benchmarks/agent-memory/README.md` |
-| Generated benchmark report    | `benchmarks/agent-memory/REPORT.md` |
+| Content                         | Location                            |
+| ------------------------------- | ----------------------------------- |
+| Documentation index             | `docs/README.md`                    |
+| Living behavior and concepts    | `docs/*.md`                         |
+| Exceptional retained evidence   | `docs/history/<feature>/*.md`       |
+| Release history                 | `docs/release-notes/*.md`           |
+| User-facing install and usage   | `README.md`                         |
+| Project purpose and principles  | `docs/mind-philosophy.md`           |
+| Contributor workflow            | `CONTRIBUTING.md`                   |
+| Agent architecture and guidance | `AGENTS.md`                         |
+| Change log                      | `CHANGELOG.md`                      |
+| Benchmark methodology           | `benchmarks/agent-memory/README.md` |
+| Generated benchmark report      | `benchmarks/agent-memory/REPORT.md` |
 
 ### Update before you create
 

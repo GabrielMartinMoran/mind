@@ -31,12 +31,12 @@ one coherent memory model over the same source of truth.
 
 Mind gives different kinds of context different jobs:
 
-| Artifact | Job |
-| --- | --- |
-| Checkpoint | Live work state: goal, next steps, blockers, and recovery links. |
-| Session summary | Historical record of what a session accomplished. |
-| Durable memory | Reusable knowledge for future sessions. |
-| Living reference | Maintained map of current truth for a project area. |
+| Artifact         | Job                                                              |
+| ---------------- | ---------------------------------------------------------------- |
+| Checkpoint       | Live work state: goal, next steps, blockers, and recovery links. |
+| Session summary  | Historical record of a session accomplished.                     |
+| Durable memory   | Reusable knowledge for future sessions.                          |
+| Living reference | Maintained map of current truth for a project area.              |
 
 Memory tiers make recent or frequently useful knowledge easier to reach:
 **T1** is active, **T2** is nearby, and **T3** is the archive. A tier describes
