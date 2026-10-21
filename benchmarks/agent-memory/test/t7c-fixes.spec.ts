@@ -1,7 +1,7 @@
 // T7c regression tests: the MCP warm-up retry, write-time secret redaction,
 // tool-version capture and judge-cost accumulation.
 
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -140,8 +140,14 @@ describe('redaction', () => {
 
 // ── (c) version capture ──────────────────────────────────────────────────────
 
+// The benchmark job installs the harness dependencies; the root job does not
+// (the root must stay independent of the subproject). Skip only the assertions
+// that read the installed SDK so this file still passes from the repository
+// root, while the real version pin keeps running where the SDK exists.
+const sdkInstalled = existsSync(join(HARNESS_ROOT, 'node_modules/@opencode/sdk/package.json'));
+
 describe('captureToolVersions', () => {
-  test('parses opencode --version and reads the harness sdk + bun', async () => {
+  test('parses opencode --version and reads an explicit harness sdk + bun', async () => {
     expect(parseOpencodeVersion('opencode v2.0.28')).toBe('2.0.28');
 
     // A synthetic harness root proves the SDK is read from the given root...
@@ -154,11 +160,6 @@ describe('captureToolVersions', () => {
     expect(readSdkVersion(harness)).toBe('9.9.9');
     expect(readSdkVersion(join(harness, 'missing'))).toBeNull();
 
-    // ...and that a run with no explicit sdkRoot resolves the harness root (the
-    // subproject), never the repository root.
-    expect(HARNESS_ROOT.endsWith(join('benchmarks', 'agent-memory'))).toBe(true);
-    expect(readSdkVersion()).toBe('2.0.28');
-
     const { runner } = createFakeRunner(inv =>
       inv.args.includes('--version') ? { stdout: 'opencode v2.0.28\n' } : undefined
     );
@@ -166,10 +167,24 @@ describe('captureToolVersions', () => {
     expect(versions.opencode).toBe('2.0.28');
     expect(versions.sdk).toBe('9.9.9');
     expect(versions.bun).toBe(Bun.version);
-
-    const harnessVersions = await captureToolVersions(runner, { repoRoot: harness });
-    expect(harnessVersions.sdk).toBe('2.0.28');
   });
+
+  test.skipIf(!sdkInstalled)(
+    'resolves the installed harness sdk when sdkRoot is omitted (requires benchmark dependencies)',
+    async () => {
+      // A run with no explicit sdkRoot resolves the harness root (the
+      // subproject), never the repository root.
+      expect(HARNESS_ROOT.endsWith(join('benchmarks', 'agent-memory'))).toBe(true);
+      expect(readSdkVersion()).toBe('2.0.28');
+
+      const harness = mkdtempSync(join(tmpdir(), 'bench-t7c-harness-'));
+      const { runner } = createFakeRunner(inv =>
+        inv.args.includes('--version') ? { stdout: 'opencode v2.0.28\n' } : undefined
+      );
+      const harnessVersions = await captureToolVersions(runner, { repoRoot: harness });
+      expect(harnessVersions.sdk).toBe('2.0.28');
+    }
+  );
 });
 
 // ── (d) judge cost accumulation ──────────────────────────────────────────────

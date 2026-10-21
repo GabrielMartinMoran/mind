@@ -146,8 +146,11 @@ describe('benchmark isolation', () => {
       'results',
       'REPORT.md',
       '.work',
-      'experiments/REPORTS',
-      'probes/evidence',
+      // Probe a file inside the ignored directory: `git check-ignore` cannot
+      // match the bare directory when it does not exist in a clean checkout,
+      // but it still matches a path under the trailing-slash pattern.
+      'experiments/REPORTS/validation-rag-off.json',
+      'probes/evidence/probe.json',
     ];
 
     for (const path of generated) {

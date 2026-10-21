@@ -6,7 +6,7 @@ use information — not just lexical similarity.
 
 > Mind under an external harness: a Mind row next to Mem0 / LangMem / Zep and
 > others on the [agent-memory-bench](https://github.com/hamza-dev-tech/agent-memory-bench)
-> protocol — see [`integrations/agent-memory-bench/COMPARISON.md`](integrations/agent-memory-bench/COMPARISON.md).
+> protocol.
 >
 > For the cross-block handoff analysis (measured facts, gaps and prioritized
 > experiments), see [`ANALYSIS.md`](ANALYSIS.md).

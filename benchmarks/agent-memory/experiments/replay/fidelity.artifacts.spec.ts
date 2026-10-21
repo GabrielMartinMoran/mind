@@ -41,10 +41,18 @@ interface ValidationEvidence {
   instrumented_equals_plain: { passed: boolean; compared: number; mismatches: unknown[] };
 }
 
+if (!available) {
+  test.skip('replay fidelity (requires gitignored experiments/REPORTS and .work artifacts)', () => {});
+}
+
+// Bun evaluates a skipped describe callback, so load the artifact lazily inside
+// each test: a clean checkout must skip without an ENOENT at module evaluation.
 describe.skipIf(!available)('replay fidelity against the stored benchmark run', () => {
-  const evidence = JSON.parse(readFileSync(validationPath, 'utf8')) as ValidationEvidence;
+  const loadEvidence = (): ValidationEvidence =>
+    JSON.parse(readFileSync(validationPath, 'utf8')) as ValidationEvidence;
 
   test('every probe reproduces its stored chunk count', () => {
+    const evidence = loadEvidence();
     expect(evidence.config.probe_count).toBe(120);
     expect(evidence.counts_match.passed).toBe(true);
     expect(evidence.counts_match.matched).toBe(120);
@@ -53,12 +61,14 @@ describe.skipIf(!available)('replay fidelity against the stored benchmark run', 
   });
 
   test('two consecutive plain replays are identical', () => {
+    const evidence = loadEvidence();
     expect(evidence.determinism.passed).toBe(true);
     expect(evidence.determinism.compared).toBe(120);
     expect(evidence.determinism.mismatches).toEqual([]);
   });
 
   test('instrumented replay equals the plain replay', () => {
+    const evidence = loadEvidence();
     expect(evidence.instrumented_equals_plain.passed).toBe(true);
     expect(evidence.instrumented_equals_plain.compared).toBe(120);
     expect(evidence.instrumented_equals_plain.mismatches).toEqual([]);

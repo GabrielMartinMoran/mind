@@ -34,18 +34,29 @@ function sum(record: Record<string, number>): number {
   return Object.values(record).reduce((a, b) => a + b, 0);
 }
 
+if (!available) {
+  test.skip('E-WB2 real-dump regression (requires gitignored experiments/REPORTS and .work artifacts)', () => {});
+}
+
+// Bun evaluates a skipped describe callback, so build the classification lazily
+// inside each test: a clean checkout must skip without an ENOENT at module
+// evaluation.
 describe.skipIf(!available)('E-WB2 real-dump regression', () => {
-  const classification: Classification = buildClassification(paths);
+  const classification = (): Classification => buildClassification(paths);
 
   test('published probe/item summary is stable', () => {
-    const s = classification.summary as { probes: number; answerable: number; gold_items: number };
+    const s = classification().summary as {
+      probes: number;
+      answerable: number;
+      gold_items: number;
+    };
     expect(s.probes).toBe(120);
     expect(s.answerable).toBe(92);
     expect(s.gold_items).toBe(145);
   });
 
   test('K=10 item labels match the published totals', () => {
-    const k10 = classification.items_by_label.K10 ?? {};
+    const k10 = classification().items_by_label.K10 ?? {};
     expect(k10.admitted_top10).toBe(65);
     expect(k10.admitted_outside_top10).toBe(17);
     expect(k10.dropped_by_admission).toBe(28);
@@ -56,7 +67,7 @@ describe.skipIf(!available)('E-WB2 real-dump regression', () => {
   });
 
   test('K=25 item labels match the published totals', () => {
-    const k25 = classification.items_by_label.K25 ?? {};
+    const k25 = classification().items_by_label.K25 ?? {};
     expect(k25.admitted_top10).toBe(69);
     expect(k25.admitted_outside_top10).toBe(13);
     expect(k25.dropped_by_admission).toBe(28);
@@ -65,7 +76,7 @@ describe.skipIf(!available)('E-WB2 real-dump regression', () => {
   });
 
   test('answerable funnel at K=10 matches the published totals', () => {
-    const f10 = classification.probes_by_funnel.K10 ?? {};
+    const f10 = classification().probes_by_funnel.K10 ?? {};
     expect(f10.ALL).toBe(41);
     expect(f10.partial).toBe(10);
     expect(f10.NONE).toBe(39);
@@ -73,7 +84,7 @@ describe.skipIf(!available)('E-WB2 real-dump regression', () => {
   });
 
   test('every item carries both label_k10 and label_k25 with one label each', () => {
-    for (const probe of classification.per_probe) {
+    for (const probe of classification().per_probe) {
       for (const item of probe.items as Array<Record<string, unknown>>) {
         expect(typeof item.label_k10).toBe('string');
         expect(typeof item.label_k25).toBe('string');
