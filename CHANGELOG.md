@@ -71,7 +71,6 @@ Example:
 ### Changed
 
 - Changed the cognitive protocol to use recent memory changes as an on-demand fallback for vague continuity or recent-work questions, with limits on scope, promotion, and claims of completeness.
-
 - Changed skill activation to make `mind-management` the single source of truth for Mind: load it unconditionally at session start and after compaction before any Mind use, treat AGENTS.md/L2/MCP initialize/tool descriptions/docs as activation pointers only, use `system_instructions` when the skill is not listed or cannot be loaded, and document project `AGENTS.md` precedence in `docs/skill-first-distribution.md` and `docs/agent-integration-matrix.md`.
 - Corrected documented agent MCP paths: Windsurf/Devin now writes `~/.config/devin/mcp_config.json` (legacy `~/.windsurf/mcp.json` is detection-only), VS Code/Copilot writes portable `~/.copilot/mcp-config.json`, and Antigravity writes `~/.gemini/config/mcp_config.json`.
 - Changed Cursor hooks to the documented `{ "version": 1, "hooks": { ... } }` schema with `sessionStart`, `preCompact`, `sessionEnd`, and `stop`, preserving unrelated entries and migrating the old top-level map. Cursor L3 is now marked unverified because hook execution was not live-tested.
