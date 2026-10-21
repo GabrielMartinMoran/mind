@@ -15,7 +15,7 @@ This document describes the **mind** project: its architecture, behavior, techni
 - **RAG/Embeddings:** Optional semantic search with a selectable embedding provider (`MIND_EMBEDDING_PROVIDER`: `openai` default or `openrouter`; invalid values disable RAG without fallback). Enable with `MIND_RAG=true` + `OPENAI_API_KEY` (OpenAI) or `OPENROUTER_API_KEY` (OpenRouter). The model stays `text-embedding-3-small` (`openai/text-embedding-3-small` on OpenRouter) at 1536 dimensions, so stored vectors remain compatible without re-embedding. Embeddings are stored as BLOBs in SQLite and generated with an awaited request on add/update/move/patch (not fire-and-forget).
 - **Search pipeline:** One unified relevance pipeline backs CLI `search`, MCP `memory_query(search)`, and `GET /api/search`. A parser turns input into an AST (quoted `"phrases"`, `OR`, `AND` = implicit AND, `NOT`, trailing `*`; malformed input degrades to a literal AND and never errors) and parallel channels collect candidates: lexical rungs (phrase → all → any), trigram substring, fuzzy (Damerau–Levenshtein ≤2, capped expansions), LIKE for sub-trigram terms, token-set coverage, and the optional semantic channel. A per-query weighted fusion (with an agreement bonus) ranks results deterministically and attaches a per-result `confidence` bucket (`high`/`medium`/`low`) plus `methods` provenance. Semantic admission is independent of the lexical gate: natural-language queries (one group, no `NOT`, only terms) admit semantic candidates at cosine ≥0.6 even when lexical results exist, while explicit phrases, prefixes, and operators stay lexical. With RAG off the semantic channel is omitted silently; a query-time embedding failure opens a ~5-minute in-memory breaker so a failing provider cannot trigger retry storms.
 - **Layout:** **`src/`** contains CLI, MCP, and API server code. **`test/`** contains backend/CLI tests. **`web/`** contains frontend source (`web/src`), styles (`web/styles`), static assets (`web/assets`), static HTML shell (`web/public`), and web-specific tests (`web/test`). **`scripts/`** contains E2E and evaluation scripts (including `scripts/search-eval.ts`, the relevance-suite runner).
-- **Cognitive lifecycle docs:** [`docs/cognitive-memory-lifecycle.md`](docs/cognitive-memory-lifecycle.md) explains the memory model, tiers, lifecycle, writing, supersession, linking, living references, and tool usage. [`docs/cognitive-memory-lifecycle-report.md`](docs/cognitive-memory-lifecycle-report.md) records the implementation and the measured B5–B10 validation. [`docs/skill-first-distribution.md`](docs/skill-first-distribution.md) explains the skill-first activation and installation model, [`docs/skill-first-distribution-report.md`](docs/skill-first-distribution-report.md) records its implementation, and [`docs/merge-readiness-report.md`](docs/merge-readiness-report.md) records the final exact-name install, lockfile/CI, checkpoint atomicity, and free-vs-paid validation status. The normative agent instructions remain the canonical protocol in `src/resources/protocols/mind-cognitive-protocol.md`.
+- **Cognitive lifecycle docs:** The [documentation index](docs/README.md) groups all living pages. [`docs/cognitive-memory-lifecycle.md`](docs/cognitive-memory-lifecycle.md) explains the memory model, tiers, lifecycle, writing, supersession, linking, living references, and tool usage; [`docs/skill-first-distribution.md`](docs/skill-first-distribution.md) explains the skill-first activation and installation model; [`docs/agent-integration-matrix.md`](docs/agent-integration-matrix.md) records per-client paths and validation status; and [`docs/search-engine.md`](docs/search-engine.md) describes current retrieval behavior. Frozen historical reports live under [`docs/history/`](docs/history/), never in the docs root. The normative agent instructions remain the canonical protocol in `src/resources/protocols/mind-cognitive-protocol.md`.
 - **Neural Map MVP:** web SPA includes a read-only per-space graph view using a minimal graph API payload and on-demand memory detail fetch, with deterministic best-effort anti-overlap placement, 25-char visible label truncation (full name retained via accessibility/tooltip), and higher zoom ceiling for dense maps.
 - **Web SPA URL routing:** client-side URL contract is `/'` (home) and `/spaces/{encodedSpace}?view=list|map&memory={encodedMemory?}` with reload restore, browser back/forward support (`popstate`), and safe fallback canonicalization when route params are invalid.
 
@@ -125,10 +125,10 @@ Neural Map API/UI touchpoints:
 
 - **Schema version:** Current schema is version 10. Existing v1 databases (tier `CHECK (tier BETWEEN 1 AND 3)`) are migrated automatically via a 12-step rename-and-recreate pattern in `MIGRATE_V1_TO_V2`. V2→V3 adds the `embedding BLOB` column. V3→V4 adds `changed_at` and backfills it from `updated_at`. V4→V5 adds `spaces.hidden` with default `0`. V5→V6 adds the `logs` table for operation auditing. V6→V7 removes T4 (frozen) tier; all T4 memories migrate to T3 which becomes unlimited. V7→V8 converts `spaces` and `memories` from INTEGER AUTOINCREMENT to UUID TEXT primary keys, adds `memories.fts_id` (INTEGER) as local surrogate for SQLite FTS5 rowid, adds `memories.space_id` (TEXT FK) normalizing the relationship to `spaces`, adds `spaces.id` (TEXT PK), adds the `fts_id_sequence` table for transactional ID assignment. V8→V9 adds the standalone `memories_fts_trigram` FTS5 table (tokenize `trigram`) repopulated from `memories`. V9→V10 (**final consolidated schema**) recreates `memories_fts_trigram` in place with `remove_diacritics 1` + `content=''` + `contentless_delete=1` (R1 + size) and repopulates it. The intermediate schemas v10 (with a per-document search-term dictionary) and v11 (dictionary retired) were **development-only and never published**; the final v10 is functionally identical to that dev v11 and has no dictionary. There is no permanent `v10→v11` compatibility in the engine: dev databases still stamped version 11 are normalized to 10 with the opt-in `scripts/normalize-dev-db.ts` (copies only; refuses `data/mind.db`). Every step runs under the migration-safety wrapper.
 - **Migration safety:** Store initialization detects existing DB schema version before migration. If the DB exists and is outdated, mind creates an automatic `*.migration-backup.*.db` backup with SQLite `VACUUM INTO`, runs migrations, validates the final schema version, `PRAGMA quick_check`, and `PRAGMA foreign_key_check`, and restores the backup if migration or validation fails. Fresh/current DBs skip migration backups, and automatic migration backups are pruned to the latest 3 per DB path.
-- **Trigram index cost:** `memories_fts_trigram` (contentless, schema v10+) on the real corpus is about **19.9 MB** after the contentless change — roughly 24 % smaller than the old non-contentless trigram (`26.18 MB → ≈19.9 MB`; `−6.27 MB`). On the synthetic scalability corpus at 50k the contentless index measures **111.70 MB vs 149.44 MB** for the old engine (`−25.3 %`), and the compact DB drops from 268.37 MB to 230.63 MB (`−14.1 %`). See [`docs/search-optimization-report.md`](docs/search-optimization-report.md) for the full measurements.
+- **Trigram index cost:** `memories_fts_trigram` (contentless, schema v10+) on the real corpus is about **19.9 MB** after the contentless change — roughly 24 % smaller than the old non-contentless trigram (`26.18 MB → ≈19.9 MB`; `−6.27 MB`). On the synthetic scalability corpus at 50k the contentless index measures **111.70 MB vs 149.44 MB** for the old engine (`−25.3 %`), and the compact DB drops from 268.37 MB to 230.63 MB (`−14.1 %`). These are host-specific measurements from the pre-optimization comparison; see [`docs/search-engine.md`](docs/search-engine.md) for the current envelope and [`docs/search-benchmarks.md`](docs/search-benchmarks.md) for reproduction.
 - **Semantic breaker:** A query-time embedding failure (for example an expired key) opens an in-memory breaker with a ~5-minute TTL (`SEMANTIC_BREAKER_TTL_MS` in `src/helpers/rag.ts`). While open, the semantic channel is skipped entirely so a failing provider cannot trigger a retry storm; lexical search is unaffected.
 - **Bun and lockfile:** The project runs and tests with Bun. Use `bun run`, `bun test`, and Bun's built-in TypeScript + SQLite support. No separate compile step. `bun.lock` is the only root lockfile; `package-lock.json` was removed and the release script has no npm-lock handling. The benchmark subproject owns `benchmarks/agent-memory/bun.lock`.
-- **CI:** `.github/workflows/main.yml` pins Bun 1.3.14 and runs `bun run typecheck`, `bun run format:check`, `bun run lint`, and `bun test test/ web/test` after a frozen root install. The benchmark job runs its own frozen install, typecheck, `bun test test`, and `bun test experiments`. No paid stage runs in CI. The workflow intentionally has no audit step: on 2026-10-20, `bun audit --audit-level=high` failed on pre-existing advisories (root 27 = 1 critical + 26 high; root production 14 = 1 critical + 13 high; benchmark 2 high). The workflow comment records this and dependency upgrades remain a separate follow-up; failures are not suppressed with `|| true` or `continue-on-error`. CI has not run on GitHub for the current branch; local workflow assertions are the only evidence.
+- **CI:** `.github/workflows/main.yml` pins Bun 1.3.14 and, after a frozen install, runs `bun audit --audit-level=high`, `bun run typecheck`, `bun run format:check`, `bun run lint`, and `bun test test/ web/test`. The benchmark job runs its own frozen install plus the blocking high-severity audit, typecheck, `bun test test`, and `bun test experiments`. No paid stage runs in CI, and audit failures are never suppressed with `|| true` or `continue-on-error`. As of 2026-10-20 the root audit reports zero advisories and the benchmark audit passes at high severity with residual moderate and low advisories that have no upstream fix. CI has not run on GitHub for the current branch; local workflow assertions are the only evidence.
 - **Checkpoint completion atomicity:** `MindStore.completeCheckpoint` creates the T3 `session-*` summary, copies inbound and outbound links with labels and directions, and deletes the checkpoint in one synchronous SQLite transaction. A summary, link, or delete failure rolls back the entire transformation, leaving the checkpoint and original links intact, so a retry cannot duplicate the summary. Embedding generation runs after the commit and auto-export runs once. `checkpoint-done.ts` only builds content and calls the store; MCP and CLI surfaces are unchanged.
 - **bun:sqlite FTS5 bug:** bun:sqlite (v1.2.10) cannot handle FTS5 `content=table` sync triggers — any UPDATE or DELETE on the source table errors with "N values for M columns". **Workaround:** `memories_fts` and `memories_fts_trigram` are standalone FTS5 tables (no `content=` option, no triggers). Both are synced manually through the `FtsHelper` class in `src/store/shared/fts-helpers.ts` (`insert`/`update`/`delete`, mirrored across both indexes) from `addMemory`, `updateMemory`, `deleteMemory`, `deleteMemoryByName`, `deleteSpace`, and `importFromJson`. Because the trigram index is contentless (`content=''`), FTS5's `'rebuild'` is unsupported; recovery uses `delete-all` + repopulate (`recoverTrigramIndex`).
 - **Fuzzy channel (P-A, schema v10):** the fuzzy recall channel generates candidates from the **full folded document vocabulary**, folded once and cached in memory per store and keyed by the store write generation (`storeGeneration`/`bumpStoreGeneration` in `src/store/shared/matching-tokenizer.ts`, bumped by every `FtsHelper` write). A steady-state search pays no SQL round-trip for candidate generation; a write can never leave a stale vocabulary behind. Expansions use `bandedOsa` (OSA ≤2 with a hard cap and early exit), a length band, a deterministic sorted order, and the documented **prefix-3 rule** (`FUZZY_PREFIX_LENGTH = 3`): a typo in the first three characters of a word is **not** recoverable. The per-document `search_terms`/`memory_terms` dictionary was a **development-only prototype** (never published) whose storage/rebuild cost did not pay off at 50k; the final v10 does not include it.
@@ -145,7 +145,7 @@ Neural Map API/UI touchpoints:
 - **Codex setup behavior:** `mind setup codex` writes a local MCP stanza in `~/.codex/config.toml` with `command = "<path-to-mind>"` and `args = ["mcp"]` (stdio/local transport, no forced HTTP args), and upserts a managed protocol block in `~/.codex/AGENTS.md` non-destructively. Reruns collapse duplicate managed blocks and remove known legacy per-agent protocol files. The Codex write path now goes through the TOML-aware safe-config pipeline (`readTomlOrThrow` + `safeWriteToml` in `src/setup/safe-config.ts`, backed by `Bun.TOML.parse` with a feature-detect guard — no TOML npm dependency): existing files are parse-validated before any write, malformed TOML aborts the run without overwriting, content-changing writes are backed up, an outdated `[mcp_servers.mind]` stanza is replaced in place (preserving unrelated tables and comments), and a missing stanza is appended. `isAgentIntegrationDetected('codex')` dispatches on `cfg.format` and uses `tomlFileHasMindMcp` for TOML agents so the detector no longer probes `config.toml` with `JSON.parse`.
 - **Pi setup behavior:** `mind setup pi` writes `~/.pi/agent/mcp.json` with `mcpServers.mind` over stdio, upserts a brief managed activation block in `~/.pi/agent/AGENTS.md` non-destructively, and installs the shared `~/.agents/skills/mind-management` skill while migrating only Mind-managed `~/.pi/agent/skills` shadow copies. Pi documents extensions, but Mind does not install a Pi plugin and marks L3 `unverified`.
 - **Corrected integration paths:** Windsurf/Devin writes `~/.config/devin/mcp_config.json` (legacy `~/.windsurf/mcp.json` is detection-only); VS Code/Copilot writes portable `~/.copilot/mcp-config.json` with `mcpServers` (VS Code-native `servers` is documented as an alternative and not written); Antigravity writes `~/.gemini/config/mcp_config.json` and uses `~/.gemini/config/skills`. Codex/Gemini/VS Code/Antigravity document hooks, but Mind implements no L3 automation for them.
-- **Protocol and skill distribution:** The single canonical body is `src/resources/protocols/mind-cognitive-protocol.md` (token-free, six responsibilities, real tool examples). The installed `mind-management` skill composes it through `skill-mind-management.md` and `src/cli/mind-management-skill.ts`; it is the complete artifact agents load at session start and after compaction. L2 setup payloads (`mind-memory-protocol.template.md`, `src/cli/memory-protocol.ts`) and MCP `initialize.instructions` (via `src/cli/skill-activation.ts` and `src/mcp/server.ts`) are brief activation only. `system_instructions` composes the full body through `mind-system-instructions.md` and `src/cli/system-instructions.ts` and is the explicit fallback at version `2.1.0`. The template renderer operates in strict mode: unresolved placeholders/conditionals (or leftover template tokens) throw errors for all render paths. Skill installation uses the exact `mind-management` name in managed paths; the ownership marker is provenance. `docs/skill-first-distribution.md` explains the model, `docs/skill-first-distribution-report.md` records the implementation, and `docs/merge-readiness-report.md` records the final install/CI/checkpoint validation status (including free OpenCode discovery vs unrun paid B11).
+- **Protocol and skill distribution:** The single canonical body is `src/resources/protocols/mind-cognitive-protocol.md` (token-free, six responsibilities, real tool examples). The installed `mind-management` skill composes it through `skill-mind-management.md` and `src/cli/mind-management-skill.ts`; it is the complete artifact agents load at session start and after compaction. L2 setup payloads (`mind-memory-protocol.template.md`, `src/cli/memory-protocol.ts`) and MCP `initialize.instructions` (via `src/cli/skill-activation.ts` and `src/mcp/server.ts`) are brief activation only. `system_instructions` composes the full body through `mind-system-instructions.md` and `src/cli/system-instructions.ts` and is the explicit fallback at version `2.1.0`. The template renderer operates in strict mode: unresolved placeholders/conditionals (or leftover template tokens) throw errors for all render paths. Skill installation uses the exact `mind-management` name in managed paths; the ownership marker is provenance. [`docs/skill-first-distribution.md`](docs/skill-first-distribution.md) explains the current model and installation policy, and [`docs/agent-integration-matrix.md`](docs/agent-integration-matrix.md) records validation status (including free OpenCode discovery versus the unrun paid B11).
 - **MCP YAML stage 1:** Structured MCP tools now return one raw YAML text item serialized directly from the same payload exposed via `structuredContent`. This is built through `src/mcp/helpers/yaml-response.ts` (not hidden in `src/mcp/server.ts`). Stage-1 exclusions remain text-only: `system_instructions`, `space_delete`, `memory_delete`, `link_create`, and `link_delete`. `checkpoint_query` includes an explicit `error` field (`null` on success, `{ code, message }` on soft error), returns full `pending` text without preview truncation, memory/checkpoint MCP payloads rely on `changed_at` instead of exposing `created_at` / `updated_at`, memory MCP payloads also omit `access_count` / `last_accessed_at`, and `space_get` now returns an orientation summary with `overview`, changed-at `trending_memories` blocks per tier (bounded T3 preview plus total availability), a `references` block of living references, and plural `active_checkpoints` whose checkpoint items reuse the `checkpoint_query` shape.
 - **Testing:** Backend/CLI tests live in `test/`. Web-specific tests live in `web/test/`. Both use `bun:test` and rely on:
   - **`test-store.ts`** (`test/mocks/test-store.ts`): creates a temporary SQLite DB in `/tmp/` per test instance; returns `{ store, cleanup }`.
@@ -387,7 +387,7 @@ The MCP server exposes 18 tools for agent integration:
 | -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `memory_query` | Unified memory listing (use `search` parameter for full-text search; `tier: null` means all tiers). Search results expose `confidence` (`high\|medium\|low`) and `methods`; the top-level `search_method` reports the compatibility channel mapping (`fts5`/`like`/`trigram`/`fuzzy`/`embeddings`/`mixed`), plus `total`/`limit`/`offset` |
 
-The `00004` search optimization (R1 diacritic folding, contentless trigram, P-A fuzzy) did **not** change the CLI/MCP/API search contract: the channels, query grammar, result fields (`score`/`confidence`/`methods`), pagination, and `search_method` mapping are unchanged. Only recall and storage changed. See [`docs/search-optimization-report.md`](docs/search-optimization-report.md).
+The `00004` search optimization (R1 diacritic folding, contentless trigram, P-A fuzzy) did **not** change the CLI/MCP/API search contract: the channels, query grammar, result fields (`score`/`confidence`/`methods`), pagination, and `search_method` mapping are unchanged. Only recall and storage changed. See [`docs/search-engine.md`](docs/search-engine.md) for current behavior and [`docs/history/00004-search-optimization/search-optimization-report.md`](docs/history/00004-search-optimization/search-optimization-report.md) for the frozen measurements.
 
 #### Links (2 tools)
 
@@ -418,7 +418,7 @@ For stage 1 MCP content rendering, all structured tools above except `system_ins
 
 When using mind via MCP, follow these conventions:
 
-The full cognitive model is explained in [`docs/cognitive-memory-lifecycle.md`](docs/cognitive-memory-lifecycle.md). The canonical six-responsibility protocol is `src/resources/protocols/mind-cognitive-protocol.md`.
+The full cognitive model is explained in [`docs/cognitive-memory-lifecycle.md`](docs/cognitive-memory-lifecycle.md), and current retrieval behavior is in [`docs/search-engine.md`](docs/search-engine.md). The canonical six-responsibility protocol is `src/resources/protocols/mind-cognitive-protocol.md`.
 
 **Tags with prefixes:**
 
@@ -571,3 +571,97 @@ Before marking work done, use this checklist:
 - [ ] Updated `AGENTS.md` if architecture/commands/config changed
 - [ ] Updated `CHANGELOG.md` under `## [Unreleased]` for significant changes
 - [ ] Updated `README.md` if user-facing behavior/install/update/release flow changed
+
+## 6. Documentation philosophy and maintenance
+
+Documentation is part of the product. Treat it as a current map of the code, not
+as a record of every iteration.
+
+### Source of truth and status vocabulary
+
+The code and tests are the source of truth for behavior. Documentation explains
+and points to them; it never overrides them. Use this vocabulary consistently:
+
+- **Living** — describes current behavior and is maintained with the code.
+- **Historical** — frozen evidence from a past feature. It is not current truth.
+- **Session** — work-in-progress state or a task report; it belongs in `.pas/`.
+- **Unverified** — implemented or documented, but not confirmed by a live run.
+- **Not run** — prepared but not executed, especially for paid benchmark stages.
+
+Never present a historical report or an unrun check as current behavior. Date
+external claims and validation statements so readers can judge freshness. The
+canonical agent protocol is `src/resources/protocols/mind-cognitive-protocol.md`;
+living pages explain it but do not replace it.
+
+### Living versus temporal documentation
+
+- Living pages live in `docs/` and are indexed by [`docs/README.md`](docs/README.md).
+- Historical reports live in `docs/history/<feature>/`. Every moved report keeps
+  a two-line frozen banner naming the feature, the freeze date, and the living
+  page that supersedes it.
+- Session reports and working notes live under `.pas/` and are not a permanent
+  documentation surface.
+- Release notes live in `docs/release-notes/` and are immutable; never move or
+  rewrite them.
+
+### Documentation locations
+
+| Content                       | Location                            |
+| ----------------------------- | ----------------------------------- |
+| Documentation index           | `docs/README.md`                    |
+| Living behavior and concepts  | `docs/*.md`                         |
+| Frozen feature evidence       | `docs/history/<feature>/*.md`       |
+| Release history               | `docs/release-notes/*.md`           |
+| User-facing install and usage | `README.md`                         |
+| Contributor and agent policy  | `AGENTS.md`                         |
+| Change log                    | `CHANGELOG.md`                      |
+| Benchmark methodology         | `benchmarks/agent-memory/README.md` |
+| Generated benchmark report    | `benchmarks/agent-memory/REPORT.md` |
+
+### Update before you create
+
+Prefer updating the living page that already owns a topic. Create a new living
+page only when the topic has a distinct audience or a clearly separate job that
+would overload the existing page. Do not duplicate the same behavior across a
+living page, `README.md`, and `AGENTS.md`; link to the canonical page instead.
+
+### Index and link maintenance
+
+- Every living page must be linked from `docs/README.md`.
+- Relative links must resolve, including links into `docs/history/`, `src/`,
+  `test/`, and `benchmarks/`.
+- When you move or rename a page, update its inbound links in the same task.
+- When you change a heading that is linked elsewhere, update the anchor.
+- `test/docs-links.spec.ts` enforces the index, relative links, frozen banners,
+  and the absence of temporal reports in the docs root.
+
+### Documentation update matrix
+
+| Change                                  | Update                                                                    |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| User-facing behavior or setup           | `README.md` and the owning living page                                    |
+| Architecture, commands, schema, config  | `AGENTS.md`                                                               |
+| Search behavior, limits, or performance | `docs/search-engine.md` and `docs/search-benchmarks.md`                   |
+| Agent setup or capability status        | `docs/skill-first-distribution.md` and `docs/agent-integration-matrix.md` |
+| Verification process                    | `docs/verification-harness.md`                                            |
+| Non-trivial or user-visible change      | `CHANGELOG.md` under `## [Unreleased]`                                    |
+| Benchmark report format or links        | `benchmarks/agent-memory/src/report.ts` and `REPORT.md`                   |
+
+### Historical evidence and benchmark reproducibility
+
+Keep reproducible scripts and fixtures in the repository. Keep raw or host-local
+artifacts external or under `/tmp`, and record only aggregate evidence. Historical
+reports keep their original claims and measurements; do not rewrite them when
+behavior changes. Instead, add or update the living page and point the historical
+banner at it. Benchmark numbers are host-specific and time-specific; document
+the method and ratios, and regenerate before quoting absolutes.
+
+### Review checklist
+
+- [ ] Living behavior changed? The owning living page is updated.
+- [ ] A page moved? History banner, index, and inbound links are updated.
+- [ ] New page? It is linked from `docs/README.md` and has a single clear job.
+- [ ] Claims dated or qualified where the evidence is external or unverified.
+- [ ] No temporal report added to the `docs/` root.
+- [ ] `bun test test/docs-links.spec.ts` passes.
+- [ ] `CHANGELOG.md` and `README.md` reflect user-visible changes.

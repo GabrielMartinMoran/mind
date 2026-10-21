@@ -13,8 +13,8 @@ see [`docs/skill-first-distribution.md`](skill-first-distribution.md) for the
 activation and installation model. This document is the reference and
 explanation layer around the protocol. Read the protocol for the exact tool
 calls; read this page to understand why the calls are shaped that way. For the
-measured motivation behind these changes, see
-[`docs/memory-recall-improvement-analysis.md`](memory-recall-improvement-analysis.md).
+retrieval layer those calls depend on, see the
+[search engine](search-engine.md) page.
 
 ## Mind as a cognitive workspace
 
@@ -460,15 +460,11 @@ Do not create a placeholder checkpoint just to have one.
 
 ## Related documentation
 
+- [Documentation index](README.md)
 - Canonical protocol:
   [`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md)
-- Implementation report:
-  [`docs/cognitive-memory-lifecycle-report.md`](cognitive-memory-lifecycle-report.md)
-- Skill-first distribution:
-  [`docs/skill-first-distribution.md`](skill-first-distribution.md)
-- Recall analysis and measured motivation:
-  [`docs/memory-recall-improvement-analysis.md`](memory-recall-improvement-analysis.md)
-- Search benchmark methodology:
-  [`docs/search-benchmarks.md`](search-benchmarks.md)
-- Search optimization measurements:
-  [`docs/search-optimization-report.md`](search-optimization-report.md)
+- [Search engine](search-engine.md)
+- [Search benchmark methodology](search-benchmarks.md)
+- [Skill-first distribution](skill-first-distribution.md)
+- [Agent integration matrix](agent-integration-matrix.md)
+- [Agent memory benchmark](../benchmarks/agent-memory/README.md)

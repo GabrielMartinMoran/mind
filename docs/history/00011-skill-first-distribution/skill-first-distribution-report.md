@@ -1,3 +1,6 @@
+> **Historical report for feature 00011-skill-first-distribution.** Frozen on 2026-10-20.
+> Current behavior: [Skill-first distribution](../../skill-first-distribution.md).
+
 # Skill-first distribution: implementation report
 
 This report covers feature `00011-skill-first-distribution` on
@@ -8,9 +11,9 @@ real test runs from static checks and from live-client behavior that was not
 verified.
 
 The companion explanation is
-[`docs/skill-first-distribution.md`](skill-first-distribution.md). The normative
+[`docs/skill-first-distribution.md`](../../skill-first-distribution.md). The normative
 instructions remain
-[`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md).
+[`src/resources/protocols/mind-cognitive-protocol.md`](../../../src/resources/protocols/mind-cognitive-protocol.md).
 
 ## 1. Corrections
 
@@ -255,8 +258,8 @@ reproducible client run records them.
 
 ## Related documentation
 
-- [Skill-first distribution](skill-first-distribution.md)
-- [Cognitive memory lifecycle](cognitive-memory-lifecycle.md)
-- [Agent integration matrix](agent-integration-matrix.md)
-- [Merge-readiness report](merge-readiness-report.md)
-- [Agent memory benchmark](../benchmarks/agent-memory/README.md)
+- [Skill-first distribution](../../skill-first-distribution.md)
+- [Cognitive memory lifecycle](../../cognitive-memory-lifecycle.md)
+- [Agent integration matrix](../../agent-integration-matrix.md)
+- [Merge-readiness report](../00012-merge-readiness/merge-readiness-report.md)
+- [Agent memory benchmark](../../../benchmarks/agent-memory/README.md)

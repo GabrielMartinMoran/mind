@@ -1,3 +1,6 @@
+> **Historical report for feature 00005-search-followup.** Frozen on 2026-10-20.
+> Current behavior: [Search engine](../../search-engine.md).
+
 # Informe de implementación — Consolidación de migraciones y caché cross-process (00005, Parte A)
 
 - **Feature:** `00005-search-followup`
@@ -10,10 +13,10 @@
 - **Runtime de medición:** Bun 1.3.14, `bun:sqlite` con SQLite 3.53.0,
   `MIND_RAG=false` en todas las corridas.
 - **Documentos relacionados:** informe de la iteración previa
-  [`search-optimization-report.md`](search-optimization-report.md) (feature
-  `00004`), auditoría [`search-audit.md`](search-audit.md) (feature `00003`),
-  handoff [`search-optimization-plan.md`](search-optimization-plan.md),
-  metodología de benchmarks [`search-benchmarks.md`](search-benchmarks.md).
+  [`search-optimization-report.md`](../00004-search-optimization/search-optimization-report.md) (feature
+  `00004`), auditoría [`search-audit.md`](../00003-search-audit/search-audit.md) (feature `00003`),
+  handoff [`search-optimization-plan.md`](../00004-search-optimization/search-optimization-plan.md),
+  metodología de benchmarks [`search-benchmarks.md`](../../search-benchmarks.md).
 
 ## Etiquetas de evidencia
 

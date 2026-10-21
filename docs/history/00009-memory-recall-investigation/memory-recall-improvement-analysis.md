@@ -1,3 +1,6 @@
+> **Historical report for feature 00009-memory-recall-investigation.** Frozen on 2026-10-20.
+> Current behavior: [Cognitive memory lifecycle](../../cognitive-memory-lifecycle.md).
+
 # Análisis técnico — Mejora de la calidad de memoria y recall de Mind
 
 - **Feature:** `00009-memory-recall-investigation`

@@ -57,7 +57,8 @@ OpenRouter. They are off by default.
 
 To learn how to decide what to remember, write durable memories, maintain tiers
 and links, supersede old decisions, and keep living references current, see
-[Cognitive memory lifecycle](docs/cognitive-memory-lifecycle.md).
+[Cognitive memory lifecycle](docs/cognitive-memory-lifecycle.md). For the full
+documentation map, start at the [documentation index](docs/README.md).
 
 ## Installation
 
@@ -159,10 +160,10 @@ Agents load the skill once at session start and reload it after compaction.
 Mind does not track reads in a database, enforce a quota, or create a checkpoint
 just to record activation. Setup updates only the exact `mind-management` skill
 in its managed locations; it leaves other skills untouched and backs up a
-previous `SKILL.md` before replacing it. See
-[`docs/skill-first-distribution.md`](docs/skill-first-distribution.md), the
-[agent integration matrix](docs/agent-integration-matrix.md), and the
-[merge-readiness report](docs/merge-readiness-report.md).
+previous `SKILL.md` before replacing it. See the
+[documentation index](docs/README.md),
+[`docs/skill-first-distribution.md`](docs/skill-first-distribution.md), and the
+[agent integration matrix](docs/agent-integration-matrix.md).
 
 ### Post-install configuration
 
@@ -243,7 +244,9 @@ mind help
 Mind ships one unified relevance search across the CLI, MCP server, and HTTP
 API. The pipeline parses your query, runs several retrieval channels in
 parallel, and fuses the candidates into a single ranked list. Each result
-carries a confidence bucket so you can judge how strong the match is.
+carries a confidence bucket so you can judge how strong the match is. For the
+current pipeline, storage, and known limits, see the
+[search engine](docs/search-engine.md) page.
 
 Query grammar:
 
@@ -707,9 +710,11 @@ benchmark stages require an explicit `--budget` cap and do not run in CI. The
 root project does not install `@opencode/sdk`; the benchmark declares it.
 
 CI runs the root and benchmark free suites from their frozen `bun.lock` files
-and pins Bun 1.3.14. It does not run a dependency audit: `bun audit` currently
-fails on pre-existing advisories, and dependency upgrades are a separate
-follow-up. See the [merge-readiness report](docs/merge-readiness-report.md).
+and pins Bun 1.3.14. Both jobs run `bun audit --audit-level=high` as a blocking
+gate with no suppression. The root audit currently reports zero advisories; the
+benchmark audit passes at high severity with documented moderate and low
+residuals. See the [documentation index](docs/README.md) for current status and
+the [history](docs/history/) for frozen reports.
 
 ## Maintainers: Releases
 

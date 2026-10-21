@@ -33,7 +33,7 @@ state, and known limitation for each supported client.
 
 | Client                   | MCP path                                                                   | Skills path                               | Symlink strategy                            | MCP `initialize.instructions`                                                                                                                                                | Hooks / compaction                                                                                                         | Mind strategy                                                                                              | Documented / implemented / validated / unverified                                                                                                       | Limitations                                                                                                                                         |
 | ------------------------ | -------------------------------------------------------------------------- | ----------------------------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| OpenCode                 | `~/.config/opencode/opencode.jsonc` (or `.json`), `mcp.mind` local command | `~/.agents/skills/mind-management`        | Shared canonical directory                  | Surfaced                                                                                                                                                                     | Managed plugin handles session and compaction continuity                                                                   | Write config, brief L2 instruction, managed plugin, shared skill                                           | Documented yes, implemented yes; MCP/L2/L3 validated previously; free 2.0.28 skill discovery/config/handshake validated; live model behavior unverified | Paid B11 (model loads skill, uses protocol, pending checkpoint survives) is prepared but not run; compaction remains unverified                     |
+| OpenCode                 | `~/.config/opencode/opencode.jsonc` (or `.json`), `mcp.mind` local command | `~/.agents/skills/mind-management`        | Shared canonical directory                  | Surfaced                                                                                                                                                                     | Managed plugin handles session and compaction continuity                                                                   | Write config, brief L2 instruction, managed plugin, shared skill                                           | Documented yes, implemented yes; MCP/L2/L3 validated previously; free 2.0.28 skill discovery/config/handshake validated; live model behavior unverified | B11 asserts skill-before-Mind ordering per session; the paid run is not executed; compaction remains unverified                                     |
 | Claude Code              | `~/.claude/settings.json` or `~/.claude.json`, `mcpServers.mind`           | `~/.claude/skills/mind-management`        | Symlink to canonical, managed copy fallback | Surfaced, truncated to 4096 characters                                                                                                                                       | Opt-in `Stop` hook via `MIND_SETUP_CLAUDE_ENABLE_HOOKS=true`                                                               | Write config, managed protocol file and block, optional hook, linked skill                                 | Documented yes, implemented yes, validated no, live skill/hook activation unverified                                                                    | Claude does not read `~/.agents/skills`, so it needs the dedicated link                                                                             |
 | Codex                    | `~/.codex/config.toml`, `[mcp_servers.mind]`                               | `~/.agents/skills/mind-management`        | Shared canonical directory                  | Surfaced                                                                                                                                                                     | Client documents hooks; Mind implements none                                                                               | Write TOML stanza, managed `AGENTS.md` block, shared skill                                                 | Documented yes, implemented yes, validated no, L3 unsupported                                                                                           | L2 is a brief pointer; Mind does not ship Codex hook automation                                                                                     |
 | Cursor                   | `~/.cursor/mcp.json`, `mcpServers.mind`                                    | `~/.agents/skills/mind-management`        | Shared canonical directory                  | Not documented                                                                                                                                                               | Documented `{ "version": 1, "hooks": { ... } }` envelope is implemented; event payload, argv, and execution are unverified | Write config, documented hook file and script, shared skill                                                | Documented yes, implemented yes, validated no, L3 unverified                                                                                            | Do not claim functional L3. Hook execution and payload/argv shape were not live-tested; older top-level hook maps are migrated                      |
@@ -52,12 +52,17 @@ The agent memory benchmark is not an agent integration. It lives in
 install the harness.
 
 CI runs two free jobs. The `validate` job installs the root project from its
-frozen lockfile and runs typecheck, format, lint, and tests. The
-`benchmark-agent-memory` job installs the subproject from its frozen lockfile and
-runs typecheck, unit and contract tests, and experiment tests. Neither job runs a
-paid stage. The subproject experiments are excluded from its typecheck because of
-long-standing pre-existing type errors; the root ESLint config still lints the
-experiments without type information.
+frozen lockfile and runs the blocking high-severity audit, typecheck, format
+check, lint, and tests. The `benchmark-agent-memory` job installs the subproject
+from its frozen lockfile and runs the blocking high-severity audit, typecheck,
+unit and contract tests, and experiment tests. Neither job runs a paid stage.
+
+As of October 20, 2026, the root audit reports zero advisories. The benchmark
+audit passes at high severity with residual moderate (`sprintf-js`) and low
+(`@ai-sdk/provider-utils`) advisories that have no upstream fix. The subproject
+experiments are excluded from its typecheck because of long-standing pre-existing
+type errors; the root ESLint config still lints the experiments without type
+information.
 
 ## Sources
 
@@ -82,10 +87,11 @@ and the MCP handshake are the offline evidence.
 
 OpenCode 2.0.28 has a free `BENCH_INTEGRATION=1` check that validates skill
 discovery, the brief L2 instruction, MCP configuration and handshake, and
-`/api/skill` polling without a model call. Paid B11, which would prove that a
-model loads the skill, uses the protocol, and keeps a pending checkpoint across
-sessions, is prepared but not run. Compaction is also unverified because the
-harness sets `OPENCODE_DISABLE_AUTOCOMPACT=1`.
+`/api/skill` polling without a model call. B11 now asserts, per session, that
+the exact `mind-management` skill loads before the first Mind call and that every
+session uses Mind. Its paid run has not been executed, so live model behavior
+remains unverified. Compaction is also unverified because the harness sets
+`OPENCODE_DISABLE_AUTOCOMPACT=1`.
 
 The Windows directory-junction path is covered by static and unit checks only;
 no live Windows client run was performed. Live skill activation, hook

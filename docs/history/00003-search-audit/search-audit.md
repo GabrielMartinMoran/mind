@@ -1,3 +1,6 @@
+> **Historical report for feature 00003-search-audit.** Frozen on 2026-10-20.
+> Current behavior: [Search engine](../../search-engine.md).
+
 # Auditoría técnica y revisión crítica del sistema de búsqueda
 
 > **Estado del documento:** evaluación de diseño **previa a decidir cambios**. **No se

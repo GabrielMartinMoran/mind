@@ -334,14 +334,24 @@ today:
   session config. Session 1 records an unresolved release-checklist item and
   leaves an active checkpoint with pending work; session 2 resumes that pending
   item and writes `resume.txt`. The assertion reads the raw transcript and the
-  unit database: a `skill` tool call with id `mind-management`, at least one Mind
-  memory/checkpoint tool call, no `system_instructions` call after the skill
-  load, an active checkpoint that still carries the pending item, and a
-  `resume.txt` that reflects it. It declares `requires: ['mind-memory']`, no RAG,
-  and `allowedSkills: ['opencode','report','mind-management']` so the isolation
-  gate treats the installed skill as expected rather than contamination. B11 is
-  **gated and paid**: it is never executed by the free suites, no paid run is
-  authorized, and its real result remains `not_run`.
+  unit database and checks ordering **per session**, never in aggregate: each
+  session must be `ok`, carry a non-empty transcript, have at least one Mind
+  call, and load the exact `mind-management` skill before its first Mind call
+  (the first Mind call may be `system_instructions`). A skill load in one
+  session never covers another, and `system_instructions` after the skill load
+  is rejected as redundant. Skill evidence is accepted either as a `skill` tool
+  call whose arguments carry the id or as a `type: 'skill'` message whose
+  `skill`/`name` is `mind-management`; a `skill` tool call without a usable id
+  is reported as missing evidence, and the code-mode regex fallback can never
+  prove a load. The assertion also requires an active checkpoint that still
+  carries the pending item and a `resume.txt` that reflects it. Because the
+  stored session results carry no timestamps, the checkpoint claim is
+  provenance-limited to "**survived both sessions**"; it does not prove the
+  checkpoint was created in session 1. It declares `requires: ['mind-memory']`,
+  no RAG, and `allowedSkills: ['opencode','report','mind-management']` so the
+  isolation gate treats the installed skill as expected rather than
+  contamination. B11 is **gated and paid**: it is never executed by the free
+  suites, no paid run is authorized, and its real result remains `not_run`.
 
   **What is verified for free vs unverified.** The gated
   `test/skill-discovery.integration.spec.ts` runs real `mind setup opencode` in a
@@ -350,13 +360,14 @@ today:
   activation file is the brief instruction (not the full protocol), that the
   setup config points at it and registers the `mind` MCP server, and that
   `verifyIsolation` allows the installed skill. **Unverified without a paid
-  B11 run:** that a real model actually calls the `skill` tool with id
-  `mind-management`, uses the protocol instead of `system_instructions`, keeps a
-  checkpoint pending across sessions, and behaves correctly after compaction
-  (`OPENCODE_DISABLE_AUTOCOMPACT=1` also prevents testing compaction today).
-  Tool _arguments_ are read best-effort from the raw transcript; when a build or
-  provider omits them, the assertion reports the limitation instead of inventing
-  a skill id.
+  B11 run:** that a real model loads `mind-management` (as a `skill` tool call
+  with id `mind-management` or a `type: 'skill'` message) before its first Mind
+  call **in each session**, uses the protocol instead of `system_instructions`,
+  keeps a checkpoint pending across sessions, and behaves correctly after
+  compaction (`OPENCODE_DISABLE_AUTOCOMPACT=1` also prevents testing compaction
+  today). Tool _arguments_ are read best-effort from the raw transcript; when a
+  build or provider omits them, the assertion reports the limitation instead of
+  inventing a skill id.
 
 B5/B6/B7/B8/B9/B11 declare `requires: ['mind-memory']`, so the `no-memory`
 condition records them as `not_run` with zero sessions instead of executing a

@@ -5,8 +5,8 @@ location, and keeps every agent integration pointing at that single source. The
 model solves three problems: duplicated protocol text drifts, per-client copies
 shadow each other, and long instruction payloads get truncated or ignored.
 
-This page explains the distribution model and the lifecycle corrections that
-shipped with it. The normative instructions themselves live in the canonical
+This page explains the distribution model and the lifecycle rules that keep it
+consistent. The normative instructions themselves live in the canonical
 protocol at
 [`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md).
 Read the protocol for the exact tool calls; read this page to understand how
@@ -95,7 +95,7 @@ up the shadowing `SKILL.md`, removes it, and preserves unrelated resources in
 the directory. Detection uses `lstat`, so a broken managed link still marks the
 integration as installed and can be repaired on the next refresh.
 
-## Checkpoint lifecycle corrections
+## Checkpoint lifecycle rules
 
 A checkpoint is live work state, not a session receipt. Three corrections make
 the lifecycle consistent across MCP, the CLI, and the OpenCode plugin.
@@ -128,7 +128,7 @@ an empty list removes nothing.
 
 ## Supersession, retrieval, and linking
 
-The protocol now preserves history and teaches retrieval in the order that works.
+The protocol preserves history and teaches retrieval in the order that works.
 
 **Supersession.** Create the replacement memory first. Mark the historical
 memory with its original tags plus `status:superseded`, without changing its
@@ -167,8 +167,9 @@ distinctions are:
 - OpenCode previously validated MCP, L2, and plugin behavior. A free
   `BENCH_INTEGRATION=1` check now also validates skill discovery, the brief L2
   instruction, MCP configuration and handshake, and `/api/skill` polling on
-  OpenCode 2.0.28 without a model call. Paid B11 is prepared but not run, so
-  live model behavior remains unverified.
+  OpenCode 2.0.28 without a model call. B11 now asserts skill-before-Mind
+  ordering per session rather than in aggregate; the paid run has not been
+  executed, so live model behavior remains unverified.
 - Codex, Cursor, Windsurf/Devin, Gemini CLI, VS Code/Copilot, and Pi use the
   shared canonical skill directly. Claude Code and Antigravity need a dedicated
   link or copy because they do not read global `~/.agents/skills`.
@@ -197,18 +198,20 @@ bun test experiments
 
 The root `Makefile` delegates to the subproject with `cd`, for example
 `make bench-agent-memory-test`. Paid stages still require an explicit
-`--budget` cap and were not run for this feature.
+`--budget` cap and have not been run.
 
 CI installs both projects from their frozen lockfiles. The `validate` job runs
-the root checks; the `benchmark-agent-memory` job runs the subproject
-typecheck, unit and contract tests, and experiment tests. Neither job runs a
-paid stage. The root uses `bun.lock` only; `package-lock.json` is not part of
-the project.
+the root audit, typecheck, format check, lint, and tests; the
+`benchmark-agent-memory` job runs the subproject audit, typecheck, unit and
+contract tests, and experiment tests. Neither job runs a paid stage. The root
+uses `bun.lock` only; `package-lock.json` is not part of the project.
 
-CI does not run a dependency audit. `bun audit --audit-level=high` currently
-fails on pre-existing advisories, and the workflow documents that instead of
-suppressing the failure. Dependency upgrades remain a separate follow-up. CI
-has not run on GitHub for this branch; only local static checks and suites ran.
+Both jobs run `bun audit --audit-level=high` as a blocking gate with no
+suppression. As of October 20, 2026, the root audit reports zero advisories. The
+benchmark audit passes at high severity with residual moderate (`sprintf-js`)
+and low (`@ai-sdk/provider-utils`) advisories that have no upstream fix. CI had
+not run on GitHub for this branch at the time of this review; the local workflow
+assertions and suites are the evidence.
 
 ## Limitations and unverified behavior
 
@@ -224,16 +227,17 @@ behavior.
   type-aware linted.
 - The root is Bun-only: `bun.lock` is the only lockfile, and `package-lock.json`
   was removed.
-- CI has not run on GitHub for this branch, and dependency advisories are an
-  open follow-up rather than a passing audit.
-- No paid benchmark stage, real user home, or live database was used for this
-  documentation task. Paid B11 remains prepared and not run.
+- CI had not run on GitHub for this branch as of October 20, 2026. Both audits
+  pass locally; the benchmark keeps documented moderate and low residual
+  advisories.
+- No paid benchmark stage, real user home, or live database is used by the
+  documented validation. B11 implements per-session ordering assertions, but the
+  paid run remains unexecuted.
 
 ## Related documentation
 
+- [Documentation index](README.md)
 - [Canonical cognitive protocol](../src/resources/protocols/mind-cognitive-protocol.md)
 - [Cognitive memory lifecycle](cognitive-memory-lifecycle.md)
 - [Agent integration matrix](agent-integration-matrix.md)
-- [Implementation report](skill-first-distribution-report.md)
-- [Merge-readiness report](merge-readiness-report.md)
 - [Agent memory benchmark](../benchmarks/agent-memory/README.md)

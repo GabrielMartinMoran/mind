@@ -1,3 +1,6 @@
+> **Historical report for feature 00004-search-optimization.** Frozen on 2026-10-20.
+> Current behavior: [Search engine](../../search-engine.md).
+
 # Optimización del motor de búsqueda — hallazgos, decisiones aprobadas y plan de ejecución
 
 - **Feature:** `00004-search-optimization`
@@ -19,7 +22,7 @@
   describen el plan **previo** a la ejecución (schema v9 como referencia); el
   estado real y las mediciones finales están en
   [`search-optimization-report.md`](search-optimization-report.md) y
-  [`search-benchmarks.md`](search-benchmarks.md).
+  [`search-benchmarks.md`](../../search-benchmarks.md).
 - **Nota:** documento de handoff. **Sin cambios de código de producción; baseline
   v1 intacto.** Esta fase sólo produjo mediciones, prototipos y este plan. El
   motor lexical offline actual (schema v9) sigue siendo el que corre en
@@ -42,7 +45,7 @@ declara de forma explícita.
 ## Contexto y objetivo
 
 Esta iteración continúa la auditoría `00003-search-audit` (ver
-[`search-audit.md`](search-audit.md)), que identificó tres defectos críticos y
+[`search-audit.md`](../00003-search-audit/search-audit.md)), que identificó tres defectos críticos y
 varias palancas simples de alto valor. El objetivo es **actuar** sobre esos
 hallazgos con evidencia medida, no rediseñar la arquitectura.
 

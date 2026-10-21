@@ -1,9 +1,11 @@
-# Metodología de benchmarks de búsqueda (00004)
+# Metodología de benchmarks de búsqueda
 
 Este documento describe **cómo** se miden el motor de búsqueda, su tamaño y su calidad, y
-**cómo reproducir** esas mediciones. Acompaña al informe técnico
-[`search-optimization-report.md`](search-optimization-report.md) y a la auditoría
-[`search-audit.md`](search-audit.md).
+**cómo reproducir** esas mediciones. Para el comportamiento actual del motor, consulta la
+página viva [search-engine.md](search-engine.md). Los informes de la iteración que introdujo
+estas herramientas están congelados en
+[`history/00004-search-optimization/`](history/00004-search-optimization/) y
+[`history/00003-search-audit/`](history/00003-search-audit/).
 
 Las herramientas viven en el repositorio (`scripts/bench-search.ts`,
 `scripts/search-diff.ts`, `scripts/search-eval.ts`, `test/search-eval/**`), de modo que la
@@ -171,7 +173,7 @@ La suite versionada vive en `test/search-eval/` y `scripts/search-eval.ts`. Es
     `measurements.json`, `summary.md`.
 
 > Los artefactos de `/tmp` pueden no sobrevivir a un reinicio. Los números clave están
-> transcritos en el informe técnico y en `.pas/state/active/00004-search-optimization/`;
+> transcritos en el [informe técnico histórico](history/00004-search-optimization/search-optimization-report.md);
 > los **scripts** para regenerarlos están commiteados.
 
 ## Límites

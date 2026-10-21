@@ -1,12 +1,15 @@
+> **Historical report for feature 00010-cognitive-memory-lifecycle.** Frozen on 2026-10-20.
+> Current behavior: [Cognitive memory lifecycle](../../cognitive-memory-lifecycle.md).
+
 # Cognitive memory lifecycle: implementation report
 
 This report records the implementation of feature
 `00010-cognitive-memory-lifecycle` on the `develop` branch and the real-agent
 validation that followed. It separates what was measured from what was not.
 The companion reference is
-[`docs/cognitive-memory-lifecycle.md`](cognitive-memory-lifecycle.md); the
+[`docs/cognitive-memory-lifecycle.md`](../../cognitive-memory-lifecycle.md); the
 canonical agent instructions are
-[`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md).
+[`src/resources/protocols/mind-cognitive-protocol.md`](../../../src/resources/protocols/mind-cognitive-protocol.md).
 
 ## Summary
 
@@ -266,9 +269,9 @@ channel-attributed evaluation exists.
 
 ## Related documentation
 
-- [`docs/cognitive-memory-lifecycle.md`](cognitive-memory-lifecycle.md)
-- [`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md)
-- [`docs/memory-recall-improvement-analysis.md`](memory-recall-improvement-analysis.md)
-- [`docs/search-benchmarks.md`](search-benchmarks.md)
-- [`docs/search-optimization-report.md`](search-optimization-report.md)
-- [`benchmarks/agent-memory/README.md`](../benchmarks/agent-memory/README.md)
+- [`docs/cognitive-memory-lifecycle.md`](../../cognitive-memory-lifecycle.md)
+- [`src/resources/protocols/mind-cognitive-protocol.md`](../../../src/resources/protocols/mind-cognitive-protocol.md)
+- [`docs/memory-recall-improvement-analysis.md`](../00009-memory-recall-investigation/memory-recall-improvement-analysis.md)
+- [`docs/search-benchmarks.md`](../../search-benchmarks.md)
+- [`docs/search-optimization-report.md`](../00004-search-optimization/search-optimization-report.md)
+- [`benchmarks/agent-memory/README.md`](../../../benchmarks/agent-memory/README.md)

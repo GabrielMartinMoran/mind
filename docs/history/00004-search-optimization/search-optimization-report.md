@@ -1,3 +1,6 @@
+> **Historical report for feature 00004-search-optimization.** Frozen on 2026-10-20.
+> Current behavior: [Search engine](../../search-engine.md).
+
 # Informe técnico — Optimización del motor de búsqueda (00004)
 
 - **Feature:** `00004-search-optimization`
@@ -12,9 +15,9 @@
   rotulado «dev v11»).
 - **Runtime de medición:** Bun 1.3.14, `bun:sqlite` con SQLite 3.53.0, `MIND_RAG=false`
   en todas las corridas.
-- **Documentos relacionados:** auditoría previa [`search-audit.md`](search-audit.md)
+- **Documentos relacionados:** auditoría previa [`search-audit.md`](../00003-search-audit/search-audit.md)
   (feature `00003`), handoff aprobado [`search-optimization-plan.md`](search-optimization-plan.md),
-  metodología de benchmarks [`search-benchmarks.md`](search-benchmarks.md).
+  metodología de benchmarks [`search-benchmarks.md`](../../search-benchmarks.md).
 
 ## Etiquetas de evidencia
 

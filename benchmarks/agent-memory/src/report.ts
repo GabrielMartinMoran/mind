@@ -651,7 +651,7 @@ function formatDate(iso: string): string {
   return date.toISOString().slice(0, 10);
 }
 
-/** Repo-style header metadata block (cf. docs/search-optimization-report.md). */
+/** Repo-style header metadata block (cf. docs/search-engine.md). */
 function renderHeader(summary: RunSummary): string {
   const meta = summary.meta;
   const paid =
@@ -677,7 +677,7 @@ function renderHeader(summary: RunSummary): string {
     `- **SHA v10 (develop):** \`${meta.shas.v10 ?? 'n/a'}\``,
     v9Label,
     `- **Dataset:** sha256 \`${meta.dataset.sha256 ?? 'n/a'}\` · subset ${datasetSubset}`,
-    `- **Documentos relacionados:** [\`search-optimization-report.md\`](../../docs/search-optimization-report.md) (convenciones de estilo), [\`search-benchmarks.md\`](../../docs/search-benchmarks.md) (metodología), [\`README.md\`](README.md).`,
+    `- **Documentos relacionados:** [\`search-engine.md\`](../../docs/search-engine.md) (comportamiento actual de búsqueda), [\`search-benchmarks.md\`](../../docs/search-benchmarks.md) (metodología), [\`README.md\`](README.md).`,
   ].join('\n');
 }
 

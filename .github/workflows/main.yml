@@ -23,6 +23,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Audit dependencies (high)
+        run: bun audit --audit-level=high
+
       - name: Type check
         run: bun run typecheck
 
@@ -31,12 +34,6 @@ jobs:
 
       - name: Lint
         run: bun run lint
-
-      # Dependency audit is intentionally not gated: `bun audit --audit-level=high`
-      # currently fails on pre-existing vulnerabilities (2026-10-20: root 27 =
-      # 1 critical + 26 high; root prod 14 = 1 critical + 13 high; benchmark 2 high).
-      # Dependency upgrades are a separate follow-up; audit failures are not
-      # suppressed in this workflow.
 
       - name: Run tests
         run: bun test test/ web/test
@@ -59,6 +56,9 @@ jobs:
 
       - name: Install benchmark dependencies
         run: bun install --frozen-lockfile
+
+      - name: Audit benchmark dependencies (high)
+        run: bun audit --audit-level=high
 
       - name: Type check
         run: bun run typecheck

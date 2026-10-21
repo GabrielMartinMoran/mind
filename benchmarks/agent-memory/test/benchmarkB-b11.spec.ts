@@ -9,7 +9,11 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
 import { scenarioGateReason } from '../src/benchmarkB/runner';
-import type { BSessionResult, ScenarioAssertionContext } from '../src/benchmarkB/scenario';
+import type {
+  BSessionResult,
+  BSessionStatus,
+  ScenarioAssertionContext,
+} from '../src/benchmarkB/scenario';
 import {
   B11_ALLOWED_SKILLS,
   B11_ARTIFACT_FILE,
@@ -47,8 +51,46 @@ function assistant(...parts: unknown[]): unknown {
   return { type: 'assistant', content: parts };
 }
 
-function session(rawMessages: unknown): Pick<BSessionResult, 'rawMessages'> {
-  return { rawMessages };
+function session(
+  rawMessages: unknown,
+  status: BSessionStatus = 'ok'
+): Pick<BSessionResult, 'rawMessages' | 'status'> {
+  return { rawMessages, status };
+}
+
+function skillMessage(id: string = B11_SKILL_ID, name: string = B11_SKILL_ID): unknown {
+  return { type: 'skill', skill: id, name };
+}
+
+function sessionResult(
+  rawMessages: unknown,
+  sessionIndex: number,
+  status: BSessionStatus = 'ok'
+): BSessionResult {
+  return {
+    status,
+    sessionId: `ses_${sessionIndex + 1}`,
+    finalText: '',
+    toolCalls: [],
+    memoryCalls: 1,
+    model: null,
+    tokens: null,
+    costUsd: 0,
+    latencyMs: 0,
+    steps: 1,
+    finish: 'stop',
+    error: null,
+    errorType: null,
+    isolationOk: true,
+    children: [],
+    rawMessages,
+    sessionIndex,
+    prompt: B11_PROMPTS[sessionIndex] ?? B11_PROMPTS[0]!,
+  };
+}
+
+function sessionResults(raw: unknown): BSessionResult[] {
+  return [sessionResult(raw, 0), sessionResult(raw, 1)];
 }
 
 function createCheckpointDb(pending: string | null): string {
@@ -124,31 +166,6 @@ function passWorkspace(): string {
   return dir;
 }
 
-function sessionResults(raw: unknown): BSessionResult[] {
-  return [
-    {
-      status: 'ok',
-      sessionId: 'ses_1',
-      finalText: '',
-      toolCalls: [],
-      memoryCalls: 1,
-      model: null,
-      tokens: null,
-      costUsd: 0,
-      latencyMs: 0,
-      steps: 1,
-      finish: 'stop',
-      error: null,
-      errorType: null,
-      isolationOk: true,
-      children: [],
-      rawMessages: raw,
-      sessionIndex: 0,
-      prompt: B11_PROMPTS[0]!,
-    },
-  ];
-}
-
 describe('B11 registry and gating', () => {
   test('is registered after B10 and declares mind-memory without RAG', () => {
     expect(SCENARIO_IDS).toEqual(['b1', 'b4', 'b5', 'b6', 'b7', 'b9', 'b8', 'b10', 'b11']);
@@ -206,10 +223,36 @@ describe('B11 transcript parsing', () => {
     expect(calls[1]!.input.pending).toBe(B11_PENDING_ITEM);
   });
 
+  test('accepts a type:skill message as the skill evidence', () => {
+    const analysis = analyzeTranscripts([
+      session({ data: [skillMessage(), assistant(tool('mind_checkpoint_save', {}))] }),
+    ]);
+    expect(analysis[0]!.firstSkillIndex).toBe(0);
+    expect(analysis[0]!.ordered).toBe(true);
+    expect(analysis[0]!.skillArgsUnavailable).toBe(false);
+  });
+
   test('reports skill args unavailable instead of inventing a load', () => {
     const analysis = analyzeTranscripts([session({ data: [assistant(tool('skill', {}))] })]);
-    expect(analysis.skillLoaded).toBe(false);
-    expect(analysis.skillArgsUnavailable).toBe(true);
+    expect(analysis[0]!.firstSkillIndex).toBe(-1);
+    expect(analysis[0]!.skillArgsUnavailable).toBe(true);
+    expect(analysis[0]!.missingEvidence.join('\n')).toContain('no usable id');
+  });
+
+  test('never infers a skill load from the code-mode regex fallback', () => {
+    const raw = {
+      data: [
+        assistant(
+          tool('execute', {
+            code: "tools.skill.load({ id: 'mind-management' }); tools.mind.memory_query({});",
+          })
+        ),
+      ],
+    };
+    const analysis = analyzeTranscripts([session(raw)]);
+    expect(analysis[0]!.firstSkillIndex).toBe(-1);
+    expect(analysis[0]!.firstMindIndex).toBe(2);
+    expect(analysis[0]!.ordered).toBe(false);
   });
 
   test('detects system_instructions only after the skill load', () => {
@@ -221,7 +264,7 @@ describe('B11 transcript parsing', () => {
         ],
       }),
     ]);
-    expect(after.systemInstructionsAfterSkill).toBe(true);
+    expect(after[0]!.systemInstructionsAfterSkill).toBe(true);
 
     const before = analyzeTranscripts([
       session({
@@ -231,12 +274,12 @@ describe('B11 transcript parsing', () => {
         ],
       }),
     ]);
-    expect(before.systemInstructionsAfterSkill).toBe(false);
+    expect(before[0]!.systemInstructionsAfterSkill).toBe(false);
   });
 });
 
 describe('B11 assertion', () => {
-  test('passes with a skill load, mind call, pending checkpoint and artifact', async () => {
+  test('passes when both sessions load the skill before their first Mind call', async () => {
     const result = await b11MakeAssertion(
       ctx(passWorkspace(), {
         mindDb: createCheckpointDb(B11_PENDING_ITEM),
@@ -244,8 +287,104 @@ describe('B11 assertion', () => {
       })
     );
     expect(result.pass).toBe(true);
-    expect(result.details.join('\n')).toContain(`loaded the '${B11_SKILL_ID}' skill`);
-    expect(result.details.join('\n')).toContain('still carries pending work');
+    const details = result.details.join('\n');
+    expect(details).toContain('session 1:');
+    expect(details).toContain('session 2:');
+    expect(details).toContain('ordered');
+    expect(details).toContain('still carries pending work');
+  });
+
+  test('fails when session 1 calls Mind before loading the skill', async () => {
+    const first = {
+      data: [
+        assistant(tool('mind_memory_query', {})),
+        assistant(tool('skill', { id: B11_SKILL_ID })),
+      ],
+    };
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [sessionResult(first, 0), sessionResult(passTranscript(), 1)],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('session 1:');
+    expect(details).toContain('called Mind before loading');
+  });
+
+  test('fails when only session 1 loaded the skill and session 2 is Mind-only', async () => {
+    const second = { data: [assistant(tool('mind_memory_query', {}))] };
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [sessionResult(passTranscript(), 0), sessionResult(second, 1)],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('session 2:');
+    expect(details).toContain('did not load');
+  });
+
+  test('fails when only session 2 loaded the skill and session 1 is Mind-only', async () => {
+    const first = { data: [assistant(tool('mind_memory_query', {}))] };
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [sessionResult(first, 0), sessionResult(passTranscript(), 1)],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('session 1:');
+    expect(details).toContain('did not load');
+  });
+
+  test('fails when the same assistant message calls Mind before the skill', async () => {
+    const first = {
+      data: [assistant(tool('mind_checkpoint_save', {}), tool('skill', { id: B11_SKILL_ID }))],
+    };
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [sessionResult(first, 0), sessionResult(passTranscript(), 1)],
+      })
+    );
+    expect(result.pass).toBe(false);
+    expect(result.details.join('\n')).toContain('called Mind before loading');
+  });
+
+  test('passes when the skill precedes a nested code-mode Mind call in the same message', async () => {
+    const first = {
+      data: [
+        assistant(
+          tool('skill', { id: B11_SKILL_ID }),
+          tool('execute', {}, [{ tool: 'mind_checkpoint_save', args: {} }])
+        ),
+      ],
+    };
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [sessionResult(first, 0), sessionResult(passTranscript(), 1)],
+      })
+    );
+    expect(result.pass).toBe(true);
+  });
+
+  test('fails when a skill tool call carries no usable id', async () => {
+    const raw = {
+      data: [assistant(tool('skill', {})), assistant(tool('mind_checkpoint_save', {}))],
+    };
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: sessionResults(raw),
+      })
+    );
+    expect(result.pass).toBe(false);
+    expect(result.details.join('\n')).toContain('no usable id');
   });
 
   test('fails when the skill was not loaded', async () => {
@@ -269,11 +408,11 @@ describe('B11 assertion', () => {
       })
     );
     expect(result.pass).toBe(false);
-    expect(result.details.join('\n')).toContain('no Mind memory/checkpoint tool call');
+    expect(result.details.join('\n')).toContain('made no Mind call');
   });
 
-  test('fails when system_instructions is called after the skill load', async () => {
-    const raw = {
+  test('fails when system_instructions is called after the skill in one session', async () => {
+    const second = {
       data: [
         assistant(tool('skill', { id: B11_SKILL_ID })),
         assistant(tool('mind_system_instructions', {})),
@@ -283,11 +422,51 @@ describe('B11 assertion', () => {
     const result = await b11MakeAssertion(
       ctx(passWorkspace(), {
         mindDb: createCheckpointDb(B11_PENDING_ITEM),
-        sessionResults: sessionResults(raw),
+        sessionResults: [sessionResult(passTranscript(), 0), sessionResult(second, 1)],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('session 2:');
+    expect(details).toContain('system_instructions after');
+  });
+
+  test('fails with an explicit reason when only one session result exists', async () => {
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [sessionResult(passTranscript(), 0)],
       })
     );
     expect(result.pass).toBe(false);
-    expect(result.details.join('\n')).toContain('system_instructions was called after');
+    expect(result.details.join('\n')).toContain('expected exactly 2 session results, got 1');
+  });
+
+  test('fails when a session status is not ok', async () => {
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [
+          sessionResult(passTranscript(), 0),
+          sessionResult(passTranscript(), 1, 'error'),
+        ],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain("session 2: status is 'error'");
+  });
+
+  test('fails when a session transcript is empty', async () => {
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [sessionResult(passTranscript(), 0), sessionResult({ data: [] }, 1)],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('session 2: transcript is empty');
   });
 
   test('fails when the checkpoint was completed or deleted', async () => {

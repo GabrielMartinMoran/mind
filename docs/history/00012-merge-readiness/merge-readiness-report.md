@@ -1,3 +1,6 @@
+> **Historical report for feature 00012-merge-readiness.** Frozen on 2026-10-20.
+> Current behavior: [Skill-first distribution](../../skill-first-distribution.md).
+
 # Merge-readiness report
 
 This report covers feature `00012-merge-readiness` on
@@ -213,8 +216,8 @@ bun test experiments
 
 ## Related documentation
 
-- [Merge-readiness Gherkin contract](../specs/features/product/merge-readiness.feature)
-- [Skill-first distribution](skill-first-distribution.md)
-- [Skill-first implementation report](skill-first-distribution-report.md)
-- [Agent integration matrix](agent-integration-matrix.md)
-- [Agent memory benchmark](../benchmarks/agent-memory/README.md)
+- [Merge-readiness Gherkin contract](../../../specs/features/product/merge-readiness.feature)
+- [Skill-first distribution](../../skill-first-distribution.md)
+- [Skill-first implementation report](../00011-skill-first-distribution/skill-first-distribution-report.md)
+- [Agent integration matrix](../../agent-integration-matrix.md)
+- [Agent memory benchmark](../../../benchmarks/agent-memory/README.md)

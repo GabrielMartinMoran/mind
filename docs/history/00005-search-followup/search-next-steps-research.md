@@ -1,3 +1,6 @@
+> **Historical report for feature 00005-search-followup.** Frozen on 2026-10-20.
+> Current behavior: [Search engine](../../search-engine.md).
+
 # Próximos pasos del motor de búsqueda — Informe de investigación (00005, Parte B)
 
 - **Feature:** `00005-search-followup`
@@ -13,9 +16,9 @@
   cross-process) sí está implementada y se documenta por separado en
   [`search-optimization-followup.md`](search-optimization-followup.md).
 - **Documentos relacionados:** informe de la iteración previa
-  [`search-optimization-report.md`](search-optimization-report.md) (feature `00004`),
-  auditoría [`search-audit.md`](search-audit.md) (feature `00003`), metodología de
-  benchmarks [`search-benchmarks.md`](search-benchmarks.md), reporte consolidado de
+  [`search-optimization-report.md`](../00004-search-optimization/search-optimization-report.md) (feature `00004`),
+  auditoría [`search-audit.md`](../00003-search-audit/search-audit.md) (feature `00003`), metodología de
+  benchmarks [`search-benchmarks.md`](../../search-benchmarks.md), reporte consolidado de
   Parte B (`.pas/state/active/00005-search-followup/research-report.md`).
 
 ## Etiquetas de evidencia

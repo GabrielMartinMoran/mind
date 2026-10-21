@@ -56,16 +56,37 @@ describe('CI workflow contract', () => {
     expect(workflowText).not.toContain('prettier --write');
   });
 
-  it('does not gate a failing audit or hide audit failures', () => {
-    const allCommands = Object.values(jobs).flatMap(workflowJob => runCommands(workflowJob));
+  it('audits the root dependency graph without suppressing failures', () => {
+    const commands = runCommands(job('validate'));
 
-    expect(allCommands.some(command => command.includes('audit'))).toBe(false);
+    expect(commands).toContain('bun audit --audit-level=high');
     expect(workflowText).not.toContain('npm audit');
     expect(workflowText).not.toContain('|| true');
     expect(workflowText).not.toContain('continue-on-error');
-    expect(workflowText).toContain('bun audit --audit-level=high');
-    expect(workflowText).toContain('pre-existing vulnerabilities');
-    expect(workflowText).toContain('2026-10-20');
+    expect(workflowText).not.toContain('pre-existing vulnerabilities');
+  });
+
+  it('audits the benchmark dependency graph independently without suppressing failures', () => {
+    const commands = runCommands(job('benchmark-agent-memory'));
+
+    expect(commands).toContain('bun audit --audit-level=high');
+    expect(workflowText).not.toContain('|| true');
+    expect(workflowText).not.toContain('continue-on-error');
+  });
+
+  it('runs each audit after its frozen install', () => {
+    for (const name of ['validate', 'benchmark-agent-memory']) {
+      const steps = (job(name).steps ?? []).filter(step => typeof step.run === 'string');
+      const installIndex = steps.findIndex(step =>
+        step.run?.includes('bun install --frozen-lockfile')
+      );
+      const auditIndex = steps.findIndex(step =>
+        step.run?.includes('bun audit --audit-level=high')
+      );
+
+      expect(installIndex).toBeGreaterThanOrEqual(0);
+      expect(auditIndex).toBeGreaterThan(installIndex);
+    }
   });
 
   it('uses the project typecheck script instead of a raw compiler call', () => {
