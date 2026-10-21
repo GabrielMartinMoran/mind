@@ -7,6 +7,13 @@ evidence with durable technical value is retained under `docs/history/`; it is
 frozen and is not current truth. The maintenance policy is in
 [AGENTS.md §6](../AGENTS.md#6-documentation-philosophy-and-maintenance).
 
+## Project
+
+- [Mind's purpose and philosophy](mind-philosophy.md) — states what Mind is
+  for, its product principles, and its boundaries.
+- [Contributing](../CONTRIBUTING.md) — contribution workflow, quality
+  expectations, verification gates, and pull request guidance.
+
 ## Memory
 
 - [Cognitive memory lifecycle](cognitive-memory-lifecycle.md) — explains the
