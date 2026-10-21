@@ -326,6 +326,35 @@ describe('canonical cognitive protocol source', () => {
     }
   });
 
+  test('the protocol teaches an on-demand temporal recall fallback', () => {
+    const body = readCanonicalBody();
+    const recall = sectionFor(body, 'RECALL').replace(/\s+/g, ' ');
+
+    for (const fragment of [
+      'what they have been working on recently',
+      'continuity remains unclear',
+      'without a `search` field',
+      'Use `space: "*"`',
+      'Start with a small `limit`',
+      'noPromote: true',
+      'not as a startup ritual',
+      'not a complete activity history',
+      'state when the evidence is incomplete',
+    ]) {
+      expect({ fragment, present: recall.includes(fragment) }).toEqual({
+        fragment,
+        present: true,
+      });
+    }
+
+    for (const [name, output] of Object.entries(completeOutputs())) {
+      expect({ name, containsFallback: output.includes('Temporal fallback') }).toEqual({
+        name,
+        containsFallback: true,
+      });
+    }
+  });
+
   test('every fenced tool example validates against its real schema', () => {
     const examples = fencedToolExamples(readCanonicalBody());
 
