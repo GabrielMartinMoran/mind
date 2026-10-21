@@ -44,6 +44,7 @@ import {
   scenarioRunStatus,
   type BSessionExecutor,
   type InitMindDbInput,
+  type PrepareUnit,
   type ScenarioAggregate,
   type ScenariosRunResult,
 } from './runner';
@@ -73,6 +74,8 @@ export interface ScenariosCommandDeps {
   readonly worktrees?: Partial<Record<EngineVersion, string>>;
   /** Injectable fresh-DB initializer. */
   readonly initMindDb?: (input: InitMindDbInput) => Promise<void>;
+  /** Injectable skill-first unit preparation (tests); defaults to the real installer. */
+  readonly prepareUnit?: PrepareUnit;
   /** Overrides the worker entry path (tests). */
   readonly workerPath?: string;
   /** Overrides the scenario set (tests). */
@@ -295,6 +298,7 @@ export async function runScenariosCommand(
         worktrees,
         executor,
         initMindDb: deps.initMindDb,
+        prepareUnit: deps.prepareUnit,
         runner: deps.runner,
       }
     );

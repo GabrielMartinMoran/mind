@@ -33,6 +33,7 @@ import {
   type IsolationDirs,
 } from '../isolation/opencode';
 import { buildMindEnv, type MindPaths } from '../mind/cli';
+import { prepareSkillFirst } from '../opencode/skill-first';
 
 import type {
   BChildResult,
@@ -71,8 +72,6 @@ export interface BSessionJob {
   readonly mindDbPath: string | null;
   /** Engine binary the unit runs, or null for no-memory. */
   readonly mindBin: string | null;
-  /** Extra skills the scenario installs and the isolation gate must allow. */
-  readonly allowedSkills?: readonly string[];
 }
 
 export type BSessionExecutor = (job: BSessionJob) => Promise<BSessionOutcome>;
@@ -157,6 +156,22 @@ export interface InitMindDbInput {
   readonly runner: CommandRunner;
 }
 
+/** Inputs for preparing a current-checkout unit before any seed or session. */
+export interface PrepareUnitInput {
+  readonly dir: IsolationDirs;
+  readonly env: Record<string, string>;
+  readonly mindBin: string | null;
+  readonly run: CommandRunner;
+}
+
+/** Returns the unit environment after preparation (used by seed and sessions). */
+export type PrepareUnit = (input: PrepareUnitInput) => Promise<Record<string, string>>;
+
+async function defaultPrepareUnit(input: PrepareUnitInput): Promise<Record<string, string>> {
+  const preparation = await prepareSkillFirst(input);
+  return preparation.env;
+}
+
 export interface RunScenariosDeps {
   /** Resolves a scenario's fixture directory to an absolute path. */
   readonly fixtureDirFor: (scenario: Scenario) => string;
@@ -169,6 +184,12 @@ export interface RunScenariosDeps {
   readonly runner?: CommandRunner;
   /** Recursively copies a fixture into the workspace; injectable for tests. */
   readonly copyDir?: (source: string, target: string) => void;
+  /**
+   * Prepares a `mind-current` unit's skill-first environment (real installer by
+   * default). Runs once per unit after the isolated env exists and before the
+   * seed or any session. Never called for historical or no-memory conditions.
+   */
+  readonly prepareUnit?: PrepareUnit;
 }
 
 export interface ScenariosRunResult {
@@ -315,24 +336,12 @@ async function runUnit(
   ensureDirs(dirs);
 
   const engine = engineForCondition(condition);
-  let mindDb: string | null = null;
-  if (engine !== null) {
-    const worktree = deps.worktrees[engine];
-    if (!worktree) {
-      throw new Error(`no worktree configured for condition '${condition}' (${engine})`);
-    }
-    const init = deps.initMindDb ?? defaultInitMindDb;
-    await init({ bin: join(worktree, 'mind'), dirs, runner });
-    mindDb = dirs.mindDb;
+  if (engine !== null && !deps.worktrees[engine]) {
+    throw new Error(`no worktree configured for condition '${condition}' (${engine})`);
   }
 
-  const copyDir = deps.copyDir ?? ((source, target) => cpSync(source, target, { recursive: true }));
-  copyDir(deps.fixtureDirFor(scenario), dirs.workspace);
-  // Optional post-copy preparation (e.g. rename a fixture file into its final name).
-  scenario.prepare?.({ workspaceDir: dirs.workspace });
-
   const mindBin = engine === null ? null : join(deps.worktrees[engine]!, 'mind');
-  const env: Record<string, string> = {
+  let env: Record<string, string> = {
     ...buildOpenCodeEnv({
       condition,
       dir: dirs,
@@ -342,6 +351,26 @@ async function runUnit(
     }),
     ...(options.credentialEnv ?? {}),
   };
+
+  // Current-checkout units reproduce the real skill-first integration once,
+  // before a seed, database, session or prompt. Historical/no-memory units
+  // never prepare.
+  if (engine === 'current') {
+    const prepare = deps.prepareUnit ?? defaultPrepareUnit;
+    env = await prepare({ dir: dirs, env, mindBin, run: runner });
+  }
+
+  let mindDb: string | null = null;
+  if (engine !== null) {
+    const init = deps.initMindDb ?? defaultInitMindDb;
+    await init({ bin: join(deps.worktrees[engine]!, 'mind'), dirs, runner });
+    mindDb = dirs.mindDb;
+  }
+
+  const copyDir = deps.copyDir ?? ((source, target) => cpSync(source, target, { recursive: true }));
+  copyDir(deps.fixtureDirFor(scenario), dirs.workspace);
+  // Optional post-copy preparation (e.g. rename a fixture file into its final name).
+  scenario.prepare?.({ workspaceDir: dirs.workspace });
 
   await scenario.seed?.({
     workspaceDir: dirs.workspace,
@@ -371,7 +400,6 @@ async function runUnit(
       env,
       mindDbPath: mindDb,
       mindBin,
-      ...(scenario.allowedSkills ? { allowedSkills: scenario.allowedSkills } : {}),
     };
 
     options.budget.assertCanSpend(0);

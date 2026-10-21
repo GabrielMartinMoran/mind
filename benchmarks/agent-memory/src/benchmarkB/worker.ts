@@ -198,7 +198,6 @@ async function main(): Promise<number> {
       runner: runCommand,
       evidenceDir: job.evidenceDir,
       mindBin: job.mindBin,
-      ...(job.allowedSkills ? { allowedSkills: job.allowedSkills } : {}),
     });
   } catch (error) {
     if (error instanceof ContaminationError) {

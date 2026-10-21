@@ -14,6 +14,7 @@ import {
   resolveWorktrees,
   runA2Command,
   runJudgeStage,
+  type PrepareCondition,
 } from '../src/benchmarkA/command';
 import type { A2QuestionResult } from '../src/benchmarkA/judge';
 import type { ConditionId } from '../src/config';
@@ -149,6 +150,7 @@ describe('runA2Command --judge-only', () => {
       },
     ]);
     const out: string[] = [];
+    let prepared = 0;
     const code = await runA2Command(
       {
         runId: 'run-x',
@@ -165,9 +167,14 @@ describe('runA2Command --judge-only', () => {
         stderr: () => undefined,
         judgeDriver: driver,
         judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+        prepareCondition: async ({ profile }) => {
+          prepared += 1;
+          return profile;
+        },
       }
     );
     expect(code).toBe(0);
+    expect(prepared).toBe(0);
     expect(out.join('\n')).toContain('judge:');
 
     const stored = readStoredResults(runDir, conditions);
@@ -243,6 +250,7 @@ describe('A2 prepared-database guard', () => {
     const { repoRoot, runsRoot } = setupPreparedRun(['mind-current'], { currentDb: false });
     const err: string[] = [];
     let executed = 0;
+    let prepared = 0;
     const executor: A2UnitExecutor = async () => {
       executed += 1;
       return emptyA2Outcome('ok', null);
@@ -265,6 +273,10 @@ describe('A2 prepared-database guard', () => {
         executor,
         credentialEnv: {},
         judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+        prepareCondition: async ({ profile }) => {
+          prepared += 1;
+          return profile;
+        },
       }
     );
 
@@ -272,6 +284,7 @@ describe('A2 prepared-database guard', () => {
     expect(err.join('\n')).toContain('mind-current');
     expect(err.join('\n')).toContain('A1');
     expect(executed).toBe(0);
+    expect(prepared).toBe(0);
   });
 
   test('a prepared current database answers and judges normally', async () => {
@@ -309,6 +322,7 @@ describe('A2 prepared-database guard', () => {
         judgeDriver: driver,
         judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
         credentialEnv: {},
+        prepareCondition: async ({ profile }) => profile,
       }
     );
 
@@ -323,6 +337,7 @@ describe('A2 prepared-database guard', () => {
   test('no-memory does not require a Mind database', async () => {
     const { repoRoot, runsRoot } = setupPreparedRun(['no-memory'], { currentDb: false });
     let executed = 0;
+    let prepared = 0;
     const executor: A2UnitExecutor = async () => {
       executed += 1;
       return emptyA2Outcome('ok', null);
@@ -347,11 +362,202 @@ describe('A2 prepared-database guard', () => {
         judgeDriver: driver,
         judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
         credentialEnv: {},
+        prepareCondition: async ({ profile }) => {
+          prepared += 1;
+          return profile;
+        },
       }
     );
 
     expect(code).toBe(0);
     expect(executed).toBe(subset.length);
+    expect(prepared).toBe(0);
+  });
+});
+
+describe('A2 skill-first preparation', () => {
+  const activation = '/isolated/home/.config/opencode/instructions/mind-memory-protocol.md';
+
+  function setupRun(withDb: readonly ConditionId[]): {
+    repoRoot: string;
+    runsRoot: string;
+  } {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'bench-a2-prep-'));
+    writeFileSync(join(repoRoot, 'mind'), '#!/bin/sh\n', 'utf8');
+    const runDir = join(repoRoot, 'runs', 'run-prep');
+    mkdirSync(join(runDir, 'results'), { recursive: true });
+    writeFileSync(
+      join(runDir, 'meta.json'),
+      `${JSON.stringify({
+        runId: 'run-prep',
+        stages: {},
+        limits: { sessionSteps: 1, timeoutMs: 1000 },
+        budget: { maxCostUsd: 5, spentUsd: 0 },
+      })}\n`,
+      'utf8'
+    );
+    writeFileSync(join(runDir, 'subset.json'), `${JSON.stringify({ items: subset })}\n`, 'utf8');
+    for (const condition of withDb) {
+      mkdirSync(join(runDir, condition), { recursive: true });
+      writeFileSync(join(runDir, condition, 'mind.db'), '', 'utf8');
+    }
+    return { repoRoot, runsRoot: 'runs' };
+  }
+
+  const okRunner = async (invocation: { command: string; args: readonly string[] }) => ({
+    command: invocation.command,
+    args: invocation.args,
+    stdout: '',
+    stderr: '',
+    exitCode: 0,
+  });
+
+  function preparingFake(calls: string[]): PrepareCondition {
+    return async ({ profile }) => {
+      calls.push(profile.id);
+      const config = JSON.parse(profile.env.OPENCODE_CONFIG_CONTENT!) as Record<string, unknown>;
+      return {
+        ...profile,
+        env: {
+          ...profile.env,
+          OPENCODE_CONFIG_CONTENT: `${JSON.stringify(
+            { ...config, instructions: [activation] },
+            null,
+            2
+          )}\n`,
+        },
+      };
+    };
+  }
+
+  test('prepares a current condition once and every question inherits its env', async () => {
+    const { repoRoot, runsRoot } = setupRun(['mind-current']);
+    const preparations: string[] = [];
+    const jobEnvs: Record<string, string>[] = [];
+    const executor: A2UnitExecutor = async job => {
+      jobEnvs.push(job.env);
+      return { ...emptyA2Outcome('ok', null), answer: 'red' };
+    };
+    const driver = createFakeSessionDriver([
+      { text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}' },
+      { text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}' },
+      { text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}' },
+      { text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}' },
+    ]);
+
+    const code = await runA2Command(
+      {
+        runId: 'run-prep',
+        runsRoot,
+        workRoot: 'work',
+        conditions: ['mind-current'],
+        budgetUsd: 5,
+        reps: 2,
+        judgeOnly: false,
+      },
+      {
+        repoRoot,
+        runner: okRunner,
+        stdout: () => undefined,
+        stderr: () => undefined,
+        executor,
+        judgeDriver: driver,
+        judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+        credentialEnv: {},
+        prepareCondition: preparingFake(preparations),
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(preparations).toEqual(['mind-current']);
+    expect(jobEnvs).toHaveLength(subset.length * 2);
+    for (const env of jobEnvs) {
+      const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as { instructions?: string[] };
+      expect(config.instructions).toEqual([activation]);
+    }
+  });
+
+  test('fails before any question when preparation throws', async () => {
+    const { repoRoot, runsRoot } = setupRun(['mind-current']);
+    let executed = 0;
+    const executor: A2UnitExecutor = async () => {
+      executed += 1;
+      return emptyA2Outcome('ok', null);
+    };
+    const err: string[] = [];
+
+    const code = await runA2Command(
+      {
+        runId: 'run-prep',
+        runsRoot,
+        workRoot: 'work',
+        conditions: ['mind-current'],
+        budgetUsd: 5,
+        judgeOnly: false,
+      },
+      {
+        repoRoot,
+        runner: okRunner,
+        stdout: () => undefined,
+        stderr: line => err.push(line),
+        executor,
+        credentialEnv: {},
+        prepareCondition: async () => {
+          throw new Error('installer produced no skill');
+        },
+      }
+    );
+
+    expect(code).toBe(1);
+    expect(executed).toBe(0);
+    expect(err.join('\n')).toContain('installer produced no skill');
+  });
+
+  test('historical conditions never prepare', async () => {
+    const { repoRoot, runsRoot } = setupRun(['mind-v9', 'mind-v10']);
+    let prepared = 0;
+    let executed = 0;
+    const executor: A2UnitExecutor = async () => {
+      executed += 1;
+      return emptyA2Outcome('ok', null);
+    };
+    const driver = createFakeSessionDriver([
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct","score":1},{"candidate":2,"class":"correct","score":1}]}',
+      },
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct_abstention","score":1},{"candidate":2,"class":"correct_abstention","score":1}]}',
+      },
+    ]);
+
+    const code = await runA2Command(
+      {
+        runId: 'run-prep',
+        runsRoot,
+        workRoot: 'work',
+        conditions: ['mind-v9', 'mind-v10'],
+        budgetUsd: 5,
+        judgeOnly: false,
+      },
+      {
+        repoRoot,
+        runner: okRunner,
+        stdout: () => undefined,
+        stderr: () => undefined,
+        executor,
+        judgeDriver: driver,
+        judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+        credentialEnv: {},
+        prepareCondition: async ({ profile }) => {
+          prepared += 1;
+          return profile;
+        },
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(prepared).toBe(0);
+    expect(executed).toBe(subset.length * 2);
   });
 });
 

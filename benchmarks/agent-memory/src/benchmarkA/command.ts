@@ -27,6 +27,7 @@ import {
 import { loadCredentialEnv } from '../opencode/credentials';
 import type { SessionDriver } from '../opencode/driver';
 import { createProcessExecutor } from '../opencode/executor';
+import { prepareSkillFirst } from '../opencode/skill-first';
 import {
   mergeActiveConditions,
   readRunMeta,
@@ -85,6 +86,35 @@ export interface A2CommandDeps {
   readonly credentialEnv?: Record<string, string>;
   /** Overrides the auth store path (tests). */
   readonly authPath?: string;
+  /**
+   * Prepares a `mind-current` condition profile's skill-first environment (real
+   * installer by default). Runs once per current profile after the prepared-DB
+   * guard and before any question or prompt. Never called for historical or
+   * no-memory profiles, nor in `--judge-only` mode.
+   */
+  readonly prepareCondition?: PrepareCondition;
+}
+
+export interface PrepareConditionInput {
+  readonly profile: ConditionProfile;
+  readonly run: CommandRunner;
+}
+
+/**
+ * Returns a profile whose environment carries the prepared skill-first
+ * activation. The input profile is never mutated, so a caller cannot leak the
+ * prepared env into another condition or a retry.
+ */
+export type PrepareCondition = (input: PrepareConditionInput) => Promise<ConditionProfile>;
+
+async function defaultPrepareCondition(input: PrepareConditionInput): Promise<ConditionProfile> {
+  const preparation = await prepareSkillFirst({
+    dir: input.profile.dirs,
+    env: input.profile.env,
+    mindBin: input.profile.mindBin,
+    run: input.run,
+  });
+  return { ...input.profile, env: preparation.env };
 }
 
 const WORKER_RELATIVE = 'benchmarks/agent-memory/src/opencode/worker.ts';
@@ -454,7 +484,24 @@ export async function runA2Command(
     credentialEnv: resolveCredentialEnv(deps),
   });
   const profileMap: Partial<Record<ConditionId, ConditionProfile>> = {};
-  for (const profile of profiles) profileMap[profile.id] = profile;
+  const prepareCondition = deps.prepareCondition ?? defaultPrepareCondition;
+  try {
+    for (const profile of profiles) {
+      if (profile.engine === 'current') {
+        // One real skill-first setup per current condition, before any
+        // question or prompt. The prepared env is what every unit inherits.
+        ensureIsolationDirs(profile.dirs);
+        profileMap[profile.id] = await prepareCondition({ profile, run: deps.runner });
+      } else {
+        profileMap[profile.id] = profile;
+      }
+    }
+  } catch (error) {
+    const message = `a2: skill-first preparation failed: ${String(error)}`;
+    writer.update('a2:start', 'failed', message);
+    deps.stderr(message);
+    return 1;
+  }
 
   const executor =
     deps.executor ??

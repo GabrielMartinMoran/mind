@@ -13,9 +13,12 @@ interface WorkflowStep {
 
 interface WorkflowJob {
   steps?: WorkflowStep[];
+  if?: unknown;
+  needs?: unknown;
 }
 
 interface Workflow {
+  on?: Record<string, unknown>;
   jobs?: Record<string, WorkflowJob>;
 }
 
@@ -46,6 +49,100 @@ function setupBunStep(workflowJob: WorkflowJob): WorkflowStep {
   }
   return step;
 }
+
+type TriggerConfig = Record<string, unknown>;
+
+const FILTER_KEYS = [
+  'branches',
+  'branches-ignore',
+  'paths',
+  'paths-ignore',
+  'tags',
+  'tags-ignore',
+  'types',
+] as const;
+
+function trigger(event: string): TriggerConfig {
+  const value = (workflow.on ?? {})[event];
+  if (value === null || value === undefined) {
+    return {};
+  }
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`Unexpected trigger configuration for ${event}: ${String(value)}`);
+  }
+  return value as TriggerConfig;
+}
+
+function matchesBranchFilter(pattern: string, branch: string): boolean {
+  const regex = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*|\*|\?/g, token => (token === '**' ? '.*' : token === '*' ? '[^/]*' : '[^/]'));
+
+  return new RegExp(`^${regex}$`).test(branch);
+}
+
+function coversBranch(event: string, branch: string): boolean {
+  const config = trigger(event);
+  const included = config.branches;
+  const ignored = config['branches-ignore'];
+
+  if (
+    Array.isArray(included) &&
+    !included.some(pattern => matchesBranchFilter(String(pattern), branch))
+  ) {
+    return false;
+  }
+  if (
+    Array.isArray(ignored) &&
+    ignored.some(pattern => matchesBranchFilter(String(pattern), branch))
+  ) {
+    return false;
+  }
+  return true;
+}
+
+describe('CI trigger contract', () => {
+  it('triggers exactly on push, pull_request, and workflow_dispatch', () => {
+    expect(Object.keys(workflow.on ?? {}).sort()).toEqual([
+      'pull_request',
+      'push',
+      'workflow_dispatch',
+    ]);
+  });
+
+  it('keeps push and pull_request free of branch, path, tag, and type filters', () => {
+    for (const event of ['push', 'pull_request']) {
+      const config = trigger(event);
+
+      expect(config).toEqual({});
+      for (const key of FILTER_KEYS) {
+        expect(config).not.toHaveProperty(key);
+      }
+    }
+  });
+
+  it('covers slash-named branches and any pull request base', () => {
+    const branches = [
+      'main',
+      'develop',
+      'feat/example',
+      'fix/example',
+      'refactor/subsystem/change',
+    ];
+
+    for (const branch of branches) {
+      expect(coversBranch('push', branch)).toBe(true);
+      expect(coversBranch('pull_request', branch)).toBe(true);
+    }
+  });
+
+  it('runs jobs independently without branch gating', () => {
+    for (const name of ['validate', 'benchmark-agent-memory']) {
+      expect(job(name).if).toBeUndefined();
+      expect(job(name).needs).toBeUndefined();
+    }
+  });
+});
 
 describe('CI workflow contract', () => {
   it('uses the deterministic format check without write commands', () => {

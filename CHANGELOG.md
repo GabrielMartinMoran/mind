@@ -104,9 +104,13 @@ Example:
 - Changed the documentation link tests to enforce invariants (index coverage, banners, non-empty files, relative links, release notes, and policy phrases) instead of a fixed report list and count.
 - Changed the benchmark `REPORT.md` header to link the living search-engine page instead of the frozen optimization report.
 - Changed the agent memory benchmark documentation to describe `mind-current` as the default condition, explicit historical comparisons, current-only B11, nine scenarios, optional historical worktrees, single-condition absolute reports, B10 limitations, and the measured residual benchmark advisories. Corrected the three `AGENTS.md` search-pipeline descriptions from parallel channels to logically independent channels executed sequentially on one synchronous SQLite connection.
+- Changed every `mind-current` benchmark A2 condition and B1–B11 unit to run the real `<checkout>/mind setup opencode` once per isolated environment, applying the same `mind` MCP server, canonical `mind-management` skill, brief L2 activation, and `system_instructions` fallback as a normal OpenCode install. A1 does not prepare, and `mind-v9`/`mind-v10`/`no-memory` keep their original integration. Current-versus-historical comparisons now include skill and L2 overhead; paid budgets require re-approval.
+- Changed benchmark B11 to use that shared preparation instead of its seed-time installer, L2 helper, and skill allowlist; its prompts, fixture, `requires: ['mind-memory', 'skill-first']`, and per-session ordering assertion are unchanged. Benchmark isolation now derives the expected skill surface from the condition and fails closed on a silent installer no-op.
+- Updated the benchmark, skill-first distribution, agent integration, verification harness, and `AGENTS.md` documentation for shared current-only setup and all-branch CI without claiming an unobserved hosted run.
 
 ### Fixed
 
+- Fixed GitHub Actions only running on slash-free branches: CI now triggers on every push and pull request (including `feat/`, `fix/`, and nested names) plus manual dispatch, with unchanged independent jobs, frozen installs, and blocking high-severity audits.
 - Fixed silent search recall on accented/partial words (R1): folding diacritics in the trigram tokenizer makes accented and unaccented queries match both ways.
 - Fixed non-deterministic fuzzy candidate selection: the old unordered `LIMIT 2000` vocabulary prefilter is gone; fuzzy tokens, vocabulary, and expansions are sorted and the fuzzy expansion list is deterministic.
 - Fixed non-deterministic search ordering by replacing the numeric identifier tie-break (which produced `NaN` on UUIDs) with a stable name/id string comparison.

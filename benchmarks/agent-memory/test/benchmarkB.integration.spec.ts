@@ -3,7 +3,8 @@
 // a fake driver, but fixture copies, directory layout the fresh-DB
 // initialization (`mind status`) all run for real.
 
-import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -15,6 +16,7 @@ import { runScenarioRun } from '../src/benchmarkB/runner';
 import type { BChildResult } from '../src/benchmarkB/scenario';
 import { B1_SCENARIO } from '../src/benchmarkB/scenarios/b1/index';
 import { B10_SCENARIO } from '../src/benchmarkB/scenarios/b10/index';
+import { B11_SCENARIO } from '../src/benchmarkB/scenarios/b11/index';
 import { B4_SCENARIO } from '../src/benchmarkB/scenarios/b4/index';
 import { B5_SCENARIO } from '../src/benchmarkB/scenarios/b5/index';
 import { B6_SCENARIO } from '../src/benchmarkB/scenarios/b6/index';
@@ -27,12 +29,16 @@ import {
 } from '../src/benchmarkB/scenarios/b8/index';
 import { B9_SCENARIO } from '../src/benchmarkB/scenarios/b9/index';
 import { BudgetGuard } from '../src/budget';
+import type { CommandRunner } from '../src/exec';
 import { runCommand } from '../src/exec';
+import { isolationDirs } from '../src/isolation/opencode';
+import { briefActivationPath, canonicalSkillPath } from '../src/opencode/skill-first';
 import { createFakeSessionDriver } from '../src/testing/fakes';
 
 const REPO_ROOT = join(import.meta.dir, '../../..');
 const HARNESS_ROOT = join(import.meta.dir, '..');
 const enabled = process.env.BENCH_INTEGRATION === '1';
+const opencodeAvailable = spawnSync('opencode', ['--version'], { encoding: 'utf8' }).status === 0;
 
 function fakeExecutor(): BSessionExecutor {
   const driver = createFakeSessionDriver([
@@ -51,6 +57,8 @@ function fakeExecutor(): BSessionExecutor {
     { text: 'b9#2', cost: 0 },
     { text: 'b8#0', cost: 0 },
     { text: 'b8#1', cost: 0 },
+    { text: 'b11#0', cost: 0 },
+    { text: 'b11#1', cost: 0 },
   ]);
   return async job => {
     const result = await driver.runPrompt({
@@ -201,3 +209,80 @@ describe.skipIf(!enabled)('scenario runner (integration)', () => {
     }
   }, 120_000);
 });
+
+describe.skipIf(!enabled || !opencodeAvailable)(
+  'current skill-first preparation (real installer, fake executor)',
+  () => {
+    function setupTrackingRunner(setupCalls: string[]): CommandRunner {
+      return async invocation => {
+        if (invocation.args[0] === 'setup' && invocation.args[1] === 'opencode') {
+          setupCalls.push(invocation.cwd ?? '');
+        }
+        return runCommand(invocation);
+      };
+    }
+
+    async function runCurrentUnit(scenario: typeof B1_SCENARIO) {
+      const runDir = mkdtempSync(join(tmpdir(), 'bench-b-int-skill-'));
+      const setupCalls: string[] = [];
+      const run = await runScenarioRun(
+        {
+          runId: 'run-int-skill',
+          runDir,
+          conditions: ['mind-current'],
+          scenarios: [scenario],
+          limits: { steps: 1, timeoutMs: 1000 },
+          budget: new BudgetGuard({ maxCostUsd: 0 }),
+          stdout: () => undefined,
+          stderr: () => undefined,
+        },
+        {
+          fixtureDirFor: scenarioConfig => join(HARNESS_ROOT, scenarioConfig.fixture),
+          worktrees: { current: REPO_ROOT },
+          executor: fakeExecutor(),
+          runner: setupTrackingRunner(setupCalls),
+        }
+      );
+      return { runDir, setupCalls, run };
+    }
+
+    function assertPreparedArtifacts(unitDir: string): void {
+      const dirs = isolationDirs(unitDir);
+      const skillPath = canonicalSkillPath(dirs.home);
+      expect(existsSync(skillPath)).toBe(true);
+      expect(readFileSync(skillPath, 'utf8')).toMatch(/^name:\s*mind-management\s*$/m);
+
+      const activationCandidates = [
+        briefActivationPath(dirs.home),
+        join(dirs.config, 'opencode', 'instructions', 'mind-memory-protocol.md'),
+      ].filter(candidate => existsSync(candidate));
+      expect(activationCandidates).toHaveLength(1);
+    }
+
+    test('B1 current runs the real setup exactly once and exposes the skill + activation', async () => {
+      const { runDir, setupCalls, run } = await runCurrentUnit(B1_SCENARIO);
+      try {
+        expect(setupCalls).toHaveLength(1);
+        expect(setupCalls[0]).toContain('b1');
+        assertPreparedArtifacts(join(runDir, 'scenarios', 'b1', 'mind-current'));
+        expect(run.results[0]!.sessions).toHaveLength(2);
+      } finally {
+        rmSync(runDir, { recursive: true, force: true });
+      }
+    }, 120_000);
+
+    test('B11 current reuses the shared preparation exactly once per unit', async () => {
+      const { runDir, setupCalls, run } = await runCurrentUnit(B11_SCENARIO);
+      try {
+        // B11 has no seed-time installer: the shared runner preparation is the
+        // only setup invocation, before both sessions.
+        expect(setupCalls).toHaveLength(1);
+        expect(setupCalls[0]).toContain('b11');
+        assertPreparedArtifacts(join(runDir, 'scenarios', 'b11', 'mind-current'));
+        expect(run.results[0]!.sessions).toHaveLength(2);
+      } finally {
+        rmSync(runDir, { recursive: true, force: true });
+      }
+    }, 120_000);
+  }
+);

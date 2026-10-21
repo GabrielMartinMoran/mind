@@ -44,6 +44,15 @@ versions (8 and 10) to avoid confusion.
 
 A and B are always reported separately.
 
+**Comparability caveat.** Every `mind-current` A2 and B run now includes the
+full product integration: the `mind` MCP server, the canonical
+`mind-management` skill, and the brief L2 activation. Historical `mind-v9` and
+`mind-v10` runs and the `no-memory` baseline keep their original integration.
+Current-versus-historical comparisons therefore include skill and L2 overhead as
+part of the measured product. Paid budgets must be re-approved before any new
+paid run, and no cost or quality delta is claimed until such a run is
+authorized.
+
 ## Requirements
 
 - [Bun](https://bun.sh) (repo uses Bun 1.3.x).
@@ -85,9 +94,30 @@ Every condition gets its own isolated run tree under
   (`MIND_DB_PATH`/`MIND_DATA_DIR`/`MIND_SYNC_ROOT` under the run dir,
   `MIND_RAG=false`). The user's live `data/mind.db` is never opened.
 
+**Skill-first preparation (current only).** Every `mind-current` A2 condition
+and B1–B11 unit runs the real `<checkout>/mind setup opencode` once inside its
+isolated HOME before any seed, session, or prompt. That installs the `mind` MCP
+server, the canonical `~/.agents/skills/mind-management` skill, the brief L2
+activation file, and the `system_instructions` fallback; the harness then injects
+the activation path into the inline OpenCode config exactly once. Preparation is
+per isolated environment, not per question or session. A1 does not use an agent
+and does not prepare. Historical `mind-v9`/`mind-v10` and `no-memory` keep their
+original integration and receive no skill-first setup.
+
+A failed setup fails closed before a prompt. Setup can exit successfully while
+skipping the skill, so the harness validates the on-disk artifacts: the canonical
+skill file, its `name: mind-management` frontmatter and ownership marker, and
+exactly one brief activation that mentions `mind-management` and
+`system_instructions`, excludes the full protocol body, and stays under 2,000
+characters.
+
 Before any paid prompt, `verifyIsolation` checks the effective paths, config,
-MCP list, session list and agents/skills/commands/plugins. A single failure
-throws and the run is **rejected** (raw dumps saved as evidence).
+MCP list, session list and agents/skills/commands/plugins. For `mind-current` it
+also requires exactly the builtin skills plus `mind-management`, the canonical
+skill and brief activation files, exactly one inline activation path, and the
+checkout `mind` binary. Historical and `no-memory` environments fail if the
+skill or its activation appears. A single failure throws and the run is
+**rejected** (raw dumps saved as evidence).
 
 Two OpenCode 2.0.28 mechanics are handled explicitly: the `mcp list` check
 retries a bounded number of times because the managed background service loads
@@ -385,10 +415,11 @@ today:
   cost, and one run per scenario measures feasibility rather than an improvement
   over a baseline.
 - **B11 — skill-first activation and pending-work continuity (prepared, NOT
-  run).** Two sessions share the unit environment. The seed installs the real
-  canonical `mind-management` skill and its brief L2 activation through
-  `mind setup opencode` in the isolated HOME, then adds that activation to the
-  session config. Session 1 records an unresolved release-checklist item and
+  run).** Two sessions share the unit environment. The shared current-only
+  preparation (see “Isolation”) installs the canonical `mind-management` skill
+  and brief L2 activation before the seed and sessions; B11 has no installer or
+  activation helper of its own. Session 1 records an unresolved release-checklist
+  item and
   leaves an active checkpoint with pending work; session 2 resumes that pending
   item and writes `resume.txt`. The assertion reads the raw transcript and the
   unit database and checks ordering **per session**, never in aggregate: each
@@ -405,14 +436,13 @@ today:
   stored session results carry no timestamps, the checkpoint claim is
   provenance-limited to "**survived both sessions**"; it does not prove the
   checkpoint was created in session 1. It declares
-  `requires: ['mind-memory', 'skill-first']`, no RAG, and
-  `allowedSkills: ['opencode','report','mind-management']` so the isolation gate
-  treats the installed skill as expected rather than contamination. `skill-first`
-  means the current canonical skill-first activation, not merely any installed
-  skill, so B11 is eligible **only** under `mind-current`; `no-memory`,
-  `mind-v9`, and `mind-v10` record it as `not_run` with zero sessions and zero
-  cost, and a historical selection prepares no worktree. B11 is **gated and
-  paid**: it is never executed by the free suites, no paid run is authorized,
+  `requires: ['mind-memory', 'skill-first']` with no RAG; the isolation gate
+  expects the installed skill because its policy is derived from the condition.
+  `skill-first` means the current canonical skill-first activation, not merely
+  any installed skill, so B11 is eligible **only** under `mind-current`;
+  `no-memory`, `mind-v9`, and `mind-v10` record it as `not_run` with zero sessions
+  and zero cost, and a historical selection prepares no worktree. B11 is **gated
+  and paid**: it is never executed by the free suites, no paid run is authorized,
   and its real result remains `not_run`.
 
   **What is verified for free vs unverified.** The gated

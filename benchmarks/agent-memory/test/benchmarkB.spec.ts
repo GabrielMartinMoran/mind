@@ -22,6 +22,7 @@ import {
   scenarioGateReason,
   type BSessionExecutor,
   type InitMindDbInput,
+  type PrepareUnit,
   type ScenariosRunResult,
 } from '../src/benchmarkB/runner';
 import type { BChildResult, Scenario, ScenarioAssertionContext } from '../src/benchmarkB/scenario';
@@ -1610,6 +1611,7 @@ async function runHarness(
     scenarios?: readonly string[];
     onJob?: (job: { scenarioId: string; workspaceDir: string }) => void;
     selectAll?: boolean;
+    prepareUnit?: PrepareUnit;
   } = {}
 ): Promise<RunHarness> {
   const runDir = mkdtempSync(join(tmpdir(), 'bench-b-run-'));
@@ -1639,6 +1641,7 @@ async function runHarness(
       worktrees: { v9: '/fake/v9', v10: '/fake/v10' },
       executor: executorFrom(driver, options.onJob),
       runner: okRunner(),
+      prepareUnit: options.prepareUnit,
       initMindDb: async input => {
         initCalls.push(input);
         mkdirSync(input.dirs.mindDataDir, { recursive: true });
@@ -1797,6 +1800,7 @@ async function runProbe(
     credentialEnv?: Record<string, string>;
     executor?: BSessionExecutor;
     initMindDb?: (input: InitMindDbInput) => Promise<void>;
+    prepareUnit?: PrepareUnit;
   } = {}
 ) {
   const runDir = mkdtempSync(join(tmpdir(), 'bench-b-d7-'));
@@ -1818,6 +1822,8 @@ async function runProbe(
       worktrees: { v9: '/fake/v9', v10: '/fake/v10', current: '/fake/current' },
       executor: options.executor ?? noopExecutor(),
       runner: okRunner(),
+      // Unit probes never run the real installer unless a test opts in.
+      prepareUnit: options.prepareUnit ?? (async ({ env }) => env),
       initMindDb:
         options.initMindDb ??
         (async input => {
@@ -1844,6 +1850,94 @@ describe('mind-current condition', () => {
     expect(result.mindDb).not.toBeNull();
     expect(result.mindDb).toContain('mind-current');
     expect(result.sessions).toHaveLength(2);
+  });
+});
+
+describe('current skill-first preparation', () => {
+  test('prepares exactly once before the seed and both sessions with the prepared env', async () => {
+    const events: string[] = [];
+    const seenEnvs: Record<string, string>[] = [];
+    const scenario = simpleScenario({
+      seed: ({ env }) => {
+        events.push('seed');
+        seenEnvs.push(env);
+      },
+    });
+    const { run } = await runProbe(scenario, {
+      conditions: ['mind-current'],
+      prepareUnit: async ({ dir, env, mindBin, run: runCmd }) => {
+        events.push('prepare');
+        expect(mindBin).toBe('/fake/current/mind');
+        expect(dir.home).toContain('b-probe');
+        expect(runCmd).toBeTypeOf('function');
+        return { ...env, PREPARED: 'yes' };
+      },
+      executor: async job => {
+        events.push(`session${job.sessionIndex}`);
+        seenEnvs.push(job.env);
+        return noopExecutor()(job);
+      },
+    });
+
+    expect(events).toEqual(['prepare', 'seed', 'session0', 'session1']);
+    expect(seenEnvs).toHaveLength(3);
+    for (const env of seenEnvs) {
+      expect(env.PREPARED).toBe('yes');
+    }
+    expect(run.results[0]!.sessions).toHaveLength(2);
+  });
+
+  test('never prepares historical or no-memory units', async () => {
+    let prepareCalls = 0;
+    const { run } = await runProbe(simpleScenario(), {
+      conditions: ['no-memory', 'mind-v9', 'mind-v10'],
+      prepareUnit: async ({ env }) => {
+        prepareCalls += 1;
+        return env;
+      },
+    });
+    expect(prepareCalls).toBe(0);
+    expect(run.results).toHaveLength(3);
+  });
+
+  test('a preparation failure rejects before any seed, database or session', async () => {
+    let sessionCalls = 0;
+    let seedCalls = 0;
+    const scenario = simpleScenario({
+      seed: () => {
+        seedCalls += 1;
+      },
+    });
+    const promise = runProbe(scenario, {
+      conditions: ['mind-current'],
+      prepareUnit: async () => {
+        throw new Error('prep failed');
+      },
+      executor: async job => {
+        sessionCalls += 1;
+        return noopExecutor()(job);
+      },
+    });
+
+    await expect(promise).rejects.toThrow('prep failed');
+    expect(sessionCalls).toBe(0);
+    expect(seedCalls).toBe(0);
+  });
+
+  test('B11 stays not_run outside mind-current and never prepares', async () => {
+    let prepareCalls = 0;
+    const { run } = await runHarness(['no-memory', 'mind-v9'], {
+      scenarios: ['b11'],
+      prepareUnit: async ({ env }) => {
+        prepareCalls += 1;
+        return env;
+      },
+    });
+    expect(prepareCalls).toBe(0);
+    expect(run.results.map(result => result.status)).toEqual(['not_run', 'not_run']);
+    for (const result of run.results) {
+      expect(result.sessions).toHaveLength(0);
+    }
   });
 });
 

@@ -167,9 +167,12 @@ distinctions are:
 - OpenCode previously validated MCP, L2, and plugin behavior. A free
   `BENCH_INTEGRATION=1` check now also validates skill discovery, the brief L2
   instruction, MCP configuration and handshake, and `/api/skill` polling on
-  OpenCode 2.0.28 without a model call. B11 now asserts skill-before-Mind
-  ordering per session rather than in aggregate; the paid run has not been
-  executed, so live model behavior remains unverified.
+  OpenCode 2.0.28 without a model call. Benchmark `mind-current` A2 and B runs
+  now apply that same checkout setup in every isolated environment, so the
+  benchmark exercises the real integration rather than MCP alone. B11 asserts
+  skill-before-Mind ordering per session rather than in aggregate using the
+  shared preparation; the paid run has not been executed, so live model behavior
+  remains unverified.
 - Codex, Cursor, Windsurf/Devin, Gemini CLI, VS Code/Copilot, and Pi use the
   shared canonical skill directly. Claude Code and Antigravity need a dedicated
   link or copy because they do not read global `~/.agents/skills`.
@@ -200,6 +203,17 @@ The root `Makefile` delegates to the subproject with `cd`, for example
 `make bench-agent-memory-test`. Paid stages still require an explicit
 `--budget` cap and have not been run.
 
+Benchmark `mind-current` A2 conditions and B1–B11 units run the real
+`<checkout>/mind setup opencode` once per isolated environment. That gives them
+the same integration as a normal OpenCode install: the `mind` MCP server, the
+canonical `mind-management` skill, the brief L2 activation, and the
+`system_instructions` fallback. A1 does not prepare an agent, and historical
+`mind-v9`/`mind-v10` plus `no-memory` keep their original integration. B11
+asserts skill-before-Mind ordering per session through that shared preparation;
+its paid run remains unexecuted. Because current runs now include skill and L2
+overhead, current-versus-historical comparisons are not cost-equivalent and paid
+budgets need re-approval.
+
 CI installs both projects from their frozen lockfiles. The `validate` job runs
 the root audit, typecheck, format check, lint, and tests; the
 `benchmark-agent-memory` job runs the subproject audit, typecheck, unit and
@@ -209,9 +223,10 @@ uses `bun.lock` only; `package-lock.json` is not part of the project.
 Both jobs run `bun audit --audit-level=high` as a blocking gate with no
 suppression. As of October 20, 2026, the root audit reports zero advisories. The
 benchmark audit passes at high severity with residual moderate (`sprintf-js`)
-and low (`@ai-sdk/provider-utils`) advisories that have no upstream fix. CI had
-not run on GitHub for this branch at the time of this review; the local workflow
-assertions and suites are the evidence.
+and low (`@ai-sdk/provider-utils`) advisories that have no upstream fix. CI
+triggers on every push (including branches with `/`), every pull request, and
+manual dispatch; hosted run evidence for a feature commit is recorded in its
+`.pas/` feature report. Do not claim a green run until that run is observed.
 
 ## Limitations and unverified behavior
 
@@ -227,12 +242,14 @@ behavior.
   type-aware linted.
 - The root is Bun-only: `bun.lock` is the only lockfile, and `package-lock.json`
   was removed.
-- CI had not run on GitHub for this branch as of October 20, 2026. Both audits
-  pass locally; the benchmark keeps documented moderate and low residual
-  advisories.
+- A hosted CI run is required for merge evidence. Workflow triggers cover every
+  branch and pull request, but local suites and workflow assertions do not
+  establish a hosted pass; observe and record the run before claiming green.
+  Both audits pass locally, and the benchmark keeps documented moderate and low
+  residual advisories.
 - No paid benchmark stage, real user home, or live database is used by the
-  documented validation. B11 implements per-session ordering assertions, but the
-  paid run remains unexecuted.
+  documented validation. B11 asserts per-session ordering through the shared
+  current-only setup, but the paid run remains unexecuted.
 
 ## Related documentation
 

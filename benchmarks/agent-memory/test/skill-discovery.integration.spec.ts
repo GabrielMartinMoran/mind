@@ -5,7 +5,7 @@
 // `mind setup opencode` in an isolated HOME, then queries OpenCode's config and
 // skill registry. No model is called and no live home/database is touched.
 
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -14,7 +14,12 @@ import { describe, expect, test } from 'bun:test';
 import { BUILTIN_SKILLS } from '../src/config';
 import { runCommand, type CommandRunner } from '../src/exec';
 import { buildOpenCodeEnv, ensureIsolationDirs, isolationDirs } from '../src/isolation/opencode';
-import { findFreePort, verifyIsolation, writeIsolatedServicePort } from '../src/isolation/verify';
+import {
+  ContaminationError,
+  findFreePort,
+  verifyIsolation,
+  writeIsolatedServicePort,
+} from '../src/isolation/verify';
 
 const SKILL_ID = 'mind-management';
 /** Built-in OpenCode 2.0.28 agents; allowed so async registration is not a leak. */
@@ -154,7 +159,7 @@ describe.skipIf(!enabled)('OpenCode skill discovery (integration)', () => {
 
       // Give the isolated session the same L2 activation the setup installed,
       // without loading the setup-managed L3 plugin.
-      const env = buildOpenCodeEnv({ condition: 'mind-v9', dir: dirs, mindBin: MIND_BIN });
+      const env = buildOpenCodeEnv({ condition: 'mind-current', dir: dirs, mindBin: MIND_BIN });
       const sessionConfig = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? '{}') as {
         instructions?: string[];
       };
@@ -175,20 +180,51 @@ describe.skipIf(!enabled)('OpenCode skill discovery (integration)', () => {
       // contamination, while still pinning the model and the single mind server.
       writeIsolatedServicePort(dirs, await findFreePort());
       const report = await verifyIsolation({
-        condition: 'mind-v9',
+        condition: 'mind-current',
         dir: dirs,
         env,
         runner: runCommand,
         evidenceDir: join(root, 'isolation-evidence'),
         mindBin: MIND_BIN,
-        allowedSkills: [...BUILTIN_SKILLS, SKILL_ID],
         allowedAgents: [...BUILTIN_AGENTS],
         sleep: async () => undefined,
       });
       expect(report.ok).toBe(true);
       const skillsCheck = report.checks.find(check => check.name === 'skills-allowlisted');
       expect(skillsCheck?.ok).toBe(true);
+      const skillFirstCheck = report.checks.find(check => check.name === 'skill-first');
+      expect(skillFirstCheck?.ok).toBe(true);
       expect(existsSync(join(root, 'isolation-evidence', 'summary.txt'))).toBe(true);
+
+      // A foreign user skill must be rejected by the condition-derived surface.
+      const foreignId = 'foreign-skill';
+      const foreignDir = join(dirs.home, '.agents', 'skills', foreignId);
+      mkdirSync(foreignDir, { recursive: true });
+      writeFileSync(
+        join(foreignDir, 'SKILL.md'),
+        '---\nname: foreign-skill\n---\n\nbody\n',
+        'utf8'
+      );
+      const discovered = await waitForSkill(
+        opencodeBin!,
+        env,
+        dirs.workspace,
+        runCommand,
+        foreignId
+      );
+      expect(discovered).toContain(foreignId);
+      await expect(
+        verifyIsolation({
+          condition: 'mind-current',
+          dir: dirs,
+          env,
+          runner: runCommand,
+          evidenceDir: join(root, 'isolation-evidence-foreign'),
+          mindBin: MIND_BIN,
+          allowedAgents: [...BUILTIN_AGENTS],
+          sleep: async () => undefined,
+        })
+      ).rejects.toThrow(ContaminationError);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

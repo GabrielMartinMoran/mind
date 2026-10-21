@@ -7,6 +7,7 @@ import { describe, expect, test } from 'bun:test';
 import { CONDITIONS } from '../src/config';
 import {
   IsolationConfigError,
+  applyMindDatabase,
   buildConfigContent,
   buildOpenCodeEnv,
   ensureIsolationDirs,
@@ -165,6 +166,36 @@ describe('buildConfigContent', () => {
     expect(() => buildConfigContent({ condition: 'no-memory', dir, mindBin })).toThrow(
       IsolationConfigError
     );
+  });
+});
+
+describe('applyMindDatabase', () => {
+  test('rewires the Mind pointers but preserves the inline instructions', () => {
+    const env = buildOpenCodeEnv({ condition: 'mind-current', dir, mindBin });
+    const activation = '/isolated/home/.config/opencode/instructions/mind-memory-protocol.md';
+    const withInstruction = {
+      ...env,
+      OPENCODE_CONFIG_CONTENT: `${JSON.stringify(
+        { ...JSON.parse(env.OPENCODE_CONFIG_CONTENT!), instructions: [activation] },
+        null,
+        2
+      )}\n`,
+    };
+
+    const next = applyMindDatabase(withInstruction, {
+      dbPath: '/next/mind.db',
+      dataDir: '/next',
+      syncRoot: '/next/sync',
+    });
+    const config = JSON.parse(next.OPENCODE_CONFIG_CONTENT!) as {
+      instructions?: string[];
+      mcp?: { servers: Record<string, { environment: Record<string, string> }> };
+    };
+
+    expect(config.instructions).toEqual([activation]);
+    expect(config.mcp!.servers.mind!.environment.MIND_DB_PATH).toBe('/next/mind.db');
+    expect(config.mcp!.servers.mind!.environment.MIND_DATA_DIR).toBe('/next');
+    expect(config.mcp!.servers.mind!.environment.MIND_SYNC_ROOT).toBe('/next/sync');
   });
 });
 

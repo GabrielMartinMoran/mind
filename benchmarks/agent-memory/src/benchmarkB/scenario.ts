@@ -129,11 +129,6 @@ export interface Scenario {
    * failing the scenario.
    */
   readonly requires?: readonly ScenarioRequirement[];
-  /**
-   * Extra skills the fail-closed isolation gate must allow for this scenario.
-   * When set, it replaces the built-in default, so list the built-ins too.
-   */
-  readonly allowedSkills?: readonly string[];
   readonly sessions: readonly ScenarioSession[];
   makeAssertion(
     ctx: ScenarioAssertionContext

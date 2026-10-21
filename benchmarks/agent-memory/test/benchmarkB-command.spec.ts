@@ -10,7 +10,7 @@ import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
 import { resolveScenariosCredentialEnv, runScenariosCommand } from '../src/benchmarkB/command';
-import type { BSessionExecutor, InitMindDbInput } from '../src/benchmarkB/runner';
+import type { BSessionExecutor, InitMindDbInput, PrepareUnit } from '../src/benchmarkB/runner';
 import type { BChildResult, BSessionOutcome } from '../src/benchmarkB/scenario';
 import { SCENARIOS } from '../src/benchmarkB/scenarios/registry';
 import { dispatch, parseCliArgs } from '../src/cli';
@@ -289,6 +289,7 @@ describe('runScenariosCommand dry-run', () => {
   test('B11-only with a historical condition prepares no worktree and stays not_run', async () => {
     const runDir = mkdtempSync(join(tmpdir(), 'bench-b-b11-v9-'));
     const commands: string[] = [];
+    let prepareCalls = 0;
     const runner: CommandRunner = async invocation => {
       commands.push(invocation.command);
       return {
@@ -315,6 +316,10 @@ describe('runScenariosCommand dry-run', () => {
         stdout: () => undefined,
         stderr: () => undefined,
         credentialEnv: {},
+        prepareUnit: async ({ env }) => {
+          prepareCalls += 1;
+          return env;
+        },
         executor: async job => {
           throw new Error(`B11 should not execute: ${job.condition}`);
         },
@@ -322,6 +327,7 @@ describe('runScenariosCommand dry-run', () => {
     );
 
     expect(code).toBe(0);
+    expect(prepareCalls).toBe(0);
     // No `git worktree add` and no `bun install` for an ineligible condition.
     expect(commands.filter(command => command === 'git' || command === 'bun')).toEqual([]);
 
@@ -334,9 +340,14 @@ describe('runScenariosCommand dry-run', () => {
     expect(results[0]!.sessions).toHaveLength(0);
   });
 
-  test('B11 with mind-current prepares no historical worktree and is eligible', async () => {
+  test('B11 with mind-current prepares the shared setup once and runs both sessions', async () => {
     const runDir = mkdtempSync(join(tmpdir(), 'bench-b-b11-current-'));
     const commands: string[] = [];
+    let prepareCalls = 0;
+    const prepareUnit: PrepareUnit = async ({ env }) => {
+      prepareCalls += 1;
+      return { ...env, PREPARED: 'yes' };
+    };
     const runner: CommandRunner = async invocation => {
       commands.push(invocation.command);
       return {
@@ -364,8 +375,10 @@ describe('runScenariosCommand dry-run', () => {
         stdout: () => undefined,
         stderr: () => undefined,
         credentialEnv: {},
+        prepareUnit,
         executor: async job => {
           sessions += 1;
+          expect(job.env.PREPARED).toBe('yes');
           return emptyOutcome(job.scenarioId, job.sessionIndex);
         },
         initMindDb: initEmptyMindDb,
@@ -373,6 +386,7 @@ describe('runScenariosCommand dry-run', () => {
     );
 
     expect(code).toBe(0);
+    expect(prepareCalls).toBe(1);
     expect(sessions).toBe(2);
     expect(commands.filter(command => command === 'git' || command === 'bun')).toEqual([]);
 

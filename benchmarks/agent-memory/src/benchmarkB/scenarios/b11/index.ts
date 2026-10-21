@@ -2,16 +2,16 @@
 //
 // Session 1 asks the agent to record an unresolved release-checklist item and
 // leave an active checkpoint with pending work. Session 2 resumes that pending
-// work and writes `resume.txt`. The unit installs the canonical
-// `mind-management` skill (through the real `mind setup opencode`) before any
-// session, and the isolation gate allows that one skill.
+// work and writes `resume.txt`. The shared runner preparation installs the
+// canonical `mind-management` skill and brief L2 activation once per
+// `mind-current` unit before any session; B11 itself has no seed-time installer.
 //
 // This scenario is PAID and gated: it declares
 // `requires: ['mind-memory', 'skill-first']` and never runs under `no-memory`,
-// `mind-v9`, or `mind-v10`; only `mind-current` installs and exercises the
-// canonical skill-first activation. The assertion reads the raw transcripts
-// plus the unit's own Mind database and the workspace artifact. It never grades
-// the agent's prose.
+// `mind-v9`, or `mind-v10`; only `mind-current` exercises the canonical
+// skill-first activation. The assertion reads the raw transcripts plus the
+// unit's own Mind database and the workspace artifact. It never grades the
+// agent's prose.
 //
 // Ordering is evaluated PER SESSION over one ordered event stream (assistant
 // tool parts, code-mode nested `state.metadata.toolCalls`, and `type: 'skill'`
@@ -27,19 +27,17 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BUILTIN_SKILLS } from '../../../config';
 import { inspectAllMemories } from '../../../mind/inspect';
 import { toolServerPrefix } from '../../../opencode/driver';
+import { MIND_MANAGEMENT_SKILL } from '../../../opencode/skill-first';
 import type {
   BSessionResult,
   Scenario,
   ScenarioAssertionContext,
   ScenarioAssertionResult,
-  ScenarioSeedContext,
 } from '../../scenario';
 
-export const B11_SKILL_ID = 'mind-management';
-export const B11_ALLOWED_SKILLS: readonly string[] = [...BUILTIN_SKILLS, B11_SKILL_ID];
+export const B11_SKILL_ID = MIND_MANAGEMENT_SKILL;
 export const B11_ARTIFACT_FILE = 'resume.txt';
 /** Pending item the second session must recover from memory. */
 export const B11_PENDING_ITEM = 'verify the release notes before publishing';
@@ -65,60 +63,6 @@ export const B11_PROMPTS = [
     `Write the pending item to \`${B11_ARTIFACT_FILE}\` in the current directory.`,
   ].join('\n'),
 ];
-
-/** Absolute path of the L2 activation written by `mind setup opencode`. */
-export function l2InstructionPath(home: string): string {
-  return join(home, '.config', 'opencode', 'instructions', 'mind-memory-protocol.md');
-}
-
-/**
- * Add the installed L2 activation file to the session config so the real
- * sessions load the same brief activation the product installs. Only the
- * benchmark's inline config is touched; no product code changes.
- */
-export function addL2InstructionToEnv(env: Record<string, string>, instructionPath: string): void {
-  const content = env.OPENCODE_CONFIG_CONTENT;
-  if (!content) return;
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = JSON.parse(content) as Record<string, unknown>;
-  } catch {
-    return;
-  }
-  const existing = Array.isArray(parsed.instructions)
-    ? (parsed.instructions as unknown[]).filter(
-        (entry): entry is string => typeof entry === 'string'
-      )
-    : [];
-  parsed.instructions = [instructionPath, ...existing.filter(entry => entry !== instructionPath)];
-  env.OPENCODE_CONFIG_CONTENT = `${JSON.stringify(parsed, null, 2)}\n`;
-}
-
-/** Install the canonical skill and L2 activation in the unit HOME. */
-export async function seedB11(ctx: ScenarioSeedContext): Promise<void> {
-  if (!ctx.mindBin || !ctx.mindDb) return;
-
-  // Merge the host env for PATH/interpreter lookup; the isolated HOME/XDG and
-  // MIND_* pointers in `ctx.env` always win, so the live home and DB are never
-  // used.
-  const env: Record<string, string | undefined> = { ...process.env, ...ctx.env };
-  const result = await ctx.run({
-    command: ctx.mindBin,
-    args: ['setup', 'opencode'],
-    env,
-    timeoutMs: 120_000,
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `B11 seed failed (mind setup opencode): ${result.stderr.trim() || result.stdout.trim()}`
-    );
-  }
-
-  const home = ctx.env.HOME;
-  if (home) {
-    addL2InstructionToEnv(ctx.env, l2InstructionPath(home));
-  }
-}
 
 // ── Raw transcript helpers ───────────────────────────────────────────────────
 
@@ -487,8 +431,6 @@ export const B11_SCENARIO: Scenario = {
   title: 'Skill-first activation and pending-work continuity',
   fixture: 'fixtures/b11',
   requires: ['mind-memory', 'skill-first'],
-  allowedSkills: B11_ALLOWED_SKILLS,
-  seed: seedB11,
   sessions: [{ prompt: B11_PROMPTS[0]! }, { prompt: B11_PROMPTS[1]! }],
   makeAssertion,
 };

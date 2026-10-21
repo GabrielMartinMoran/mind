@@ -51,11 +51,22 @@ The agent memory benchmark is not an agent integration. It lives in
 `@opencode/sdk@2.0.28` itself. The root project is not a workspace and does not
 install the harness.
 
-CI runs two free jobs. The `validate` job installs the root project from its
-frozen lockfile and runs the blocking high-severity audit, typecheck, format
-check, lint, and tests. The `benchmark-agent-memory` job installs the subproject
-from its frozen lockfile and runs the blocking high-severity audit, typecheck,
-unit and contract tests, and experiment tests. Neither job runs a paid stage.
+Benchmark `mind-current` A2 conditions and B1–B11 units run the real
+`<checkout>/mind setup opencode` once per isolated environment, which installs
+the same MCP server, canonical `mind-management` skill, brief L2 activation, and
+`system_instructions` fallback as a normal OpenCode setup. A1 does not prepare an
+agent, and `mind-v9`, `mind-v10`, and `no-memory` keep their original
+integration. Validation status: the free `BENCH_INTEGRATION=1` setup and
+skill-discovery test covers OpenCode when the binary is available (otherwise it
+is reported as not run); the paid B11 ordering run has not been executed.
+
+CI triggers on every push, every pull request, and manual dispatch, with no
+branch filters. The two free jobs are unchanged. The `validate` job installs the
+root project from its frozen lockfile and runs the blocking high-severity audit,
+typecheck, format check, lint, and tests. The `benchmark-agent-memory` job
+installs the subproject from its frozen lockfile and runs the blocking
+high-severity audit, typecheck, unit and contract tests, and experiment tests.
+Neither job runs a paid stage.
 
 As of October 20, 2026, the root audit reports zero advisories. The benchmark
 audit passes at high severity with residual moderate (`sprintf-js`) and low
@@ -87,10 +98,11 @@ and the MCP handshake are the offline evidence.
 
 OpenCode 2.0.28 has a free `BENCH_INTEGRATION=1` check that validates skill
 discovery, the brief L2 instruction, MCP configuration and handshake, and
-`/api/skill` polling without a model call. B11 now asserts, per session, that
-the exact `mind-management` skill loads before the first Mind call and that every
-session uses Mind. Its paid run has not been executed, so live model behavior
-remains unverified. Compaction is also unverified because the harness sets
+`/api/skill` polling without a model call. Benchmark `mind-current` A2 and B runs
+use the same real setup, and B11 asserts, per session, that the exact
+`mind-management` skill loads before the first Mind call and that every session
+uses Mind. Its paid run has not been executed, so live model behavior remains
+unverified. Compaction is also unverified because the harness sets
 `OPENCODE_DISABLE_AUTOCOMPACT=1`.
 
 The Windows directory-junction path is covered by static and unit checks only;

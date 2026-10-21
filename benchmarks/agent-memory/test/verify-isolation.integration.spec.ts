@@ -38,8 +38,8 @@ describe.skipIf(!enabled)('verifyIsolation (integration)', () => {
       expect(existsSync(join(evidenceDir, 'summary.txt'))).toBe(true);
       // Every check must have run green; the isolated service port must not
       // have leaked the user's shared service. The number is pinned so the
-      // "8/8 green" claim stays honest even if a check is dropped later.
-      expect(report.checks).toHaveLength(8);
+      // "9/9 green" claim stays honest even if a check is dropped later.
+      expect(report.checks).toHaveLength(9);
       expect(report.checks.every(check => check.ok)).toBe(true);
     } finally {
       rmSync(conditionDir, { recursive: true, force: true });

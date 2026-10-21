@@ -22,16 +22,13 @@ import type {
   ScenarioAssertionContext,
 } from '../src/benchmarkB/scenario';
 import {
-  B11_ALLOWED_SKILLS,
   B11_ARTIFACT_FILE,
   B11_PENDING_ITEM,
   B11_PROMPTS,
   B11_SCENARIO,
   B11_SKILL_ID,
-  addL2InstructionToEnv,
   analyzeTranscripts,
   extractToolInvocations,
-  l2InstructionPath,
   makeAssertion as b11MakeAssertion,
 } from '../src/benchmarkB/scenarios/b11/index';
 import { SCENARIO_IDS } from '../src/benchmarkB/scenarios/registry';
@@ -235,6 +232,8 @@ async function runGateProbe(conditions: readonly ConditionId[]): Promise<GatePro
       fixtureDirFor: () => join(HARNESS_ROOT, B11_SCENARIO.fixture),
       worktrees: { v9: '/fake/v9', v10: '/fake/v10', current: '/fake/current' },
       executor,
+      // The unit-level tests exercise gating, not the real installer.
+      prepareUnit: async ({ env }) => env,
       runner: async invocation => ({
         command: invocation.command,
         args: invocation.args,
@@ -269,8 +268,8 @@ describe('B11 registry and gating', () => {
     expect(B11_SCENARIO.requires).toEqual(['mind-memory', 'skill-first']);
     expect(B11_SCENARIO.rag).toBeUndefined();
     expect(B11_SCENARIO.fixture).toBe('fixtures/b11');
-    expect(B11_SCENARIO.allowedSkills).toEqual(B11_ALLOWED_SKILLS);
-    expect(B11_ALLOWED_SKILLS).toContain(B11_SKILL_ID);
+    // The shared runner preparation owns setup; B11 has no seed-time installer.
+    expect(B11_SCENARIO.seed).toBeUndefined();
   });
 
   test('gates not_run under no-memory instead of running a memory task', () => {
@@ -663,69 +662,6 @@ describe('B11 assertion', () => {
     const result = await b11MakeAssertion(ctx(passWorkspace()));
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain('no Mind database');
-  });
-});
-
-describe('B11 seed', () => {
-  test('runs real mind setup opencode in the isolated HOME and wires the L2 activation', async () => {
-    const home = mkdtempSync(join(tmpdir(), 'bench-b11-home-'));
-    const dbPath = join(mkdtempSync(join(tmpdir(), 'bench-b11-seed-')), 'mind.db');
-    const env: Record<string, string> = {
-      HOME: home,
-      XDG_CONFIG_HOME: join(home, '.config'),
-      MIND_DB_PATH: dbPath,
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ model: 'openrouter/x' }),
-    };
-    const calls: { command: string; args: readonly string[] }[] = [];
-    await B11_SCENARIO.seed!({
-      workspaceDir: mkdtempSync(join(tmpdir(), 'bench-b11-seed-ws-')),
-      mindDb: dbPath,
-      mindBin: '/fake/mind',
-      env,
-      run: async invocation => {
-        calls.push({ command: invocation.command, args: invocation.args });
-        return {
-          command: invocation.command,
-          args: invocation.args,
-          stdout: '',
-          stderr: '',
-          exitCode: 0,
-        };
-      },
-    });
-
-    expect(calls).toHaveLength(1);
-    expect(calls[0]).toEqual({ command: '/fake/mind', args: ['setup', 'opencode'] });
-    const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as { instructions: string[] };
-    expect(parsed.instructions).toContain(l2InstructionPath(home));
-  });
-
-  test('addL2InstructionToEnv is idempotent and keeps existing instructions', () => {
-    const env = {
-      OPENCODE_CONFIG_CONTENT: JSON.stringify({ instructions: ['/existing.md'] }),
-    };
-    addL2InstructionToEnv(env, '/l2.md');
-    addL2InstructionToEnv(env, '/l2.md');
-    const parsed = JSON.parse(env.OPENCODE_CONFIG_CONTENT) as { instructions: string[] };
-    expect(parsed.instructions).toEqual(['/l2.md', '/existing.md']);
-  });
-
-  test('seed fails clearly when setup exits non-zero', async () => {
-    await expect(
-      B11_SCENARIO.seed!({
-        workspaceDir: mkdtempSync(join(tmpdir(), 'bench-b11-fail-')),
-        mindDb: join(tmpdir(), 'x', 'mind.db'),
-        mindBin: '/fake/mind',
-        env: { HOME: '/tmp/isolated-b11' },
-        run: async invocation => ({
-          command: invocation.command,
-          args: invocation.args,
-          stdout: '',
-          stderr: 'nope',
-          exitCode: 1,
-        }),
-      })
-    ).rejects.toThrow('setup opencode');
   });
 });
 
