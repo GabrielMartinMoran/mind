@@ -14,10 +14,11 @@
 // stage status.
 
 import { randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import type { ConditionId, Limits, ModelRef } from './config';
+import { CONDITIONS, type ConditionId, type Limits, type ModelRef } from './config';
+import { readSchemaInfo } from './mind/worktree';
 
 export type StageStatus =
   | 'pending'
@@ -39,6 +40,39 @@ export interface PinnedShas {
   readonly v10: string | null;
 }
 
+/**
+ * Reproducible identity of the invoking checkout, recorded for `mind-current`
+ * runs. Every field is best-effort: a missing git/package/schema signal is
+ * `null` instead of failing the run.
+ */
+export interface CheckoutProvenance {
+  readonly branch: string | null;
+  readonly headSha: string | null;
+  readonly dirty: boolean | null;
+  readonly packageVersion: string | null;
+  readonly schemaVersion: number | null;
+  readonly mindBinary: string | null;
+}
+
+export interface GitProbeResult {
+  readonly stdout: string;
+  readonly exitCode: number;
+}
+
+export type GitProbe = (args: readonly string[], cwd: string) => GitProbeResult;
+
+export interface ProvenanceOptions {
+  /** Prepared current database whose schema version should be recorded. */
+  readonly dbPath?: string | null;
+}
+
+export interface ProvenanceDeps {
+  readonly git?: GitProbe;
+  readonly readTextFile?: (path: string) => string | null;
+  readonly readSchema?: (dbPath: string) => { readonly schemaVersion: number } | null;
+  readonly exists?: (path: string) => boolean;
+}
+
 export interface RunStage {
   readonly status: StageStatus;
   readonly updatedAt: string;
@@ -57,10 +91,15 @@ export interface RunMeta {
   readonly limits: Limits;
   readonly budget: { readonly maxCostUsd: number | null; readonly spentUsd: number };
   readonly stages: Record<string, RunStage>;
+  /** Conditions that actually ran in this run, in canonical order. */
+  readonly activeConditions?: readonly ConditionId[];
+  /** Reproducible identity of the invoking checkout (current condition only). */
+  readonly current?: CheckoutProvenance;
   readonly artifacts: {
     readonly root: string;
     readonly results: string;
-    readonly conditions: Record<ConditionId, string>;
+    /** Only the selected conditions exist; the map is intentionally partial. */
+    readonly conditions: Partial<Record<ConditionId, string>>;
   };
 }
 
@@ -90,6 +129,96 @@ export function conditionDirName(condition: ConditionId): string {
 
 export function runDir(root: string, runId: string): string {
   return join(root, runId);
+}
+
+/** Union conditions across stages, in the canonical `CONDITIONS` order. */
+export function mergeActiveConditions(
+  existing: readonly ConditionId[] | undefined,
+  added: readonly ConditionId[]
+): ConditionId[] {
+  const selected = new Set<ConditionId>([...(existing ?? []), ...added]);
+  return CONDITIONS.filter(condition => selected.has(condition));
+}
+
+function defaultGitProbe(args: readonly string[], cwd: string): GitProbeResult {
+  const result = Bun.spawnSync({
+    cmd: ['git', ...args],
+    cwd,
+    stdout: 'pipe',
+    stderr: 'pipe',
+  });
+  return {
+    stdout: result.stdout.toString(),
+    exitCode: result.exitCode ?? -1,
+  };
+}
+
+function defaultReadTextFile(path: string): string | null {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function defaultReadSchema(dbPath: string): { readonly schemaVersion: number } | null {
+  try {
+    return readSchemaInfo(dbPath);
+  } catch {
+    return null;
+  }
+}
+
+function readPackageVersion(
+  repoRoot: string,
+  readTextFile: (path: string) => string | null
+): string | null {
+  const text = readTextFile(join(repoRoot, 'package.json'));
+  if (text === null) return null;
+  try {
+    const parsed = JSON.parse(text) as { version?: unknown };
+    return typeof parsed.version === 'string' ? parsed.version : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Read the checkout identity recorded for a `mind-current` run. Git output is
+ * not parsed as JSON; a command failure records `null` rather than aborting.
+ */
+export function readCheckoutProvenance(
+  repoRoot: string,
+  options: ProvenanceOptions = {},
+  deps: ProvenanceDeps = {}
+): CheckoutProvenance {
+  const git = deps.git ?? defaultGitProbe;
+  const readTextFile = deps.readTextFile ?? defaultReadTextFile;
+  const readSchema = deps.readSchema ?? defaultReadSchema;
+  const exists = deps.exists ?? existsSync;
+
+  const readGitLine = (args: readonly string[]): string | null => {
+    const result = git(args, repoRoot);
+    if (result.exitCode !== 0) return null;
+    return result.stdout.trim() || null;
+  };
+
+  const status = git(['status', '--porcelain'], repoRoot);
+  const dirty = status.exitCode === 0 ? status.stdout.trim().length > 0 : null;
+  const schemaVersion =
+    options.dbPath && exists(options.dbPath)
+      ? (readSchema(options.dbPath)?.schemaVersion ?? null)
+      : null;
+  const mindBinary = join(repoRoot, 'mind');
+
+  return {
+    branch: readGitLine(['rev-parse', '--abbrev-ref', 'HEAD']),
+    headSha: readGitLine(['rev-parse', 'HEAD']),
+    dirty,
+    packageVersion: readPackageVersion(repoRoot, readTextFile),
+    schemaVersion,
+    mindBinary: exists(mindBinary) ? mindBinary : null,
+  };
 }
 
 // `run-YYYYMMDD-HHMMSS-<4hex>`; time and randomness are injectable for tests.
@@ -142,11 +271,15 @@ export interface CreateRunMetaInput {
   readonly limits: Limits;
   readonly budget: { readonly maxCostUsd: number | null; readonly spentUsd: number };
   readonly stages?: Record<string, RunStage>;
+  /** Defaults to the conditions present in the layout. */
+  readonly activeConditions?: readonly ConditionId[];
+  readonly current?: CheckoutProvenance;
   readonly now?: Date;
 }
 
 export function createRunMeta(input: CreateRunMetaInput): RunMeta {
   const nowIso = (input.now ?? new Date()).toISOString();
+  const layoutConditions = Object.keys(input.layout.conditions) as ConditionId[];
   return {
     runId: input.layout.runId,
     createdAt: nowIso,
@@ -159,12 +292,14 @@ export function createRunMeta(input: CreateRunMetaInput): RunMeta {
     limits: input.limits,
     budget: input.budget,
     stages: input.stages ?? {},
+    activeConditions: [...(input.activeConditions ?? layoutConditions)],
+    ...(input.current ? { current: input.current } : {}),
     artifacts: {
       root: input.layout.runDir,
       results: input.layout.resultsDir,
       conditions: Object.fromEntries(
         Object.entries(input.layout.conditions).map(([k, v]) => [k, v.dir])
-      ) as Record<ConditionId, string>,
+      ) as Partial<Record<ConditionId, string>>,
     },
   };
 }

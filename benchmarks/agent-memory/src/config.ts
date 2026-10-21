@@ -36,11 +36,11 @@ export const CONDITIONS: readonly ConditionId[] = [
 ];
 
 /**
- * Conditions used when the CLI is given no explicit `--conditions`. `mind-current`
- * is opt-in: it runs the working tree and is the only condition that can prove
- * the new memory lifecycle capabilities.
+ * Conditions used when the CLI is given no explicit `--conditions`. A normal
+ * run evaluates the invoking checkout (`mind-current`); historical comparisons
+ * (`mind-v9`, `mind-v10`) and the `no-memory` baseline stay explicit options.
  */
-export const DEFAULT_CONDITIONS: readonly ConditionId[] = ['no-memory', 'mind-v9', 'mind-v10'];
+export const DEFAULT_CONDITIONS: readonly ConditionId[] = ['mind-current'];
 
 /**
  * Pinned engine versions. Rótulos are the user's branch names:

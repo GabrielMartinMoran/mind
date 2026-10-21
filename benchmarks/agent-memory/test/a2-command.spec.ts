@@ -7,6 +7,7 @@ import { join } from 'node:path';
 
 import { describe, expect, test } from 'bun:test';
 
+import { emptyA2Outcome, type A2UnitExecutor } from '../src/benchmarkA/a2';
 import {
   groupCandidates,
   readStoredResults,
@@ -198,6 +199,159 @@ describe('runA2Command --judge-only', () => {
     );
     expect(code).toBe(1);
     expect(err.join('\n')).toContain('not found');
+  });
+});
+
+describe('A2 prepared-database guard', () => {
+  function setupPreparedRun(
+    conditions: readonly ConditionId[],
+    options: { readonly currentDb: boolean }
+  ): { repoRoot: string; runsRoot: string } {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'bench-a2-guard-'));
+    writeFileSync(join(repoRoot, 'mind'), '#!/bin/sh\n', 'utf8');
+    const runDir = join(repoRoot, 'runs', 'run-guard');
+    mkdirSync(join(runDir, 'results'), { recursive: true });
+    writeFileSync(
+      join(runDir, 'meta.json'),
+      `${JSON.stringify({
+        runId: 'run-guard',
+        stages: {},
+        limits: { sessionSteps: 1, timeoutMs: 1000 },
+        budget: { maxCostUsd: 5, spentUsd: 0 },
+      })}\n`,
+      'utf8'
+    );
+    writeFileSync(join(runDir, 'subset.json'), `${JSON.stringify({ items: subset })}\n`, 'utf8');
+    if (options.currentDb) {
+      mkdirSync(join(runDir, 'mind-current'), { recursive: true });
+      writeFileSync(join(runDir, 'mind-current', 'mind.db'), '', 'utf8');
+    }
+    return { repoRoot, runsRoot: 'runs' };
+  }
+
+  function okRunner() {
+    return async (invocation: { command: string; args: readonly string[] }) => ({
+      command: invocation.command,
+      args: invocation.args,
+      stdout: '',
+      stderr: '',
+      exitCode: 0,
+    });
+  }
+
+  test('a requested Mind condition without a prepared DB fails closed before executing', async () => {
+    const { repoRoot, runsRoot } = setupPreparedRun(['mind-current'], { currentDb: false });
+    const err: string[] = [];
+    let executed = 0;
+    const executor: A2UnitExecutor = async () => {
+      executed += 1;
+      return emptyA2Outcome('ok', null);
+    };
+
+    const code = await runA2Command(
+      {
+        runId: 'run-guard',
+        runsRoot,
+        workRoot: 'work',
+        conditions: ['mind-current'],
+        budgetUsd: 5,
+        judgeOnly: false,
+      },
+      {
+        repoRoot,
+        runner: okRunner(),
+        stdout: () => undefined,
+        stderr: line => err.push(line),
+        executor,
+        credentialEnv: {},
+        judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+      }
+    );
+
+    expect(code).toBe(1);
+    expect(err.join('\n')).toContain('mind-current');
+    expect(err.join('\n')).toContain('A1');
+    expect(executed).toBe(0);
+  });
+
+  test('a prepared current database answers and judges normally', async () => {
+    const { repoRoot, runsRoot } = setupPreparedRun(['mind-current'], { currentDb: true });
+    const out: string[] = [];
+    let executed = 0;
+    const executor: A2UnitExecutor = async () => {
+      executed += 1;
+      return { ...emptyA2Outcome('ok', null), answer: 'red' };
+    };
+    const driver = createFakeSessionDriver([
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}',
+      },
+      {
+        text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}',
+      },
+    ]);
+
+    const code = await runA2Command(
+      {
+        runId: 'run-guard',
+        runsRoot,
+        workRoot: 'work',
+        conditions: ['mind-current'],
+        budgetUsd: 5,
+        judgeOnly: false,
+      },
+      {
+        repoRoot,
+        runner: okRunner(),
+        stdout: line => out.push(line),
+        stderr: () => undefined,
+        executor,
+        judgeDriver: driver,
+        judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+        credentialEnv: {},
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(executed).toBe(subset.length);
+    expect(out.join('\n')).toContain('a2 mind-current');
+    expect(readStoredResults(join(repoRoot, 'runs', 'run-guard'), ['mind-current'])).toHaveLength(
+      subset.length
+    );
+  });
+
+  test('no-memory does not require a Mind database', async () => {
+    const { repoRoot, runsRoot } = setupPreparedRun(['no-memory'], { currentDb: false });
+    let executed = 0;
+    const executor: A2UnitExecutor = async () => {
+      executed += 1;
+      return emptyA2Outcome('ok', null);
+    };
+    const driver = createFakeSessionDriver();
+
+    const code = await runA2Command(
+      {
+        runId: 'run-guard',
+        runsRoot,
+        workRoot: 'work',
+        conditions: ['no-memory'],
+        budgetUsd: 5,
+        judgeOnly: false,
+      },
+      {
+        repoRoot,
+        runner: okRunner(),
+        stdout: () => undefined,
+        stderr: () => undefined,
+        executor,
+        judgeDriver: driver,
+        judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+        credentialEnv: {},
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(executed).toBe(subset.length);
   });
 });
 

@@ -17,10 +17,10 @@ import {
   DATASET,
   DEFAULT_LIMITS,
   MODEL,
-  PINNED_VERSIONS,
   engineForCondition,
   type ConditionId,
   type EngineVersion,
+  type PinnedEngineVersion,
 } from '../config';
 import type { CommandRunner } from '../exec';
 import { ensureWorktree } from '../mind/worktree';
@@ -29,6 +29,7 @@ import {
   createRunId,
   createRunLayout,
   createRunMeta,
+  mergeActiveConditions,
   readRunMeta,
   withStage,
   writeRunMeta,
@@ -39,6 +40,7 @@ import {
 import { createProcessSessionExecutor } from './executor';
 import {
   runScenarioRun,
+  scenarioGateReason,
   scenarioRunStatus,
   type BSessionExecutor,
   type InitMindDbInput,
@@ -126,15 +128,21 @@ function initWriter(
   };
 }
 
+interface ResolvedWorktrees {
+  readonly paths: Partial<Record<EngineVersion, string>>;
+  readonly shas: Partial<Record<PinnedEngineVersion, string>>;
+}
+
 async function resolveWorktrees(
   deps: ScenariosCommandDeps,
   workRoot: string,
   conditions: readonly ConditionId[]
-): Promise<Partial<Record<EngineVersion, string>>> {
-  const worktrees: Partial<Record<EngineVersion, string>> = { ...(deps.worktrees ?? {}) };
+): Promise<ResolvedWorktrees> {
+  const paths: Partial<Record<EngineVersion, string>> = { ...(deps.worktrees ?? {}) };
+  const shas: Partial<Record<PinnedEngineVersion, string>> = {};
   for (const condition of conditions) {
     const version = engineForCondition(condition);
-    if (version === null || worktrees[version]) continue;
+    if (version === null || paths[version]) continue;
     if (version === 'current') {
       // The current condition is the local checkout by definition. Fail closed
       // if the expected entry point is not there instead of silently falling
@@ -143,7 +151,7 @@ async function resolveWorktrees(
       if (!existsSync(mindBin)) {
         throw new Error(`mind-current requires the local checkout at '${mindBin}'`);
       }
-      worktrees.current = deps.repoRoot;
+      paths.current = deps.repoRoot;
       continue;
     }
     const info = await ensureWorktree({
@@ -152,9 +160,10 @@ async function resolveWorktrees(
       version,
       runner: deps.runner,
     });
-    worktrees[version] = info.path;
+    paths[version] = info.path;
+    shas[version] = info.sha;
   }
-  return worktrees;
+  return { paths, shas };
 }
 
 function summarize(aggregates: readonly ScenarioAggregate[]): string {
@@ -192,18 +201,23 @@ export async function runScenariosCommand(
   const existingMetaPath = options.runId ? join(runsRoot, options.runId, 'meta.json') : null;
   let meta: RunMeta;
   if (existingMetaPath && existsSync(existingMetaPath)) {
-    meta = readRunMeta(existingMetaPath);
+    const existing = readRunMeta(existingMetaPath);
+    meta = {
+      ...existing,
+      activeConditions: mergeActiveConditions(existing.activeConditions, options.conditions),
+    };
   } else {
     const limits = { ...DEFAULT_LIMITS, maxCostUsd: options.budgetUsd };
     meta = createRunMeta({
       layout,
-      shas: { v9: PINNED_VERSIONS.v9.ref, v10: PINNED_VERSIONS.v10.ref },
+      shas: { v9: null, v10: null },
       versions: { opencode: null, sdk: null, bun: Bun.version },
       model: MODEL,
       dataset: { url: DATASET.url, sha256: null },
       subset: { seed: 0, count: 0, conversation: '' },
       limits,
       budget: { maxCostUsd: options.budgetUsd, spentUsd: 0 },
+      activeConditions: options.conditions,
       now: deps.now,
     });
   }
@@ -224,9 +238,25 @@ export async function runScenariosCommand(
     return 1;
   }
 
+  // Prepare a condition's worktree only when at least one selected scenario can
+  // actually run there. Gated scenarios still appear as `not_run` in the results.
+  const conditionsToPrepare = options.conditions.filter(condition =>
+    scenarios.some(scenario => scenarioGateReason(scenario, condition, credentialEnv) === null)
+  );
+
   let worktrees: Partial<Record<EngineVersion, string>>;
   try {
-    worktrees = await resolveWorktrees(deps, workRoot, options.conditions);
+    const resolved = await resolveWorktrees(deps, workRoot, conditionsToPrepare);
+    worktrees = resolved.paths;
+    if (resolved.shas.v9 || resolved.shas.v10) {
+      writer.set({
+        ...meta,
+        shas: {
+          v9: resolved.shas.v9 ?? meta.shas.v9,
+          v10: resolved.shas.v10 ?? meta.shas.v10,
+        },
+      });
+    }
   } catch (error) {
     writer.update('scenarios:start', 'failed', String(error));
     deps.stderr(`scenarios: worktree preparation failed: ${String(error)}`);

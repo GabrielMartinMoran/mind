@@ -8,10 +8,17 @@ import { dirname, join } from 'node:path';
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
-import { scenarioGateReason } from '../src/benchmarkB/runner';
+import {
+  runScenarioRun,
+  scenarioGateReason,
+  type BSessionExecutor,
+  type InitMindDbInput,
+  type ScenariosRunResult,
+} from '../src/benchmarkB/runner';
 import type {
   BSessionResult,
   BSessionStatus,
+  Scenario,
   ScenarioAssertionContext,
 } from '../src/benchmarkB/scenario';
 import {
@@ -28,6 +35,8 @@ import {
   makeAssertion as b11MakeAssertion,
 } from '../src/benchmarkB/scenarios/b11/index';
 import { SCENARIO_IDS } from '../src/benchmarkB/scenarios/registry';
+import { BudgetGuard } from '../src/budget';
+import type { ConditionId } from '../src/config';
 import type { CommandRunner } from '../src/exec';
 
 const HARNESS_ROOT = join(import.meta.dir, '..');
@@ -166,10 +175,98 @@ function passWorkspace(): string {
   return dir;
 }
 
+/**
+ * B11 gate probe: keeps B11's registry identity and requirements, but drops the
+ * real seed/assertion so the matrix proves eligibility without paid work.
+ */
+function gateProbeScenario(): Scenario {
+  return {
+    ...B11_SCENARIO,
+    seed: undefined,
+    makeAssertion: () => ({ pass: true, details: ['gate probe'] }),
+  };
+}
+
+interface GateProbeResult {
+  readonly run: ScenariosRunResult;
+  readonly executorCalls: string[];
+  readonly initCalls: InitMindDbInput[];
+}
+
+async function runGateProbe(conditions: readonly ConditionId[]): Promise<GateProbeResult> {
+  const runDir = mkdtempSync(join(tmpdir(), 'bench-b11-gate-'));
+  const executorCalls: string[] = [];
+  const initCalls: InitMindDbInput[] = [];
+  const executor: BSessionExecutor = async job => {
+    executorCalls.push(`${job.scenarioId}/${job.condition}/${job.sessionIndex}`);
+    return {
+      status: 'ok',
+      sessionId: `ses_${job.sessionIndex}`,
+      finalText: '',
+      toolCalls: [],
+      memoryCalls: 0,
+      model: null,
+      tokens: null,
+      costUsd: 0,
+      latencyMs: 0,
+      steps: 0,
+      finish: 'stop',
+      error: null,
+      errorType: null,
+      isolationOk: true,
+      children: [],
+      rawMessages: { data: [] },
+    };
+  };
+
+  const run = await runScenarioRun(
+    {
+      runId: 'run-gate',
+      runDir,
+      conditions,
+      scenarios: [gateProbeScenario()],
+      limits: { steps: 2, timeoutMs: 1000 },
+      budget: new BudgetGuard({ maxCostUsd: 5 }),
+      stdout: () => undefined,
+      stderr: () => undefined,
+      credentialEnv: {},
+    },
+    {
+      fixtureDirFor: () => join(HARNESS_ROOT, B11_SCENARIO.fixture),
+      worktrees: { v9: '/fake/v9', v10: '/fake/v10', current: '/fake/current' },
+      executor,
+      runner: async invocation => ({
+        command: invocation.command,
+        args: invocation.args,
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+      }),
+      initMindDb: async input => {
+        initCalls.push(input);
+        mkdirSync(input.dirs.mindDataDir, { recursive: true });
+        const db = new Database(input.dirs.mindDb);
+        db.exec(`
+          CREATE TABLE spaces (id TEXT PRIMARY KEY, name TEXT UNIQUE);
+          CREATE TABLE memories (
+            id TEXT PRIMARY KEY, space_id TEXT, name TEXT, content TEXT,
+            tier INTEGER, pinned INTEGER, changed_at TEXT
+          );
+          CREATE TABLE memory_tags (memory_id TEXT, tag TEXT);
+          CREATE TABLE links (source_id TEXT, target_id TEXT, label TEXT, created_at TEXT);
+        `);
+        db.close();
+      },
+    }
+  );
+
+  return { run, executorCalls, initCalls };
+}
+
 describe('B11 registry and gating', () => {
-  test('is registered after B10 and declares mind-memory without RAG', () => {
+  test('is registered after B10 and declares mind-memory plus skill-first without RAG', () => {
     expect(SCENARIO_IDS).toEqual(['b1', 'b4', 'b5', 'b6', 'b7', 'b9', 'b8', 'b10', 'b11']);
-    expect(B11_SCENARIO.requires).toEqual(['mind-memory']);
+    expect(B11_SCENARIO.requires).toEqual(['mind-memory', 'skill-first']);
     expect(B11_SCENARIO.rag).toBeUndefined();
     expect(B11_SCENARIO.fixture).toBe('fixtures/b11');
     expect(B11_SCENARIO.allowedSkills).toEqual(B11_ALLOWED_SKILLS);
@@ -178,7 +275,53 @@ describe('B11 registry and gating', () => {
 
   test('gates not_run under no-memory instead of running a memory task', () => {
     expect(scenarioGateReason(B11_SCENARIO, 'no-memory', {})).toContain('Mind');
-    expect(scenarioGateReason(B11_SCENARIO, 'mind-v9', {})).toBeNull();
+    expect(scenarioGateReason(B11_SCENARIO, 'mind-v9', {})).toContain('skill-first');
+  });
+
+  test('is eligible only on mind-current across the four conditions', () => {
+    expect(scenarioGateReason(B11_SCENARIO, 'no-memory', {})).toContain('Mind');
+    expect(scenarioGateReason(B11_SCENARIO, 'mind-v9', {})).toContain('mind-current');
+    expect(scenarioGateReason(B11_SCENARIO, 'mind-v10', {})).toContain('mind-current');
+    expect(scenarioGateReason(B11_SCENARIO, 'mind-current', {})).toBeNull();
+  });
+
+  test('gated conditions execute zero sessions, zero cost, no DB and no executor calls', async () => {
+    const { run, executorCalls, initCalls } = await runGateProbe([
+      'no-memory',
+      'mind-v9',
+      'mind-v10',
+      'mind-current',
+    ]);
+    const byCondition = Object.fromEntries(run.results.map(result => [result.condition, result]));
+
+    const noMemory = byCondition['no-memory']!;
+    expect(noMemory.status).toBe('not_run');
+    expect(noMemory.notRunReason).toContain('Mind');
+
+    for (const condition of ['mind-v9', 'mind-v10'] as const) {
+      const result = byCondition[condition]!;
+      expect(result.status).toBe('not_run');
+      expect(result.notRunReason).toContain('skill-first');
+      expect(result.notRunReason).toContain('mind-current');
+      expect(result.sessions).toHaveLength(0);
+      expect(result.costUsd).toBe(0);
+      expect(result.mindDb).toBeNull();
+    }
+
+    const current = byCondition['mind-current']!;
+    expect(current.notRunReason).toBeNull();
+    expect(current.sessions).toHaveLength(2);
+
+    // Only the eligible condition initializes a DB or reaches the executor.
+    expect(initCalls).toHaveLength(1);
+    expect(executorCalls).toEqual(['b11/mind-current/0', 'b11/mind-current/1']);
+    expect(run.spentUsd).toBe(0);
+
+    const aggregates = Object.fromEntries(run.aggregates.map(entry => [entry.condition, entry]));
+    for (const condition of ['no-memory', 'mind-v9', 'mind-v10'] as const) {
+      expect(aggregates[condition]).toMatchObject({ notRun: 1, failed: 0, costUsd: 0 });
+    }
+    expect(aggregates['mind-current']).toMatchObject({ notRun: 0, failed: 0 });
   });
 
   test('prompts are byte-identical and name no engine or product', () => {

@@ -1,11 +1,12 @@
-// Shared MemoryEngine implementation for the pinned Mind engines.
+// Shared MemoryEngine implementation for the Mind engines.
 //
-// Both `mind-v9` and `mind-v10` are the SAME concrete implementation driven by
-// the pinned worktree's own `mind` CLI (ingestion) and its own `mind serve` HTTP
-// API (retrieval). They differ only in the `/api/search` payload they emit and
-// in whether the server accepts a `limit` parameter; that difference is handled
-// by `mind-normalize`. The class never calls `read`/`memory_read` (which mutate
-// access counts and tiers).
+// `mind-v9`, `mind-v10` and `mind-current` are the SAME concrete implementation
+// driven by the engine's own `mind` CLI (ingestion) and its own `mind serve`
+// HTTP API (retrieval). v9 differs in the `/api/search` payload it emits (a
+// `rank` field, no `limit` parameter); v10 and current share the additive
+// `score`/`confidence`/`methods` contract and accept `limit`. That difference is
+// handled by `mind-normalize`. The class never calls `read`/`memory_read` (which
+// mutate access counts and tiers).
 
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 
@@ -108,8 +109,8 @@ export function createMindEngine(
     const space = searchOptions.space ?? options.space;
     const handle = await ensureServer();
     const params = new URLSearchParams({ q: query, space });
-    // v9 has no pagination; v10 accepts and defaults to 25. Both are sliced locally.
-    if (version === 'v10') params.set('limit', String(searchOptions.limit));
+    // v9 has no pagination; v10/current accept and default to 25. All are sliced locally.
+    if (version !== 'v9') params.set('limit', String(searchOptions.limit));
     const url = `${handle.baseUrl}/api/search?${params.toString()}`;
 
     const started = performance.now();
@@ -210,4 +211,12 @@ export function createMindEngine(
   };
 
   return engine;
+}
+
+/**
+ * The invoking checkout as an engine. It reports the explicit `current`
+ * identity (never a simulated v10) while sharing the v10-era API contract.
+ */
+export function createMindCurrentEngine(options: MindEngineOptions): MindEngineAdapter {
+  return createMindEngine('current', options);
 }

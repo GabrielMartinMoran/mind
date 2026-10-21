@@ -16,7 +16,7 @@ import { join } from 'node:path';
 
 import { A2_CLASSES, type A2Class, type A2QuestionResult } from '../benchmarkA/judge';
 import type { ScenarioConditionResult, ScenarioRunStatus } from '../benchmarkB/runner';
-import { CONDITIONS, type ConditionId } from '../config';
+import { CONDITIONS, isMindCondition, type ConditionId } from '../config';
 import type { A1Result } from '../locomo/a1';
 import { LOCOMO_CATEGORIES, categoryName } from '../locomo/types';
 import { readRunMeta, type RunMeta } from '../run';
@@ -176,19 +176,51 @@ export interface BaselineDelta {
   readonly relative: number | null;
 }
 
+/**
+ * One metric across the `no-memory` baseline and every Mind condition that was
+ * actually measured. Absent conditions are omitted from `conditions`; they are
+ * never inserted as invented `null` rows.
+ */
+export interface ConditionComparisonRow {
+  readonly metric: string;
+  /** `no-memory` value when the baseline ran, else `null`. */
+  readonly baseline: number | null;
+  readonly conditions: Partial<Record<ConditionId, number | null>>;
+}
+
+/** Directional comparison between two measured Mind conditions. */
+export interface PairwiseMetric {
+  readonly stage: 'a1' | 'a2' | 'b';
+  readonly metric: string;
+  readonly from: ConditionId;
+  readonly to: ConditionId;
+  readonly fromValue: number | null;
+  readonly toValue: number | null;
+  /** `toValue - fromValue` when both are numbers, else `null`. */
+  readonly absolute: number | null;
+  /** `(toValue - fromValue) / fromValue` when `fromValue` is non-zero, else `null`. */
+  readonly relative: number | null;
+}
+
 export interface SummaryDiffs {
   readonly a1: readonly ABDiff[];
   readonly a2: readonly ABDiff[];
   readonly b: readonly ABDiff[];
   /** Mind conditions vs the `no-memory` baseline, where meaningful. */
   readonly mindVsNoMemory: readonly TripleMetric[];
+  /** Condition-keyed view of the same A2/B metrics (legacy triple stays above). */
+  readonly mindVsNoMemoryByCondition: readonly ConditionComparisonRow[];
   /** Per-condition/per-category deltas against the `no-memory` baseline. */
   readonly a2Baseline: readonly BaselineDelta[];
+  /** Deterministic from→to comparisons between measured Mind conditions. */
+  readonly pairwise: readonly PairwiseMetric[];
 }
 
 export interface RunSummary {
   readonly runId: string;
   readonly meta: RunMeta;
+  /** Conditions with at least one result artifact, in canonical order. */
+  readonly activeConditions: readonly ConditionId[];
   readonly conditions: Record<string, ConditionSummary>;
   readonly diffs: SummaryDiffs;
   /** Artifacts/stages that were absent when the summary was built. */
@@ -369,12 +401,6 @@ export function aggregateB(results: readonly ScenarioConditionResult[]): BSummar
 
 // ── Diffs ────────────────────────────────────────────────────────────────────
 
-function diff(metric: string, v9: number | null, v10: number | null): ABDiff {
-  const absolute = v9 !== null && v10 !== null ? v10 - v9 : null;
-  const relative = v9 !== null && v9 !== 0 && v10 !== null ? (v10 - v9) / v9 : null;
-  return { metric, v9, v10, absolute, relative };
-}
-
 const A1_DIFF_METRICS = [
   ['hitAt5', (s: A1Summary) => s.cat1To4.hitAt5],
   ['hitAt10', (s: A1Summary) => s.cat1To4.hitAt10],
@@ -406,6 +432,35 @@ const B_DIFF_METRICS = [
   ['latencyP50Ms', (s: BSummary) => s.latencyP50Ms],
 ] as const;
 
+/** Absolute and relative delta shared by every comparison shape. */
+function delta(
+  from: number | null,
+  to: number | null
+): {
+  absolute: number | null;
+  relative: number | null;
+} {
+  return {
+    absolute: from !== null && to !== null ? to - from : null,
+    relative: from !== null && from !== 0 && to !== null ? (to - from) / from : null,
+  };
+}
+
+function diff(metric: string, v9: number | null, v10: number | null): ABDiff {
+  return { metric, v9, v10, ...delta(v9, v10) };
+}
+
+function pairwiseRow(
+  stage: PairwiseMetric['stage'],
+  metric: string,
+  from: ConditionId,
+  to: ConditionId,
+  fromValue: number | null,
+  toValue: number | null
+): PairwiseMetric {
+  return { stage, metric, from, to, fromValue, toValue, ...delta(fromValue, toValue) };
+}
+
 function diffSeries<T>(
   metrics: readonly (readonly [string, (summary: T) => number | null])[],
   v9: T | null,
@@ -415,56 +470,91 @@ function diffSeries<T>(
   return metrics.map(([metric, pick]) => diff(metric, pick(v9), pick(v10)));
 }
 
+/** Pair every measured Mind condition against every later one, per stage. */
+function pairwiseSeries<T>(
+  stage: PairwiseMetric['stage'],
+  metrics: readonly (readonly [string, (summary: T) => number | null])[],
+  conditions: Record<string, ConditionSummary>,
+  pick: (entry: ConditionSummary) => T | null
+): PairwiseMetric[] {
+  const measured = CONDITIONS.filter(
+    condition => isMindCondition(condition) && pick(conditions[condition]!) !== null
+  );
+  const rows: PairwiseMetric[] = [];
+  for (let i = 0; i < measured.length; i += 1) {
+    for (let j = i + 1; j < measured.length; j += 1) {
+      const from = measured[i]!;
+      const to = measured[j]!;
+      const fromSummary = pick(conditions[from]!)!;
+      const toSummary = pick(conditions[to]!)!;
+      for (const [metric, select] of metrics) {
+        rows.push(pairwiseRow(stage, metric, from, to, select(fromSummary), select(toSummary)));
+      }
+    }
+  }
+  return rows;
+}
+
+interface BaselineMetricSpec {
+  readonly metric: string;
+  readonly stage: 'a2' | 'b';
+  readonly pick: (condition: ConditionSummary) => number | null;
+}
+
+/** A2/B metrics compared against the `no-memory` baseline. */
+const BASELINE_METRICS: readonly BaselineMetricSpec[] = [
+  { metric: 'a2.judgeScoreMean', stage: 'a2', pick: c => c.a2?.judgeScoreMean ?? null },
+  { metric: 'a2.f1Mean', stage: 'a2', pick: c => c.a2?.f1Mean ?? null },
+  { metric: 'a2.correctAbstentions', stage: 'a2', pick: c => c.a2?.correctAbstentions ?? null },
+  { metric: 'a2.memoryCalls', stage: 'a2', pick: c => c.a2?.memoryCalls ?? null },
+  { metric: 'b.taskSuccessRate', stage: 'b', pick: c => c.b?.taskSuccess.rate ?? null },
+  { metric: 'b.memoryCalls', stage: 'b', pick: c => c.b?.memoryCalls ?? null },
+  { metric: 'b.costUsd', stage: 'b', pick: c => c.b?.costUsd ?? null },
+];
+
+/** Legacy fixed `{no-memory, mind-v9, mind-v10}` view (kept for compatibility). */
 function buildTriples(conditions: Record<string, ConditionSummary>): TripleMetric[] {
-  const noMemoryA2 = conditions['no-memory']?.a2 ?? null;
-  const noMemoryB = conditions['no-memory']?.b ?? null;
-  const v9A2 = conditions['mind-v9']?.a2 ?? null;
-  const v10A2 = conditions['mind-v10']?.a2 ?? null;
-  const v9B = conditions['mind-v9']?.b ?? null;
-  const v10B = conditions['mind-v10']?.b ?? null;
+  const noMemory = conditions['no-memory'] ?? null;
+  const v9 = conditions['mind-v9'] ?? null;
+  const v10 = conditions['mind-v10'] ?? null;
 
   const rows: TripleMetric[] = [];
-  const add = (
-    metric: string,
-    noMemory: number | null,
-    mindV9: number | null,
-    mindV10: number | null
-  ) => {
-    if (noMemory === null && mindV9 === null && mindV10 === null) return;
-    rows.push({ metric, noMemory, mindV9, mindV10 });
-  };
-  add(
-    'a2.judgeScoreMean',
-    noMemoryA2?.judgeScoreMean ?? null,
-    v9A2?.judgeScoreMean ?? null,
-    v10A2?.judgeScoreMean ?? null
-  );
-  add('a2.f1Mean', noMemoryA2?.f1Mean ?? null, v9A2?.f1Mean ?? null, v10A2?.f1Mean ?? null);
-  add(
-    'a2.correctAbstentions',
-    noMemoryA2?.correctAbstentions ?? null,
-    v9A2?.correctAbstentions ?? null,
-    v10A2?.correctAbstentions ?? null
-  );
-  add(
-    'a2.memoryCalls',
-    noMemoryA2?.memoryCalls ?? null,
-    v9A2?.memoryCalls ?? null,
-    v10A2?.memoryCalls ?? null
-  );
-  add(
-    'b.taskSuccessRate',
-    noMemoryB?.taskSuccess.rate ?? null,
-    v9B?.taskSuccess.rate ?? null,
-    v10B?.taskSuccess.rate ?? null
-  );
-  add(
-    'b.memoryCalls',
-    noMemoryB?.memoryCalls ?? null,
-    v9B?.memoryCalls ?? null,
-    v10B?.memoryCalls ?? null
-  );
-  add('b.costUsd', noMemoryB?.costUsd ?? null, v9B?.costUsd ?? null, v10B?.costUsd ?? null);
+  for (const { metric, pick } of BASELINE_METRICS) {
+    const noMemoryValue = noMemory ? pick(noMemory) : null;
+    const mindV9 = v9 ? pick(v9) : null;
+    const mindV10 = v10 ? pick(v10) : null;
+    if (noMemoryValue === null && mindV9 === null && mindV10 === null) continue;
+    rows.push({ metric, noMemory: noMemoryValue, mindV9, mindV10 });
+  }
+  return rows;
+}
+
+/**
+ * Condition-keyed baseline view for every measured Mind condition. The row is
+ * emitted only when the baseline or at least one measured Mind condition has a
+ * value; conditions without the relevant stage artifact are omitted.
+ */
+function buildConditionComparisons(
+  conditions: Record<string, ConditionSummary>,
+  activeConditions: readonly ConditionId[]
+): ConditionComparisonRow[] {
+  const baseline = conditions['no-memory'] ?? null;
+  const measuredMind = activeConditions.filter(isMindCondition);
+  const rows: ConditionComparisonRow[] = [];
+  for (const { metric, stage, pick } of BASELINE_METRICS) {
+    const values: Partial<Record<ConditionId, number | null>> = {};
+    for (const condition of measuredMind) {
+      const entry = conditions[condition];
+      if (!entry || entry[stage] === null) continue;
+      values[condition] = pick(entry);
+    }
+    const present = Object.keys(values) as ConditionId[];
+    if (present.length === 0) continue;
+    const baselineValue = baseline ? pick(baseline) : null;
+    const hasValue = present.some(condition => values[condition] !== null);
+    if (baselineValue === null && !hasValue) continue;
+    rows.push({ metric, baseline: baselineValue, conditions: values });
+  }
   return rows;
 }
 
@@ -495,12 +585,18 @@ const A2_BASELINE_OVERALL = [
 /**
  * Per-condition deltas against the `no-memory` baseline: overall plus one row
  * per dataset category. Absolute always; relative only when the baseline is a
- * non-zero number. `mind-v9`/`mind-v10` rows only appear when their A2 ran.
+ * non-zero number. Rows appear only for measured Mind conditions, in canonical
+ * order (so historical runs keep their v9/v10 rows and order).
  */
-export function buildA2Baseline(conditions: Record<string, ConditionSummary>): BaselineDelta[] {
+export function buildA2Baseline(
+  conditions: Record<string, ConditionSummary>,
+  activeConditions: readonly ConditionId[] = CONDITIONS.filter(
+    condition => conditions[condition]?.a2 != null
+  )
+): BaselineDelta[] {
   const baseline = conditions['no-memory']?.a2 ?? null;
   const rows: BaselineDelta[] = [];
-  for (const condition of ['mind-v9', 'mind-v10'] as const) {
+  for (const condition of activeConditions.filter(isMindCondition)) {
     const value = conditions[condition]?.a2 ?? null;
     if (!value) continue;
     for (const [metric, pick] of A2_BASELINE_OVERALL) {
@@ -550,7 +646,25 @@ export interface AggregateInput {
   readonly missing: readonly string[];
 }
 
+/**
+ * Conditions that produced at least one result artifact, in canonical order.
+ * Selection metadata is intentionally ignored: a condition merely requested by
+ * a run (or recorded in `meta.activeConditions`) is not active until it has an
+ * artifact.
+ */
+export function deriveActiveConditions(
+  input: Pick<AggregateInput, 'a1' | 'a2' | 'b'>
+): ConditionId[] {
+  return CONDITIONS.filter(
+    condition =>
+      input.a1[condition] !== undefined ||
+      input.a2[condition] !== undefined ||
+      input.b[condition] !== undefined
+  );
+}
+
 export function buildSummary(input: AggregateInput): RunSummary {
+  const activeConditions = deriveActiveConditions(input);
   const conditions: Record<string, ConditionSummary> = {};
   for (const condition of CONDITIONS) {
     const a1 = input.a1[condition];
@@ -571,13 +685,20 @@ export function buildSummary(input: AggregateInput): RunSummary {
     a2: diffSeries(A2_DIFF_METRICS, v9.a2, v10.a2),
     b: diffSeries(B_DIFF_METRICS, v9.b, v10.b),
     mindVsNoMemory: buildTriples(conditions),
-    a2Baseline: buildA2Baseline(conditions),
+    mindVsNoMemoryByCondition: buildConditionComparisons(conditions, activeConditions),
+    a2Baseline: buildA2Baseline(conditions, activeConditions),
+    pairwise: [
+      ...pairwiseSeries('a1', A1_DIFF_METRICS, conditions, entry => entry.a1),
+      ...pairwiseSeries('a2', A2_DIFF_METRICS, conditions, entry => entry.a2),
+      ...pairwiseSeries('b', B_DIFF_METRICS, conditions, entry => entry.b),
+    ],
   };
 
   const notes = [...input.missing].map(label => `${label}: not_run`);
   return {
     runId: input.runId,
     meta: input.meta,
+    activeConditions,
     conditions,
     diffs,
     missingStages: input.missing,
@@ -640,16 +761,38 @@ function fmt(value: number | null, digits = 3): string {
   return value === null ? 'n/a' : value.toFixed(digits);
 }
 
+// Pre-00014 reports always listed the historical comparison set, including
+// explicit `n/a` rows for conditions that did not run. Keep that layout for a
+// run that never measured `mind-current` so existing reports are unchanged.
+const HISTORICAL_A1_CONDITIONS = ['mind-v9', 'mind-v10'] as const;
+const HISTORICAL_A2_B_CONDITIONS = ['no-memory', 'mind-v9', 'mind-v10'] as const;
+
+/**
+ * Conditions to render for one stage. A run that measured the current checkout
+ * shows only the conditions with an artifact for that stage; a historical-only
+ * run keeps the legacy fixed layout.
+ */
+function tableConditionIds(summary: RunSummary, stage: 'a1' | 'a2' | 'b'): readonly ConditionId[] {
+  if (!summary.activeConditions.includes('mind-current')) {
+    return stage === 'a1' ? HISTORICAL_A1_CONDITIONS : HISTORICAL_A2_B_CONDITIONS;
+  }
+  return summary.activeConditions.filter(condition => {
+    if (stage === 'a1' && !isMindCondition(condition)) return false;
+    return summary.conditions[condition]?.[stage] != null;
+  });
+}
+
 /** Render the comparative A1/A2/B tables as one markdown string. */
 export function renderSummaryTable(summary: RunSummary): string {
   const lines: string[] = [];
   const cond = (id: string) => summary.conditions[id];
 
+  const a1Conditions = tableConditionIds(summary, 'a1');
   lines.push('### A1 retrieval (categories 1–4 pooled)');
   lines.push('');
   lines.push('| condition | hit@5 | hit@10 | recall@10 | MRR | p50 ms | ctx tok@25 |');
   lines.push('| --- | --- | --- | --- | --- | --- | --- |');
-  for (const id of ['mind-v9', 'mind-v10']) {
+  for (const id of a1Conditions) {
     const a1 = cond(id)?.a1;
     lines.push(
       `| ${id} | ${fmt(a1?.cat1To4.hitAt5 ?? null)} | ${fmt(a1?.cat1To4.hitAt10 ?? null)} | ` +
@@ -660,7 +803,7 @@ export function renderSummaryTable(summary: RunSummary): string {
   // Fraction of cat1–4 questions that carry evidence: the pooled hit/recall/MRR
   // means are computed over the evaluable questions only, so the denominator is
   // disclosed next to the values.
-  const evaluable = ['mind-v9', 'mind-v10']
+  const evaluable = a1Conditions
     .map(id => {
       const a1 = cond(id)?.a1;
       if (!a1) return `\`${id}\` n/a`;
@@ -682,7 +825,7 @@ export function renderSummaryTable(summary: RunSummary): string {
     '| condition | n | reps | correct | partial | incorrect | abstention | halluc. | F1 mean | judge mean |'
   );
   lines.push('| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |');
-  for (const id of ['no-memory', 'mind-v9', 'mind-v10']) {
+  for (const id of tableConditionIds(summary, 'a2')) {
     const a2 = cond(id)?.a2;
     if (!a2) {
       lines.push(`| ${id} | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |`);
@@ -702,7 +845,7 @@ export function renderSummaryTable(summary: RunSummary): string {
     '| condition | passed/executed | rate | not run | child sessions | memory calls | cost USD |'
   );
   lines.push('| --- | --- | --- | --- | --- | --- | --- |');
-  for (const id of ['no-memory', 'mind-v9', 'mind-v10']) {
+  for (const id of tableConditionIds(summary, 'b')) {
     const b = cond(id)?.b;
     if (!b) {
       lines.push(`| ${id} | n/a | n/a | n/a | n/a | n/a | n/a |`);

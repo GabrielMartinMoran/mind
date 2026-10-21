@@ -6,11 +6,12 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 
 import { resolveScenariosCredentialEnv, runScenariosCommand } from '../src/benchmarkB/command';
-import type { BSessionExecutor } from '../src/benchmarkB/runner';
-import type { BChildResult } from '../src/benchmarkB/scenario';
+import type { BSessionExecutor, InitMindDbInput } from '../src/benchmarkB/runner';
+import type { BChildResult, BSessionOutcome } from '../src/benchmarkB/scenario';
 import { SCENARIOS } from '../src/benchmarkB/scenarios/registry';
 import { dispatch, parseCliArgs } from '../src/cli';
 import type { CommandRunner } from '../src/exec';
@@ -87,6 +88,43 @@ function fakeExecutor(): BSessionExecutor {
       rawMessages: { data: [] },
     };
   };
+}
+
+function emptyOutcome(scenarioId: string, sessionIndex: number): BSessionOutcome {
+  return {
+    status: 'ok',
+    sessionId: `ses_${scenarioId}_${sessionIndex}`,
+    finalText: '',
+    toolCalls: [],
+    memoryCalls: 0,
+    model: null,
+    tokens: null,
+    costUsd: 0,
+    latencyMs: 0,
+    steps: 0,
+    finish: 'stop',
+    error: null,
+    errorType: null,
+    isolationOk: true,
+    children: [],
+    rawMessages: { data: [] },
+  };
+}
+
+/** Schema-shaped empty DB so B11's assertion can read it without a real engine. */
+async function initEmptyMindDb(input: InitMindDbInput): Promise<void> {
+  mkdirSync(input.dirs.mindDataDir, { recursive: true });
+  const db = new Database(input.dirs.mindDb);
+  db.exec(`
+    CREATE TABLE spaces (id TEXT PRIMARY KEY, name TEXT UNIQUE);
+    CREATE TABLE memories (
+      id TEXT PRIMARY KEY, space_id TEXT, name TEXT, content TEXT,
+      tier INTEGER, pinned INTEGER, changed_at TEXT
+    );
+    CREATE TABLE memory_tags (memory_id TEXT, tag TEXT);
+    CREATE TABLE links (source_id TEXT, target_id TEXT, label TEXT, created_at TEXT);
+  `);
+  db.close();
 }
 
 describe('scenarios CLI parsing', () => {
@@ -203,6 +241,150 @@ describe('runScenariosCommand dry-run', () => {
     for (const result of results.filter(r => r.status === 'not_run')) {
       expect(result.sessions).toHaveLength(0);
     }
+  });
+
+  test('records active conditions and the actual pinned SHA, not the configured ref', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-b-shas-'));
+    const actualSha = '36d2f1e'.padEnd(40, 'a');
+    const runner: CommandRunner = async invocation => ({
+      command: invocation.command,
+      args: invocation.args,
+      stdout:
+        invocation.command === 'git' && invocation.args.includes('rev-parse')
+          ? `${actualSha}\n`
+          : '',
+      stderr: '',
+      exitCode: 0,
+    });
+
+    const code = await runScenariosCommand(
+      {
+        runId: 'run-shas',
+        runsRoot: runDir,
+        workRoot: runDir,
+        conditions: ['no-memory', 'mind-v9'],
+        scenarios: ['b1'],
+        budgetUsd: 5,
+      },
+      {
+        repoRoot: REPO_ROOT,
+        runner,
+        stdout: () => undefined,
+        stderr: () => undefined,
+        executor: fakeExecutor(),
+        credentialEnv: {},
+      }
+    );
+
+    expect(code).toBe(0);
+    const meta = JSON.parse(readFileSync(join(runDir, 'run-shas', 'meta.json'), 'utf8')) as {
+      activeConditions?: string[];
+      shas: { v9: string | null; v10: string | null };
+    };
+    expect(meta.activeConditions).toEqual(['no-memory', 'mind-v9']);
+    expect(meta.shas.v9).toBe(actualSha);
+    expect(meta.shas.v10).toBeNull();
+  });
+
+  test('B11-only with a historical condition prepares no worktree and stays not_run', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-b-b11-v9-'));
+    const commands: string[] = [];
+    const runner: CommandRunner = async invocation => {
+      commands.push(invocation.command);
+      return {
+        command: invocation.command,
+        args: invocation.args,
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+      };
+    };
+
+    const code = await runScenariosCommand(
+      {
+        runId: 'run-b11-v9',
+        runsRoot: runDir,
+        workRoot: runDir,
+        conditions: ['mind-v9'],
+        scenarios: ['b11'],
+        budgetUsd: 5,
+      },
+      {
+        repoRoot: REPO_ROOT,
+        runner,
+        stdout: () => undefined,
+        stderr: () => undefined,
+        credentialEnv: {},
+        executor: async job => {
+          throw new Error(`B11 should not execute: ${job.condition}`);
+        },
+      }
+    );
+
+    expect(code).toBe(0);
+    // No `git worktree add` and no `bun install` for an ineligible condition.
+    expect(commands.filter(command => command === 'git' || command === 'bun')).toEqual([]);
+
+    const results = JSON.parse(
+      readFileSync(join(runDir, 'run-b11-v9', 'results', 'scenarios-mind-v9.json'), 'utf8')
+    ) as { status: string; notRunReason: string | null; sessions: unknown[] }[];
+    expect(results).toHaveLength(1);
+    expect(results[0]!.status).toBe('not_run');
+    expect(results[0]!.notRunReason).toContain('skill-first');
+    expect(results[0]!.sessions).toHaveLength(0);
+  });
+
+  test('B11 with mind-current prepares no historical worktree and is eligible', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-b-b11-current-'));
+    const commands: string[] = [];
+    const runner: CommandRunner = async invocation => {
+      commands.push(invocation.command);
+      return {
+        command: invocation.command,
+        args: invocation.args,
+        stdout: '',
+        stderr: '',
+        exitCode: 0,
+      };
+    };
+    let sessions = 0;
+
+    const code = await runScenariosCommand(
+      {
+        runId: 'run-b11-current',
+        runsRoot: runDir,
+        workRoot: runDir,
+        conditions: ['mind-current'],
+        scenarios: ['b11'],
+        budgetUsd: 5,
+      },
+      {
+        repoRoot: REPO_ROOT,
+        runner,
+        stdout: () => undefined,
+        stderr: () => undefined,
+        credentialEnv: {},
+        executor: async job => {
+          sessions += 1;
+          return emptyOutcome(job.scenarioId, job.sessionIndex);
+        },
+        initMindDb: initEmptyMindDb,
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(sessions).toBe(2);
+    expect(commands.filter(command => command === 'git' || command === 'bun')).toEqual([]);
+
+    const results = JSON.parse(
+      readFileSync(
+        join(runDir, 'run-b11-current', 'results', 'scenarios-mind-current.json'),
+        'utf8'
+      )
+    ) as { notRunReason: string | null; sessions: unknown[] }[];
+    expect(results).toHaveLength(1);
+    expect(results[0]!.notRunReason).toBeNull();
+    expect(results[0]!.sessions).toHaveLength(2);
   });
 
   test('loads the provider credential from the auth store like A2', () => {

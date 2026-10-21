@@ -1,9 +1,10 @@
 # Mind documentation
 
 This index is the entry point for Mind's living documentation. A living page
-describes current behavior and is kept current with the code. Historical reports
-are frozen evidence and live under [`history/`](history/); they are not current
-truth. The maintenance policy is in
+describes current behavior and is kept current with the code. Execution, merge,
+and validation reports belong in `.pas/`, not here. Only exceptional historical
+evidence with durable technical value is retained under `docs/history/`; it is
+frozen and is not current truth. The maintenance policy is in
 [AGENTS.md §6](../AGENTS.md#6-documentation-philosophy-and-maintenance).
 
 ## Memory
@@ -47,7 +48,18 @@ truth. The maintenance policy is in
 - [v1.5.0 release notes](release-notes/v1.5.0.md) — autosync, setup refresh, and
   database migration safety.
 
-## Historical reports
+## Exceptional historical evidence
 
-See [`history/`](history/) for frozen reports grouped by feature; each file
-states its feature, freeze date, and the living page that supersedes it.
+These three reports are retained because they contain durable measurements,
+rejected alternatives, or open research questions that the living pages
+summarize but do not reproduce in full. Each keeps its frozen banner and points
+to the living page that describes current behavior.
+
+- [00004 search optimization report](history/00004-search-optimization/search-optimization-report.md)
+  — measured trigram and fuzzy optimization results, schema v10 decisions, and
+  rejected alternatives.
+- [00005 search next-steps research](history/00005-search-followup/search-next-steps-research.md)
+  — synthetic scalability prototype, admission/false-positive analysis, and
+  deferred search strategies.
+- [00009 memory recall improvement analysis](history/00009-memory-recall-investigation/memory-recall-improvement-analysis.md)
+  — memory recall experiments, embedding cost findings, and write-side gaps.

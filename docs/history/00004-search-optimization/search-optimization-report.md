@@ -15,9 +15,10 @@
   rotulado «dev v11»).
 - **Runtime de medición:** Bun 1.3.14, `bun:sqlite` con SQLite 3.53.0, `MIND_RAG=false`
   en todas las corridas.
-- **Documentos relacionados:** auditoría previa [`search-audit.md`](../00003-search-audit/search-audit.md)
-  (feature `00003`), handoff aprobado [`search-optimization-plan.md`](search-optimization-plan.md),
-  metodología de benchmarks [`search-benchmarks.md`](../../search-benchmarks.md).
+- **Documentos relacionados:** comportamiento vigente en
+  [`search-engine.md`](../../search-engine.md), metodología de benchmarks
+  [`search-benchmarks.md`](../../search-benchmarks.md), e investigación posterior
+  [`search-next-steps-research.md`](../00005-search-followup/search-next-steps-research.md).
 
 ## Etiquetas de evidencia
 
@@ -38,8 +39,10 @@ declara.
 
 ## 1. Problemas identificados
 
-La auditoría `00003-search-audit` dejó tres defectos críticos y varias palancas de
-alto valor sobre este corpus (real, ~4 493 memorias / 86 espacios, schema v9):
+La auditoría previa de búsqueda (feature `00003`, retirada de `docs/`; su contexto
+vigente está en [`search-engine.md`](../../search-engine.md)) dejó tres defectos
+críticos y varias palancas de alto valor sobre este corpus (real, ~4 493 memorias /
+86 espacios, schema v9):
 
 1. **R1 — recall silencioso con acentos.** El índice trigram guardaba el texto **crudo**
    (con diacríticos) mientras las consultas se plegaban con `stripDiacritics`; así, una

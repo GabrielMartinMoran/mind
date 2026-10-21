@@ -6,29 +6,18 @@ import { describe, expect, test } from 'bun:test';
 const ROOT = resolve(import.meta.dir, '..');
 const DOCS = join(ROOT, 'docs');
 const HISTORY = join(DOCS, 'history');
+const RELEASE_NOTES = join(DOCS, 'release-notes');
 
-const LIVE_DOCS = [
-  'agent-integration-matrix.md',
-  'cognitive-memory-lifecycle.md',
-  'search-benchmarks.md',
-  'search-engine.md',
-  'skill-first-distribution.md',
-  'verification-harness.md',
+const ROOT_DOCS = [
+  join(ROOT, 'README.md'),
+  join(ROOT, 'AGENTS.md'),
+  join(ROOT, 'CHANGELOG.md'),
+  join(ROOT, 'benchmarks/agent-memory/README.md'),
 ];
 
-const MOVED_REPORTS = [
-  'search-audit.md',
-  'search-optimization-plan.md',
-  'search-optimization-report.md',
-  'search-optimization-followup.md',
-  'search-next-steps-research.md',
-  'memory-recall-improvement-analysis.md',
-  'cognitive-memory-lifecycle-report.md',
-  'skill-first-distribution-report.md',
-  'merge-readiness-report.md',
-];
-
-const RELEASE_NOTES = ['v1.5.0.md', 'v1.5.1.md', 'v1.6.0.md'];
+/** Temporal report names are not living pages and must not sit in the docs root. */
+const TEMPORAL_NAME =
+  /(?:^|[-_])(?:audit|plan|report|analysis|followup|merge-readiness)(?:[-_.]|$)/i;
 
 function markdownFiles(dir: string): string[] {
   const files: string[] = [];
@@ -38,6 +27,19 @@ function markdownFiles(dir: string): string[] {
     else if (entry.endsWith('.md')) files.push(full);
   }
   return files;
+}
+
+/** Living pages are the root Markdown documents other than the index. */
+function livingDocs(): string[] {
+  return readdirSync(DOCS)
+    .filter(entry => entry.endsWith('.md') && entry !== 'README.md')
+    .sort();
+}
+
+/** Retained historical evidence is whatever remains under docs/history. */
+function retainedReports(): string[] {
+  if (!existsSync(HISTORY)) return [];
+  return markdownFiles(HISTORY).sort();
 }
 
 /** Extract markdown link targets, excluding images, URLs, anchors, and mail. */
@@ -86,23 +88,25 @@ function collectLinkFailures(files: string[]): string[] {
 describe('documentation links', () => {
   test('every living doc is linked from docs/README.md', () => {
     const index = readFileSync(join(DOCS, 'README.md'), 'utf8');
-    for (const doc of LIVE_DOCS) {
+    for (const doc of livingDocs()) {
       expect(index, `${doc} missing from docs/README.md`).toContain(`(${doc})`);
     }
   });
 
-  test('living docs and history links resolve', () => {
+  test('every retained historical report is listed in docs/README.md', () => {
+    const index = readFileSync(join(DOCS, 'README.md'), 'utf8');
+    for (const report of retainedReports()) {
+      const target = relative(DOCS, report).split('\\').join('/');
+      expect(index, `${target} missing from docs/README.md`).toContain(`(${target})`);
+    }
+  });
+
+  test('living docs and retained history links resolve', () => {
     expect(collectLinkFailures(markdownFiles(DOCS))).toEqual([]);
   });
 
   test('root documentation links resolve', () => {
-    const files = [
-      join(ROOT, 'README.md'),
-      join(ROOT, 'AGENTS.md'),
-      join(ROOT, 'CHANGELOG.md'),
-      join(ROOT, 'benchmarks/agent-memory/REPORT.md'),
-      join(ROOT, 'benchmarks/agent-memory/README.md'),
-    ];
+    const files = [...ROOT_DOCS, join(ROOT, 'benchmarks/agent-memory/REPORT.md')];
     expect(collectLinkFailures(files)).toEqual([]);
   });
 
@@ -110,40 +114,62 @@ describe('documentation links', () => {
     const absentReport = join(ROOT, 'benchmarks/agent-memory/REPORT.absent-for-test.md');
     expect(existsSync(absentReport)).toBe(false);
     expect(collectLinkFailures([absentReport])).toEqual([]);
-    expect(
-      collectLinkFailures([join(ROOT, 'README.md'), join(ROOT, 'AGENTS.md'), absentReport])
-    ).toEqual([]);
+    expect(collectLinkFailures([...ROOT_DOCS, absentReport])).toEqual([]);
   });
 
-  test('moved history reports carry a frozen banner', () => {
-    const files = markdownFiles(HISTORY);
-    expect(files.length).toBe(MOVED_REPORTS.length);
-    for (const file of files) {
+  test('retained reports carry a frozen banner that points to current behavior', () => {
+    for (const file of retainedReports()) {
       const lines = readFileSync(file, 'utf8').split(/\r?\n/);
       expect(lines[0] ?? '', `${relative(ROOT, file)} banner`).toMatch(
-        /^> \*\*Historical report for feature .+\.\*\* Frozen on 2026-10-20\.$/
+        /^> \*\*Historical report for feature .+\.\*\* Frozen on \d{4}-\d{2}-\d{2}\.$/
       );
-      expect(lines[1] ?? '', `${relative(ROOT, file)} current-behavior line`).toMatch(
-        /^> Current behavior: \[[^\]]+\]\(.+\.md\)\.$/
-      );
+      const current = (lines[1] ?? '').match(/^> Current behavior: \[[^\]]+\]\((.+\.md)\)\.$/);
+      expect(current, `${relative(ROOT, file)} current-behavior line`).not.toBeNull();
+      const target = current?.[1] ?? '';
+      const resolved = resolve(dirname(file), target);
+      expect(
+        resolved.startsWith(HISTORY + '/'),
+        `${relative(ROOT, file)} points into history`
+      ).toBe(false);
+      expect(existsSync(resolved), `${relative(ROOT, file)} -> ${target}`).toBe(true);
     }
   });
 
   test('no temporal report remains in the docs root', () => {
     const rootMarkdown = readdirSync(DOCS)
-      .filter(entry => entry.endsWith('.md'))
+      .filter(entry => entry.endsWith('.md') && entry !== 'README.md')
       .sort();
-    expect(rootMarkdown).toEqual(['README.md', ...LIVE_DOCS].sort());
-    for (const moved of MOVED_REPORTS) {
-      expect(existsSync(join(DOCS, moved)), `${moved} still in docs root`).toBe(false);
+    expect(rootMarkdown.length).toBeGreaterThan(0);
+    for (const entry of rootMarkdown) {
+      expect(entry, `${entry} looks like a temporal report`).not.toMatch(TEMPORAL_NAME);
     }
   });
 
-  test('release notes remain in docs/release-notes', () => {
-    const notes = readdirSync(join(DOCS, 'release-notes'))
-      .filter(entry => entry.endsWith('.md'))
-      .sort();
-    expect(notes).toEqual(RELEASE_NOTES);
+  test('documentation Markdown files are non-empty', () => {
+    const files = [
+      ...ROOT_DOCS,
+      join(DOCS, 'README.md'),
+      ...markdownFiles(DOCS),
+      join(ROOT, 'benchmarks/agent-memory/REPORT.md'),
+    ];
+    for (const file of files) {
+      if (!existsSync(file)) continue;
+      expect(
+        readFileSync(file, 'utf8').trim().length,
+        `${relative(ROOT, file)} is empty`
+      ).toBeGreaterThan(0);
+    }
+  });
+
+  test('release notes exist and are non-empty without a fixed list', () => {
+    const notes = readdirSync(RELEASE_NOTES).filter(entry => entry.endsWith('.md'));
+    expect(notes.length).toBeGreaterThan(0);
+    for (const entry of notes) {
+      expect(
+        readFileSync(join(RELEASE_NOTES, entry), 'utf8').trim().length,
+        `${entry} is empty`
+      ).toBeGreaterThan(0);
+    }
   });
 
   test('AGENTS.md carries the documentation policy without renumbering', () => {
@@ -164,15 +190,18 @@ describe('documentation links', () => {
     expect(policy).toContain('- **Session**');
     expect(policy).toContain('- **Unverified**');
     expect(policy).toContain('- **Not run**');
-    expect(policy).toContain('### Living versus temporal documentation');
     expect(policy).toContain('### Update before you create');
     expect(policyText).toContain('Do not duplicate');
     expect(policyText).toContain('docs/README.md');
-    expect(policyText).toContain('docs/history/<feature>/');
+    expect(policyText).toContain('docs/history/');
     expect(policyText).toContain('docs/release-notes/');
     expect(policyText).toContain('immutable; never move or rewrite them');
     expect(policyText).toContain('src/resources/protocols/mind-cognitive-protocol.md');
-    expect(policy).toContain('### Historical evidence and benchmark reproducibility');
-    expect(policyText).toContain('Benchmark numbers are host-specific');
+    expect(policyText).toContain('.pas/');
+    expect(policyText).toMatch(/durable technical (?:value|evidence)/i);
+    expect(policyText).toMatch(/not an automatic archive/i);
+    expect(policyText).toMatch(/fixed list/i);
+    expect(policyText).toMatch(/host-specific benchmark numbers/i);
+    expect(policyText).toMatch(/no feature is required to produce a permanent report/i);
   });
 });

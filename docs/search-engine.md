@@ -15,11 +15,13 @@ produce the same order.
 1. **Parse.** Quoted phrases, `OR`, `AND`, `NOT`, and a trailing `*` prefix are
    recognized. Adjacent terms are an implicit `AND`. Malformed operator usage
    degrades to a safe literal match and never raises an error.
-2. **Collect candidates in parallel.** Lexical channels run phrase, all-term,
-   and any-term relaxation rungs; a trigram channel handles substrings; a fuzzy
-   channel handles close spellings; LIKE covers terms shorter than a trigram; a
-   token-set channel scores partial multi-word coverage; and an optional
-   semantic channel adds embedding neighbors.
+2. **Collect candidates with a logical fan-out.** The lexical channels are
+   logically independent: phrase, all-term, and any-term relaxation rungs; a
+   trigram channel for substrings; a fuzzy channel for close spellings; LIKE for
+   terms shorter than a trigram; a token-set channel for partial multi-word
+   coverage; and an optional semantic channel for embedding neighbors. They run
+   sequentially on one synchronous SQLite connection, so "fan-out" describes the
+   candidate model, not concurrent execution.
 3. **Admit candidates.** A coverage-based gate removes weak lexical matches.
    Semantic admission is independent for natural-language queries: a single
    group with no `NOT` and only plain terms may admit semantic-only candidates
@@ -32,6 +34,10 @@ produce the same order.
 
 `search_method` remains a compatibility summary (`fts5`, `like`, `trigram`,
 `fuzzy`, `embeddings`, or `mixed`); `methods` is the per-result provenance.
+
+`score` is normalized to the best result of the same query. It is an
+intra-query relative signal and is not comparable across queries. `confidence`
+is a three-level bucket, not a calibrated probability.
 
 ## Storage and schema v10
 
@@ -60,8 +66,14 @@ at most 2. Candidate generation requires a shared three-character prefix
 
 As a result, a typo inside the first three characters of a word is **not**
 recoverable by the fuzzy channel. This is a deliberate cost/recall trade-off,
-not a bug. The vocabulary is folded once per store and cached; every write bumps
-a generation counter that invalidates the cache, so a search never reads a stale
+not a bug. The v2 relevance suite measured first-three-character recall at
+**8.3 % (1/12)**. A prefix-free scan would recover those typos but does not
+scale; the deferred alternatives are listed under
+[Known limits and deferred options](#known-limits-and-deferred-options).
+
+The vocabulary is folded once per store and cached. The cache key combines the
+local write generation with SQLite's `PRAGMA data_version`, so a write from
+another connection or process also invalidates it. A search never reads a stale
 vocabulary.
 
 ## Semantic recall
@@ -75,6 +87,41 @@ With RAG off, the semantic channel is omitted silently and lexical search is
 unaffected. If a query-time embedding request fails, Mind opens an in-memory
 breaker for about five minutes and skips the semantic channel instead of
 retrying on every query.
+
+Semantic recall carries a real cost. In a LoCoMo-based investigation, enabling
+RAG moved p50 latency from **14.3 ms to 767.8 ms (53.8×)** for **+5.6 pp** of
+full evidence@10, with 0 gold items displaced. Those numbers come from one
+corpus on one host; treat them as a caution about the cost/benefit trade-off,
+not as a general performance guarantee. Keep RAG off for interactive use unless
+you have measured the trade-off for your own corpus.
+
+## Known limits and deferred options
+
+Current behavior is bounded by several documented limits. These are not
+promises of future work; they explain why some obvious alternatives are not in
+the engine.
+
+- **Unbounded full-content SQL at scale.** The lexical rungs run `MATCH`
+  without a `LIMIT` and fetch `content` before the coverage filter runs in
+  JavaScript. On a **synthetic 100k prototype corpus**, one `long_nl` query
+  fetched **271,263 rows** and kept **2,934**. That 100k result is synthetic
+  prototype evidence, not a production measurement.
+- **Provenance-blind admission.** The admission predicate evaluates the folded
+  document text but does not receive fuzzy expansions. A term corrected only by
+  the fuzzy channel can therefore fail admission, and a substring host can
+  suppress the relaxed fallback.
+- **Rejected P-D dictionary.** A per-document term dictionary would recover
+  prefix-free typos, but at 50k it added about **255 MB** to the database and
+  ran slower than the current engine, so it was rejected.
+- **Rejected `detail=none`.** The smaller trigram variant breaks queries longer
+  than three characters and requires a JavaScript post-check with 5–8 % false
+  positives. The complexity is not justified.
+- **Deferred prefix-free term trigram.** A trigram index over unique terms
+  restored first-three recall in prototypes but needs a short-token fallback and
+  an invalidation design before it could replace the current scan.
+- **Deferred `d1short` and anchor guards.** Length-dependent distance and a
+  literal anchor reduced function-word noise in prototypes, but they are not
+  part of the current channel.
 
 ## Performance envelope
 

@@ -250,6 +250,9 @@ export function scenarioGateReason(
     if (requirement === 'mind-memory' && !isMind) {
       return `scenario requires a Mind memory condition, but '${condition}' has no Mind database`;
     }
+    if (requirement === 'skill-first' && engineForCondition(condition) !== 'current') {
+      return `scenario requires skill-first activation, which needs the 'mind-current' condition`;
+    }
   }
   return null;
 }

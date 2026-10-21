@@ -1,10 +1,10 @@
-// Normalise `/api/search` payloads from both Mind engines to one shape.
+// Normalise `/api/search` payloads from the Mind engines to one shape.
 //
-// The two engines expose the same endpoint but different score fields:
-// v9 items carry `rank` (its `similarity` is undefined and JSON-dropped when
-// RAG is off); v10 items carry additive `score`/`confidence`/`methods`. The
-// array order is authoritative for ranking in both versions, so it is preserved
-// as `rankPosition`.
+// The engines expose the same endpoint but different score fields: v9 items
+// carry `rank` (its `similarity` is undefined and JSON-dropped when RAG is off);
+// v10 and the current checkout carry additive `score`/`confidence`/`methods`.
+// The array order is authoritative for ranking in every version, so it is
+// preserved as `rankPosition`.
 
 import type { EngineVersion } from '../config';
 
@@ -60,10 +60,10 @@ export function normalizeSearchItems(
       rankPosition: index + 1,
       nativeScoreKind: kind,
       nativeScore: toNativeScore(record, version),
-      ...(version === 'v10' && typeof record.confidence === 'string'
+      ...(version !== 'v9' && typeof record.confidence === 'string'
         ? { confidence: record.confidence }
         : {}),
-      ...(version === 'v10' && methods ? { methods } : {}),
+      ...(version !== 'v9' && methods ? { methods } : {}),
     });
   });
 

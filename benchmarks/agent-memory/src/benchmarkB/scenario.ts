@@ -74,8 +74,18 @@ export interface ScenarioSeedContext {
   readonly run: CommandRunner;
 }
 
-/** Capabilities a scenario needs before it can be executed meaningfully. */
-export type ScenarioRequirement = 'tier-maintenance' | 'semantic-recall' | 'mind-memory';
+/**
+ * Capabilities a scenario needs before it can be executed meaningfully.
+ *
+ * `skill-first` means the current canonical skill-first activation, not merely
+ * any installed skill: only the `mind-current` condition installs and exercises
+ * the product's skill-first setup.
+ */
+export type ScenarioRequirement =
+  | 'tier-maintenance'
+  | 'semantic-recall'
+  | 'mind-memory'
+  | 'skill-first';
 
 export interface ScenarioAssertionResult {
   readonly pass: boolean;

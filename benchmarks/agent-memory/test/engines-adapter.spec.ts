@@ -2,7 +2,35 @@ import { describe, expect, test } from 'bun:test';
 
 import { engineForCondition } from '../src/config';
 import type { MemoryEngine } from '../src/engines/adapter';
-import { createFakeEngine } from '../src/testing/fakes';
+import { createMindCurrentEngine } from '../src/engines/mind-engine';
+import type { MindPaths } from '../src/mind/cli';
+import type { MindServerHandle } from '../src/mind/server';
+import { createFakeEngine, createFakeRunner } from '../src/testing/fakes';
+
+const currentPaths: MindPaths = {
+  dataDir: '/tmp/bench/current',
+  dbPath: '/tmp/bench/current/mind.db',
+  syncRoot: '/tmp/bench/current/syncroot',
+};
+
+function fakeServer(payload: unknown): {
+  startServer: () => Promise<MindServerHandle>;
+  fetchFn: typeof fetch;
+} {
+  const handle: MindServerHandle = {
+    port: 45000,
+    baseUrl: 'http://127.0.0.1:45000',
+    pid: 1234,
+    stderr: () => '',
+    stop: async () => undefined,
+  };
+  const fetchFn = (async () => ({
+    ok: true,
+    status: 200,
+    json: async () => payload,
+  })) as unknown as typeof fetch;
+  return { startServer: async () => handle, fetchFn };
+}
 
 // A conforming engine must implement the full lifecycle contract.
 async function exerciseLifecycle(engine: MemoryEngine): Promise<void> {
@@ -46,9 +74,68 @@ describe('engineForCondition', () => {
     expect(engineForCondition('mind-current')).toBe('current');
   });
 
-  test('default paid conditions stay the three historical conditions', async () => {
+  test('defaults to the current checkout condition', async () => {
     const { DEFAULT_CONDITIONS, CONDITIONS } = await import('../src/config');
-    expect(DEFAULT_CONDITIONS).toEqual(['no-memory', 'mind-v9', 'mind-v10']);
-    expect(CONDITIONS).toContain('mind-current');
+    expect(DEFAULT_CONDITIONS).toEqual(['mind-current']);
+    expect(CONDITIONS).toEqual(['no-memory', 'mind-v9', 'mind-v10', 'mind-current']);
+  });
+});
+
+describe('current Mind engine adapter', () => {
+  test('reports the current identity instead of simulating v10', async () => {
+    const { runner } = createFakeRunner();
+    const { startServer, fetchFn } = fakeServer([]);
+    const engine = createMindCurrentEngine({
+      bin: '/repo/mind',
+      paths: currentPaths,
+      space: 'locomo/conv-26',
+      runner,
+      startServer,
+      fetchFn,
+    });
+
+    expect(engine.id).toBe('mind-current');
+    expect(engine.version).toBe('current');
+  });
+
+  test('uses the current API contract (limit + score fields)', async () => {
+    const { runner } = createFakeRunner();
+    const seenUrls: string[] = [];
+    const handle: MindServerHandle = {
+      port: 45000,
+      baseUrl: 'http://127.0.0.1:45000',
+      pid: 1234,
+      stderr: () => '',
+      stop: async () => undefined,
+    };
+    const fetchFn = (async (url: string) => {
+      seenUrls.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () => [
+          {
+            name: 'D1:1',
+            space_name: 'locomo/conv-26',
+            content: 'alpha',
+            score: 1,
+            confidence: 'high',
+          },
+        ],
+      };
+    }) as unknown as typeof fetch;
+    const engine = createMindCurrentEngine({
+      bin: '/repo/mind',
+      paths: currentPaths,
+      space: 'locomo/conv-26',
+      runner,
+      startServer: async () => handle,
+      fetchFn,
+    });
+
+    const result = await engine.searchRanked('alpha', { limit: 25 });
+    expect(seenUrls[0]).toContain('limit=25');
+    expect(result.rows[0]!.nativeScoreKind).toBe('score');
+    expect(result.rows[0]!.confidence).toBe('high');
   });
 });

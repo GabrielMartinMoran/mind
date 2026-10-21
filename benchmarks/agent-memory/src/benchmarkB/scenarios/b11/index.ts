@@ -6,10 +6,12 @@
 // `mind-management` skill (through the real `mind setup opencode`) before any
 // session, and the isolation gate allows that one skill.
 //
-// This scenario is PAID and gated: it declares `requires: ['mind-memory']` and
-// never runs under `no-memory`. The assertion reads the raw transcripts plus the
-// unit's own Mind database and the workspace artifact. It never grades the
-// agent's prose.
+// This scenario is PAID and gated: it declares
+// `requires: ['mind-memory', 'skill-first']` and never runs under `no-memory`,
+// `mind-v9`, or `mind-v10`; only `mind-current` installs and exercises the
+// canonical skill-first activation. The assertion reads the raw transcripts
+// plus the unit's own Mind database and the workspace artifact. It never grades
+// the agent's prose.
 //
 // Ordering is evaluated PER SESSION over one ordered event stream (assistant
 // tool parts, code-mode nested `state.metadata.toolCalls`, and `type: 'skill'`
@@ -484,7 +486,7 @@ export const B11_SCENARIO: Scenario = {
   id: 'b11',
   title: 'Skill-first activation and pending-work continuity',
   fixture: 'fixtures/b11',
-  requires: ['mind-memory'],
+  requires: ['mind-memory', 'skill-first'],
   allowedSkills: B11_ALLOWED_SKILLS,
   seed: seedB11,
   sessions: [{ prompt: B11_PROMPTS[0]! }, { prompt: B11_PROMPTS[1]! }],

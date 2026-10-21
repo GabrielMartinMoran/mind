@@ -14,8 +14,15 @@ import {
 } from '../src/full';
 import { createFakeRunner } from '../src/testing/fakes';
 
+type StageOptions = { readonly conditions?: readonly string[] };
+
 interface StageSpy {
   readonly order: string[];
+  readonly calls: {
+    locomo?: StageOptions;
+    a2?: StageOptions;
+    scenarios?: StageOptions;
+  };
   readonly stages: NonNullable<FullCommandDeps['stages']>;
 }
 
@@ -28,17 +35,21 @@ function makeStages(
   } = {}
 ): StageSpy {
   const order: string[] = [];
+  const calls: StageSpy['calls'] = {};
   const stages = {
-    locomo: async () => {
+    locomo: async (options: StageOptions) => {
       order.push('locomo');
+      calls.locomo = options;
       return exits.locomo ?? 0;
     },
-    a2: async () => {
+    a2: async (options: StageOptions) => {
       order.push('a2');
+      calls.a2 = options;
       return exits.a2 ?? 0;
     },
-    scenarios: async () => {
+    scenarios: async (options: StageOptions) => {
       order.push('scenarios');
+      calls.scenarios = options;
       return exits.scenarios ?? 0;
     },
     report: async () => {
@@ -46,7 +57,7 @@ function makeStages(
       return exits.report ?? 0;
     },
   } as unknown as NonNullable<FullCommandDeps['stages']>;
-  return { order, stages };
+  return { order, calls, stages };
 }
 
 function makeDeps(stages: NonNullable<FullCommandDeps['stages']>): FullCommandDeps & {
@@ -72,7 +83,7 @@ function makeOptions(overrides: Partial<FullCommandOptions> = {}): FullCommandOp
     runId: 'run-x',
     runsRoot: 'benchmarks/agent-memory/runs',
     workRoot: 'benchmarks/agent-memory/.work',
-    conditions: ['mind-v9', 'mind-v10'],
+    conditions: ['mind-current'],
     subset: 'pilot',
     budgetUsd: null,
     confirm: false,
@@ -145,6 +156,44 @@ describe('runFullCommand gating', () => {
     expect(code).toBe(2);
     expect(order).toEqual([]);
     expect(deps.err.join('\n')).toContain('at least one Mind condition');
+    expect(deps.err.join('\n')).toContain('mind-current');
+  });
+
+  test('accepts mind-current as a Mind condition without any historical condition', async () => {
+    const { order, stages } = makeStages();
+    const deps = makeDeps(stages);
+    const code = await runFullCommand(makeOptions({ conditions: ['mind-current'] }), deps);
+    expect(code).toBe(0);
+    expect(order).toEqual(['locomo', 'report']);
+    expect(deps.out.join('\n')).toContain('no --budget');
+  });
+
+  test('a default paid run passes mind-current to A1, A2 and scenarios', async () => {
+    const { order, calls, stages } = makeStages();
+    const deps = makeDeps(stages);
+    const code = await runFullCommand(makeOptions({ budgetUsd: 5, confirm: true }), deps);
+
+    expect(code).toBe(0);
+    expect(order).toEqual(['locomo', 'a2', 'scenarios', 'report']);
+    expect(calls.locomo?.conditions).toEqual(['mind-current']);
+    expect(calls.a2?.conditions).toEqual(['mind-current']);
+    expect(calls.scenarios?.conditions).toEqual(['mind-current']);
+  });
+
+  test('explicit no-memory,mind-current passes both conditions to A2 and scenarios', async () => {
+    const { order, calls, stages } = makeStages();
+    const deps = makeDeps(stages);
+    const code = await runFullCommand(
+      makeOptions({ conditions: ['no-memory', 'mind-current'], budgetUsd: 5, confirm: true }),
+      deps
+    );
+
+    expect(code).toBe(0);
+    expect(order).toEqual(['locomo', 'a2', 'scenarios', 'report']);
+    // A1 is Mind-only; the paid stages see the merged active-condition set.
+    expect(calls.locomo?.conditions).toEqual(['mind-current']);
+    expect(calls.a2?.conditions).toEqual(['no-memory', 'mind-current']);
+    expect(calls.scenarios?.conditions).toEqual(['no-memory', 'mind-current']);
   });
 
   test('stops without reporting when the free A1 stage fails', async () => {

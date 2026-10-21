@@ -242,10 +242,10 @@ mind help
 ## Search
 
 Mind ships one unified relevance search across the CLI, MCP server, and HTTP
-API. The pipeline parses your query, runs several retrieval channels in
-parallel, and fuses the candidates into a single ranked list. Each result
-carries a confidence bucket so you can judge how strong the match is. For the
-current pipeline, storage, and known limits, see the
+API. The pipeline parses your query, collects candidates through several
+logically independent retrieval channels, and fuses them into a single ranked
+list. Each result carries a confidence bucket so you can judge how strong the
+match is. For the current pipeline, storage, and known limits, see the
 [search engine](docs/search-engine.md) page.
 
 Query grammar:
@@ -714,7 +714,8 @@ and pins Bun 1.3.14. Both jobs run `bun audit --audit-level=high` as a blocking
 gate with no suppression. The root audit currently reports zero advisories; the
 benchmark audit passes at high severity with documented moderate and low
 residuals. See the [documentation index](docs/README.md) for current status and
-the [history](docs/history/) for frozen reports.
+the [exceptional historical evidence](docs/README.md#exceptional-historical-evidence)
+it lists.
 
 ## Maintainers: Releases
 

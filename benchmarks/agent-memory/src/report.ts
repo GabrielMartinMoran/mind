@@ -14,7 +14,7 @@ import { dirname, join } from 'node:path';
 
 import type { A2QuestionResult } from './benchmarkA/judge';
 import type { ScenarioConditionResult } from './benchmarkB/runner';
-import { CONDITIONS, PINNED_VERSIONS, type ConditionId } from './config';
+import { CONDITIONS, PINNED_VERSIONS, isMindCondition, type ConditionId } from './config';
 import { LOCOMO_CATEGORIES, categoryName } from './locomo/types';
 import {
   loadRunSummary,
@@ -164,40 +164,48 @@ const SUCCESS_CLASSES = new Set(['correct', 'correct_abstention']);
 interface ExampleCandidate {
   readonly kind: 'A2' | 'B';
   readonly id: string;
-  readonly noMemory: string;
-  readonly mindV9: string;
-  readonly mindV10: string;
+  /** One label per measured condition, in canonical order. */
+  readonly values: Partial<Record<ConditionId, string>>;
 }
 
-function a2Examples(a2: Partial<Record<ConditionId, A2QuestionResult[]>>): ExampleCandidate[] {
+function mindValues(candidate: ExampleCandidate): string[] {
+  return Object.entries(candidate.values)
+    .filter(([condition]) => condition !== 'no-memory')
+    .map(([, value]) => value);
+}
+
+function a2Examples(
+  a2: Partial<Record<ConditionId, A2QuestionResult[]>>,
+  conditions: readonly ConditionId[]
+): ExampleCandidate[] {
   const byId = new Map<string, Partial<Record<ConditionId, A2QuestionResult>>>();
-  for (const [condition, results] of Object.entries(a2)) {
-    for (const result of results ?? []) {
+  for (const condition of conditions) {
+    for (const result of a2[condition] ?? []) {
       const entry = byId.get(result.id) ?? {};
-      entry[condition as ConditionId] = result;
+      entry[condition] = result;
       byId.set(result.id, entry);
     }
   }
   const out: ExampleCandidate[] = [];
   for (const [id, entry] of [...byId.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    const klass = (c: ConditionId) => entry[c]?.deterministic.klass;
-    out.push({
-      kind: 'A2',
-      id,
-      noMemory: klass('no-memory') ?? 'not_run',
-      mindV9: klass('mind-v9') ?? 'not_run',
-      mindV10: klass('mind-v10') ?? 'not_run',
-    });
+    const values: Partial<Record<ConditionId, string>> = {};
+    for (const condition of conditions) {
+      values[condition] = entry[condition]?.deterministic.klass ?? 'not_run';
+    }
+    out.push({ kind: 'A2', id, values });
   }
   return out;
 }
 
-function bExamples(b: Partial<Record<ConditionId, ScenarioConditionResult[]>>): ExampleCandidate[] {
+function bExamples(
+  b: Partial<Record<ConditionId, ScenarioConditionResult[]>>,
+  conditions: readonly ConditionId[]
+): ExampleCandidate[] {
   const byId = new Map<string, Partial<Record<ConditionId, string>>>();
-  for (const [condition, results] of Object.entries(b)) {
-    for (const result of results ?? []) {
+  for (const condition of conditions) {
+    for (const result of b[condition] ?? []) {
       const entry = byId.get(result.scenarioId) ?? {};
-      entry[condition as ConditionId] =
+      entry[condition] =
         result.status === 'not_run'
           ? `not_run${result.notRunReason ? ` (${result.notRunReason})` : ''}`
           : result.assertion.pass
@@ -208,50 +216,52 @@ function bExamples(b: Partial<Record<ConditionId, ScenarioConditionResult[]>>): 
   }
   const out: ExampleCandidate[] = [];
   for (const [id, entry] of [...byId.entries()].sort((a, b2) => a[0].localeCompare(b2[0]))) {
-    const label = (c: ConditionId) => entry[c] ?? 'not_run';
-    out.push({
-      kind: 'B',
-      id,
-      noMemory: label('no-memory'),
-      mindV9: label('mind-v9'),
-      mindV10: label('mind-v10'),
-    });
+    const values: Partial<Record<ConditionId, string>> = {};
+    for (const condition of conditions) values[condition] = entry[condition] ?? 'not_run';
+    out.push({ kind: 'B', id, values });
   }
   return out;
 }
 
+/** A help/hurt claim requires a measured baseline; otherwise it is not comparable. */
 function isHelp(candidate: ExampleCandidate): boolean {
+  const baseline = candidate.values['no-memory'];
+  if (baseline === undefined) return false;
   if (candidate.kind === 'A2') {
-    const baseline = !SUCCESS_CLASSES.has(candidate.noMemory);
-    const anyMind = SUCCESS_CLASSES.has(candidate.mindV9) || SUCCESS_CLASSES.has(candidate.mindV10);
-    return baseline && anyMind;
+    return (
+      !SUCCESS_CLASSES.has(baseline) && mindValues(candidate).some(v => SUCCESS_CLASSES.has(v))
+    );
   }
-  return (
-    candidate.noMemory === 'fail' && (candidate.mindV9 === 'pass' || candidate.mindV10 === 'pass')
-  );
+  return baseline === 'fail' && mindValues(candidate).some(v => v === 'pass');
 }
 
 function isHurt(candidate: ExampleCandidate): boolean {
+  const baseline = candidate.values['no-memory'];
+  if (baseline === undefined) return false;
   if (candidate.kind === 'A2') {
-    const baseline = SUCCESS_CLASSES.has(candidate.noMemory);
-    const anyMindFail =
-      (candidate.mindV9 !== 'not_run' && !SUCCESS_CLASSES.has(candidate.mindV9)) ||
-      (candidate.mindV10 !== 'not_run' && !SUCCESS_CLASSES.has(candidate.mindV10));
-    return baseline && anyMindFail;
+    return (
+      SUCCESS_CLASSES.has(baseline) &&
+      mindValues(candidate).some(v => v !== 'not_run' && !SUCCESS_CLASSES.has(v))
+    );
   }
-  return (
-    candidate.noMemory === 'pass' && (candidate.mindV9 === 'fail' || candidate.mindV10 === 'fail')
-  );
+  return baseline === 'pass' && mindValues(candidate).some(v => v === 'fail');
 }
 
-function renderCandidates(candidates: readonly ExampleCandidate[], max = 10): string {
+function renderCandidates(
+  candidates: readonly ExampleCandidate[],
+  conditions: readonly ConditionId[],
+  max = 10
+): string {
   if (candidates.length === 0) return '_Sin candidatos automáticos en esta corrida._';
   const lines = [
-    '| benchmark | id | no-memory | mind-v9 | mind-v10 |',
-    '| --- | --- | --- | --- | --- |',
+    `| benchmark | id | ${conditions.join(' | ')} |`,
+    `| --- | --- | ${conditions.map(() => '---').join(' | ')} |`,
     ...candidates
       .slice(0, max)
-      .map(c => `| ${c.kind} | ${c.id} | ${c.noMemory} | ${c.mindV9} | ${c.mindV10} |`),
+      .map(
+        c =>
+          `| ${c.kind} | ${c.id} | ${conditions.map(id => c.values[id] ?? 'not_run').join(' | ')} |`
+      ),
   ];
   if (candidates.length > max) lines.push(`\n_… y ${candidates.length - max} más._`);
   return lines.join('\n');
@@ -259,13 +269,37 @@ function renderCandidates(candidates: readonly ExampleCandidate[], max = 10): st
 
 // ── Sections ─────────────────────────────────────────────────────────────────
 
-function section6(summary: RunSummary): string {
+function isCurrentActive(summary: RunSummary): boolean {
+  return summary.activeConditions.includes('mind-current');
+}
+
+function measuredMindConditions(summary: RunSummary): ConditionId[] {
+  return summary.activeConditions.filter(isMindCondition);
+}
+
+/** Both historical Mind conditions ran, so the v9↔v10 comparison is measurable. */
+function hasV9V10Comparison(summary: RunSummary): boolean {
+  return (
+    summary.activeConditions.includes('mind-v9') && summary.activeConditions.includes('mind-v10')
+  );
+}
+
+/** At least one measured Mind condition has a real `no-memory` baseline delta. */
+function hasBaselineDelta(summary: RunSummary): boolean {
+  return (
+    summary.activeConditions.includes('no-memory') &&
+    summary.diffs.a2Baseline.some(row => row.baseline !== null)
+  );
+}
+
+/** The legacy v9→v10 diff, rendered only when both historical sides ran. */
+function renderLegacyDiff(summary: RunSummary): string {
   const diffs = [
     ['A1', summary.diffs.a1],
     ['A2', summary.diffs.a2],
     ['B', summary.diffs.b],
   ] as const;
-  const lines = [renderSummaryTable(summary), '', '### Diffs v9 → v10 (absoluto / relativo)', ''];
+  const lines = ['### Diffs v9 → v10 (absoluto / relativo)', ''];
   for (const [label, rows] of diffs) {
     lines.push(`**${label}**`, '');
     if (rows.length === 0) {
@@ -281,16 +315,92 @@ function section6(summary: RunSummary): string {
     }
     lines.push('');
   }
-  if (summary.diffs.mindVsNoMemory.length > 0) {
-    lines.push('### Mind vs sin memoria', '');
-    lines.push('| metric | no-memory | mind-v9 | mind-v10 |', '| --- | --- | --- | --- |');
-    for (const row of summary.diffs.mindVsNoMemory) {
-      lines.push(
-        `| ${row.metric} | ${fmt(row.noMemory)} | ${fmt(row.mindV9)} | ${fmt(row.mindV10)} |`
-      );
-    }
-    lines.push('');
+  return lines.join('\n');
+}
+
+/** Measured-only from→to comparisons between Mind conditions. */
+function renderPairwise(summary: RunSummary): string {
+  const rows = summary.diffs.pairwise;
+  const heading = '### Comparaciones entre condiciones medidas `[CALCULADO]`';
+  if (rows.length === 0) {
+    // A measured `no-memory` baseline is still a comparison; only the
+    // pairwise Mind-vs-Mind comparison is absent in that case.
+    return (
+      `${heading}\n\n` +
+      (hasBaselineDelta(summary)
+        ? '_No se seleccionó una comparación pairwise entre condiciones Mind; se muestra el ' +
+          'baseline `no-memory`._'
+        : '_No se seleccionó una comparación entre condiciones; el informe es absoluto para las ' +
+          'condiciones medidas._')
+    );
   }
+  const lines = [
+    heading,
+    '',
+    '`abs = to − from`; `rel` sólo cuando `from` es distinto de 0.',
+    '',
+    '| stage | metric | from → to | from | to | abs | rel |',
+    '| --- | --- | --- | --- | --- | --- | --- |',
+  ];
+  for (const row of rows) {
+    lines.push(
+      `| ${row.stage.toUpperCase()} | ${row.metric} | ${row.from} → ${row.to} | ` +
+        `${fmt(row.fromValue)} | ${fmt(row.toValue)} | ${fmtSigned(row.absolute)} | ` +
+        `${row.relative === null ? 'n/a' : fmtPct(row.relative)} |`
+    );
+  }
+  return lines.join('\n');
+}
+
+/** Condition-keyed Mind-vs-baseline table for the conditions that ran. */
+function renderBaselineComparison(summary: RunSummary): string {
+  if (!summary.activeConditions.includes('no-memory')) return '';
+  const conditions = measuredMindConditions(summary);
+  if (conditions.length === 0) return '';
+  const rows = summary.diffs.mindVsNoMemoryByCondition;
+  if (rows.length === 0) return '';
+  const lines = [
+    '### Mind vs sin memoria (condiciones medidas) `[CALCULADO]`',
+    '',
+    `| metric | no-memory | ${conditions.join(' | ')} |`,
+    `| --- | --- | ${conditions.map(() => '---').join(' | ')} |`,
+  ];
+  for (const row of rows) {
+    lines.push(
+      `| ${row.metric} | ${fmt(row.baseline)} | ` +
+        `${conditions.map(condition => fmt(row.conditions[condition] ?? null)).join(' | ')} |`
+    );
+  }
+  return lines.join('\n');
+}
+
+function section6(summary: RunSummary): string {
+  const lines = [renderSummaryTable(summary), ''];
+  const hasLegacyDiff =
+    summary.diffs.a1.length > 0 || summary.diffs.a2.length > 0 || summary.diffs.b.length > 0;
+
+  if (!isCurrentActive(summary)) {
+    // Historical-only runs keep the pre-00014 report layout unchanged.
+    lines.push(renderLegacyDiff(summary));
+    if (summary.diffs.mindVsNoMemory.length > 0) {
+      lines.push('### Mind vs sin memoria', '');
+      lines.push('| metric | no-memory | mind-v9 | mind-v10 |', '| --- | --- | --- | --- |');
+      for (const row of summary.diffs.mindVsNoMemory) {
+        lines.push(
+          `| ${row.metric} | ${fmt(row.noMemory)} | ${fmt(row.mindV9)} | ${fmt(row.mindV10)} |`
+        );
+      }
+      lines.push('');
+    }
+    lines.push(renderA2ByCategory(summary), '');
+    lines.push(renderBaselineDeltas(summary));
+    return lines.join('\n');
+  }
+
+  if (hasLegacyDiff) lines.push(renderLegacyDiff(summary), '');
+  lines.push(renderPairwise(summary), '');
+  const baseline = renderBaselineComparison(summary);
+  if (baseline) lines.push(baseline, '');
   lines.push(renderA2ByCategory(summary), '');
   lines.push(renderBaselineDeltas(summary));
   return lines.join('\n');
@@ -336,15 +446,15 @@ function section7(
   return lines.join('\n');
 }
 
-function section10(b: Partial<Record<ConditionId, ScenarioConditionResult[]>>): string {
+function section10(
+  b: Partial<Record<ConditionId, ScenarioConditionResult[]>>,
+  conditions: readonly ConditionId[]
+): string {
   const lines: string[] = ['**Uso de subagentes capturado**', ''];
   const rows: string[] = [];
-  for (const condition of CONDITIONS) {
+  for (const condition of conditions) {
     const results = b[condition];
-    if (!results) {
-      rows.push(`| ${condition} | n/a | n/a | n/a |`);
-      continue;
-    }
+    if (!results) continue;
     for (const result of results) {
       if (result.childCount === 0) continue;
       const childMem = result.childResults.reduce((total, child) => total + child.memoryCalls, 0);
@@ -381,7 +491,7 @@ function section11(summary: RunSummary): string {
     '| benchmark | condition | reps | resultado | mem. calls | tokens in | tokens out | cost USD |',
     '| --- | --- | --- | --- | --- | --- | --- | --- |',
   ];
-  for (const condition of CONDITIONS) {
+  for (const condition of summary.activeConditions) {
     const entry = summary.conditions[condition];
     const a2 = entry?.a2;
     lines.push(
@@ -414,7 +524,6 @@ function section11(summary: RunSummary): string {
 const STATIC_LIMITATIONS = [
   'Una sola corrida/sesión por informe: los números provienen de una única pasada de medición (un solo conjunto de repeticiones); no se estima la varianza entre corridas.',
   'El juez usa la misma familia de modelo que el agente medido (sesgo de auto-preferencia posible); se reporta junto al scoring determinista, nunca en su lugar.',
-  'Matiz v9↔v10: el `memory_query` con `search` de v9 usa una cascada FTS5→LIKE→embeddings y el de v10 el pipeline multicanal con fusión; es la comparación pedida, no una simple diferencia de schema.',
   'LoCoMo no tiene categoría de "conocimiento actualizado"; se documenta como hueco del dataset y se cubre con escenarios propios cuando la etapa B se ejecuta.',
   'Los tokens de contexto de A1 son una estimación `ceil(chars/4)` (sin tokenizer), reportada como tal.',
   'La temperatura pedida al proveedor puede no ser respetada; se registra pedida vs efectiva cuando está disponible.',
@@ -457,7 +566,9 @@ function describeRunScope(summary: RunSummary): string[] {
   if (ran.length > 0) {
     facts.push(`Condiciones con A2 ejecutado: ${ran.map(c => `\`${c}\``).join(', ')}.`);
   }
-  if (notRun.length > 0) {
+  // A current run only selected a subset; naming every unselected historical
+  // condition would read like a failed comparison instead of a scope fact.
+  if (notRun.length > 0 && !isCurrentActive(summary)) {
     facts.push(
       `Condiciones sin A2 en esta corrida (\`not_run\`): ${notRun.map(c => `\`${c}\``).join(', ')}.`
     );
@@ -499,7 +610,13 @@ function scopeStatement(summary: RunSummary): string {
 
 function section12(summary: RunSummary): string {
   const lines = ['**Lista documentada (estática)**', ''];
-  for (const item of STATIC_LIMITATIONS) lines.push(`- ${item}`);
+  const limitations = hasV9V10Comparison(summary)
+    ? [
+        ...STATIC_LIMITATIONS,
+        'Matiz v9↔v10: el `memory_query` con `search` de v9 usa una cascada FTS5→LIKE→embeddings y el de v10 el pipeline multicanal con fusión; es la comparación histórica seleccionada, no una simple diferencia de schema.',
+      ]
+    : STATIC_LIMITATIONS;
+  for (const item of limitations) lines.push(`- ${item}`);
   lines.push('', '**Hechos específicos de esta corrida**', '');
   const facts = describeRunScope(summary);
   lines.push(facts.length === 0 ? '- ninguno' : facts.map(f => `- ${f}`).join('\n'));
@@ -508,26 +625,66 @@ function section12(summary: RunSummary): string {
 
 function section13(summary: RunSummary): string {
   const lines: string[] = [];
-  const a1 = summary.diffs.a1;
-  const hit5 = a1.find(row => row.metric === 'hitAt5');
-  const mrr = a1.find(row => row.metric === 'mrr');
-  if (hit5 && hit5.absolute !== null) {
-    lines.push(
-      `- A1 hit@5: ${fmt(hit5.v9)} → ${fmt(hit5.v10)} (${fmtSigned(hit5.absolute)}); ` +
-        `${hit5.absolute > 0 ? 'el pipeline de v10 recupera más evidencia' : hit5.absolute < 0 ? 'v10 recuperó menos evidencia que v9' : 'sin cambio'}.`
-    );
+
+  if (!isCurrentActive(summary)) {
+    const hit5 = summary.diffs.a1.find(row => row.metric === 'hitAt5');
+    const mrr = summary.diffs.a1.find(row => row.metric === 'mrr');
+    if (hit5 && hit5.absolute !== null) {
+      lines.push(
+        `- A1 hit@5: ${fmt(hit5.v9)} → ${fmt(hit5.v10)} (${fmtSigned(hit5.absolute)}); ` +
+          `${hit5.absolute > 0 ? 'el pipeline de v10 recupera más evidencia' : hit5.absolute < 0 ? 'v10 recuperó menos evidencia que v9' : 'sin cambio'}.`
+      );
+    }
+    if (mrr && mrr.absolute !== null && mrr.absolute !== 0) {
+      lines.push(
+        `- A1 MRR cambió ${fmtSigned(mrr.absolute)}; revisar el ranking del canal principal.`
+      );
+    }
+    const a2Judge = summary.diffs.a2.find(row => row.metric === 'judgeScoreMean');
+    if (a2Judge && a2Judge.absolute !== null && a2Judge.absolute !== 0) {
+      lines.push(
+        `- A2 judge score: ${fmt(a2Judge.v9)} → ${fmt(a2Judge.v10)} (${fmtSigned(a2Judge.absolute)}).`
+      );
+    }
+  } else {
+    const pairs = summary.diffs.pairwise;
+    const a1Hits = pairs.filter(pair => pair.stage === 'a1' && pair.metric === 'hitAt5');
+    if (a1Hits.length === 0) {
+      for (const condition of measuredMindConditions(summary)) {
+        const a1 = summary.conditions[condition]?.a1;
+        if (a1) {
+          lines.push(
+            `- A1 \`${condition}\`: hit@5=${fmt(a1.cat1To4.hitAt5)}, MRR=${fmt(a1.cat1To4.mrr)}.`
+          );
+        }
+      }
+    } else {
+      for (const pair of a1Hits) {
+        lines.push(
+          `- A1 hit@5 \`${pair.from}\` → \`${pair.to}\`: ${fmt(pair.fromValue)} → ` +
+            `${fmt(pair.toValue)} (${fmtSigned(pair.absolute)}).`
+        );
+      }
+    }
+    const a2Judges = pairs.filter(pair => pair.stage === 'a2' && pair.metric === 'judgeScoreMean');
+    if (a2Judges.length > 0) {
+      for (const pair of a2Judges) {
+        lines.push(
+          `- A2 judge \`${pair.from}\` → \`${pair.to}\`: ${fmt(pair.fromValue)} → ` +
+            `${fmt(pair.toValue)} (${fmtSigned(pair.absolute)}).`
+        );
+      }
+    } else {
+      for (const condition of measuredMindConditions(summary)) {
+        const a2 = summary.conditions[condition]?.a2;
+        if (a2)
+          lines.push(
+            `- A2 \`${condition}\` judge=${fmt(a2.judgeScoreMean)}, F1=${fmt(a2.f1Mean)}.`
+          );
+      }
+    }
   }
-  if (mrr && mrr.absolute !== null && mrr.absolute !== 0) {
-    lines.push(
-      `- A1 MRR cambió ${fmtSigned(mrr.absolute)}; revisar el ranking del canal principal.`
-    );
-  }
-  const a2Judge = summary.diffs.a2.find(row => row.metric === 'judgeScoreMean');
-  if (a2Judge && a2Judge.absolute !== null && a2Judge.absolute !== 0) {
-    lines.push(
-      `- A2 judge score: ${fmt(a2Judge.v9)} → ${fmt(a2Judge.v10)} (${fmtSigned(a2Judge.absolute)}).`
-    );
-  }
+
   lines.push(
     summary.missingStages.length === 0
       ? '- Revisión cualitativa de esta corrida; ver secciones 7–9 (errores y ejemplos).'
@@ -536,12 +693,28 @@ function section13(summary: RunSummary): string {
   return lines.join('\n');
 }
 
-const CONCLUSION_QUESTIONS = [
-  '¿Mejora v10 respecto de v9?',
-  '¿Aporta Mind frente a no usar memoria?',
-  '¿Qué funciona y qué falla?',
-  '¿Vale el costo y la complejidad?',
-];
+const HISTORICAL_CONCLUSION_QUESTION = '¿Mejora v10 respecto de v9?';
+const ABSOLUTE_CONCLUSION_QUESTION = '¿Cuál es el resultado absoluto de la condición medida?';
+const MEASURED_COMPARISON_QUESTION = '¿Cómo se comparan las condiciones medidas?';
+
+/**
+ * Conclusion #1 only asks the historical v9↔v10 question when both historical
+ * conditions were measured. Otherwise it asks about the measured condition(s),
+ * so a current-only run never implies a comparison that was not selected.
+ */
+function conclusionQuestions(summary: RunSummary): readonly string[] {
+  const first = hasV9V10Comparison(summary)
+    ? HISTORICAL_CONCLUSION_QUESTION
+    : summary.activeConditions.length === 1
+      ? ABSOLUTE_CONCLUSION_QUESTION
+      : MEASURED_COMPARISON_QUESTION;
+  return [
+    first,
+    '¿Aporta Mind frente a no usar memoria?',
+    '¿Qué funciona y qué falla?',
+    '¿Vale el costo y la complejidad?',
+  ];
+}
 
 /**
  * Conclusion #1 lines. When both v9 and v10 ran the comparison is stated; when
@@ -552,6 +725,63 @@ const CONCLUSION_QUESTIONS = [
 function conclusionComparisonLines(summary: RunSummary): string[] {
   const lines: string[] = [];
 
+  if (!isCurrentActive(summary)) {
+    // Historical-only runs keep the pre-00014 wording and comparison.
+    const a1v9 = summary.conditions['mind-v9']?.a1;
+    const a1v10 = summary.conditions['mind-v10']?.a1;
+    if (a1v9 && a1v10) {
+      lines.push(
+        `- A1 hit@5: v9=${fmt(a1v9.cat1To4.hitAt5)} vs v10=${fmt(a1v10.cat1To4.hitAt5)}; ` +
+          `MRR v9=${fmt(a1v9.cat1To4.mrr)} vs v10=${fmt(a1v10.cat1To4.mrr)}.`
+      );
+    } else if (a1v9 || a1v10) {
+      const measured = a1v10
+        ? `\`mind-v10\` hit@5=${fmt(a1v10.cat1To4.hitAt5)}, MRR=${fmt(a1v10.cat1To4.mrr)}`
+        : `\`mind-v9\` hit@5=${fmt(a1v9!.cat1To4.hitAt5)}, MRR=${fmt(a1v9!.cat1To4.mrr)}`;
+      const missing = a1v10 ? 'v9' : 'v10';
+      lines.push(
+        `- A1: comparación v9↔v10 no disponible en esta corrida (${missing} no ejecutó A1); ` +
+          `condición medida: ${measured}.`
+      );
+    } else {
+      lines.push('- A1 no ejecutado.');
+    }
+
+    const a2Diff = summary.diffs.a2.find(row => row.metric === 'judgeScoreMean');
+    if (a2Diff && a2Diff.absolute !== null) {
+      lines.push(
+        `- A2 judge: ${fmt(a2Diff.v9)} → ${fmt(a2Diff.v10)} (${fmtSigned(a2Diff.absolute)}).`
+      );
+      return lines;
+    }
+    const { ran } = a2ConditionSplit(summary);
+    if (ran.length === 0) {
+      lines.push('- A2 no ejecutado (pendiente).');
+      return lines;
+    }
+    const missing = (['mind-v9', 'mind-v10'] as const).filter(
+      condition => !ran.includes(condition)
+    );
+    const measured = ran
+      .map(condition => {
+        const a2 = summary.conditions[condition]?.a2;
+        return a2 ? `\`${condition}\` judge=${fmt(a2.judgeScoreMean)}, F1=${fmt(a2.f1Mean)}` : null;
+      })
+      .filter((value): value is string => value !== null)
+      .join('; ');
+    lines.push(
+      `- A2: comparación v9↔v10 no disponible en esta corrida` +
+        `${missing.length > 0 ? ` (${missing.join(' y ')} no ejecutó A2)` : ''}; ` +
+        `condiciones medidas: ${measured}.`
+    );
+    return lines;
+  }
+
+  const measuredMind = measuredMindConditions(summary);
+  // The no-comparison statement is emitted once for the whole conclusion, not
+  // once per stage.
+  let noComparison = false;
+
   const a1v9 = summary.conditions['mind-v9']?.a1;
   const a1v10 = summary.conditions['mind-v10']?.a1;
   if (a1v9 && a1v10) {
@@ -559,69 +789,122 @@ function conclusionComparisonLines(summary: RunSummary): string[] {
       `- A1 hit@5: v9=${fmt(a1v9.cat1To4.hitAt5)} vs v10=${fmt(a1v10.cat1To4.hitAt5)}; ` +
         `MRR v9=${fmt(a1v9.cat1To4.mrr)} vs v10=${fmt(a1v10.cat1To4.mrr)}.`
     );
-  } else if (a1v9 || a1v10) {
-    const measured = a1v10
-      ? `\`mind-v10\` hit@5=${fmt(a1v10.cat1To4.hitAt5)}, MRR=${fmt(a1v10.cat1To4.mrr)}`
-      : `\`mind-v9\` hit@5=${fmt(a1v9!.cat1To4.hitAt5)}, MRR=${fmt(a1v9!.cat1To4.mrr)}`;
-    const missing = a1v10 ? 'v9' : 'v10';
-    lines.push(
-      `- A1: comparación v9↔v10 no disponible en esta corrida (${missing} no ejecutó A1); ` +
-        `condición medida: ${measured}.`
-    );
   } else {
-    lines.push('- A1 no ejecutado.');
+    const measuredA1 = measuredMind.filter(condition => summary.conditions[condition]?.a1);
+    if (measuredA1.length === 0) {
+      lines.push('- A1 no ejecutado.');
+    } else {
+      for (const condition of measuredA1) {
+        const a1 = summary.conditions[condition]!.a1!;
+        lines.push(
+          `- A1 \`${condition}\`: hit@5=${fmt(a1.cat1To4.hitAt5)}, MRR=${fmt(a1.cat1To4.mrr)}.`
+        );
+      }
+      const a1Pairs = summary.diffs.pairwise.filter(
+        pair => pair.stage === 'a1' && pair.metric === 'hitAt5'
+      );
+      if (a1Pairs.length === 0) noComparison = true;
+    }
   }
 
-  const a2Diff = summary.diffs.a2.find(row => row.metric === 'judgeScoreMean');
-  if (a2Diff && a2Diff.absolute !== null) {
+  const a2v9 = summary.conditions['mind-v9']?.a2;
+  const a2v10 = summary.conditions['mind-v10']?.a2;
+  if (a2v9 && a2v10) {
     lines.push(
-      `- A2 judge: ${fmt(a2Diff.v9)} → ${fmt(a2Diff.v10)} (${fmtSigned(a2Diff.absolute)}).`
+      `- A2 judge: ${fmt(a2v9.judgeScoreMean)} → ${fmt(a2v10.judgeScoreMean)} ` +
+        `(${fmtSigned(a2v10.judgeScoreMean !== null && a2v9.judgeScoreMean !== null ? a2v10.judgeScoreMean - a2v9.judgeScoreMean : null)}).`
     );
-    return lines;
+  } else {
+    const measuredA2 = measuredMind.filter(condition => summary.conditions[condition]?.a2);
+    if (measuredA2.length === 0) {
+      lines.push('- A2 no ejecutado (pendiente).');
+    } else {
+      let hasBaselineComparison = false;
+      for (const condition of measuredA2) {
+        const a2 = summary.conditions[condition]!.a2!;
+        const baseline = summary.diffs.a2Baseline.find(
+          row =>
+            row.condition === condition &&
+            row.scope === 'overall' &&
+            row.metric === 'judgeScoreMean'
+        );
+        const baseText =
+          baseline && baseline.baseline !== null
+            ? `; no-memory=${fmt(baseline.baseline)} (abs ${fmtSigned(baseline.absolute)})`
+            : '';
+        if (baseline && baseline.baseline !== null) hasBaselineComparison = true;
+        lines.push(
+          `- A2 \`${condition}\`: judge=${fmt(a2.judgeScoreMean)}, F1=${fmt(a2.f1Mean)}${baseText}.`
+        );
+      }
+      if (measuredA2.length === 1 && !hasBaselineComparison) noComparison = true;
+    }
   }
-  const { ran } = a2ConditionSplit(summary);
-  if (ran.length === 0) {
-    lines.push('- A2 no ejecutado (pendiente).');
-    return lines;
+
+  if (noComparison) {
+    lines.push(
+      hasBaselineDelta(summary)
+        ? '- No se seleccionó una comparación pairwise entre condiciones Mind; se muestra el baseline `no-memory`.'
+        : '- No se seleccionó una comparación entre condiciones en esta corrida.'
+    );
   }
-  const missing = (['mind-v9', 'mind-v10'] as const).filter(condition => !ran.includes(condition));
-  const measured = ran
-    .map(condition => {
-      const a2 = summary.conditions[condition]?.a2;
-      return a2 ? `\`${condition}\` judge=${fmt(a2.judgeScoreMean)}, F1=${fmt(a2.f1Mean)}` : null;
-    })
-    .filter((value): value is string => value !== null)
-    .join('; ');
-  lines.push(
-    `- A2: comparación v9↔v10 no disponible en esta corrida` +
-      `${missing.length > 0 ? ` (${missing.join(' y ')} no ejecutó A2)` : ''}; ` +
-      `condiciones medidas: ${measured}.`
-  );
   return lines;
+}
+
+function conclusionMemoryLines(summary: RunSummary): string[] {
+  if (!isCurrentActive(summary)) {
+    if (summary.diffs.mindVsNoMemory.length === 0) {
+      return [
+        '- Sin datos comparables (A2/B no ejecutados); **pendiente de revisión cualitativa**.',
+      ];
+    }
+    return summary.diffs.mindVsNoMemory.map(
+      row =>
+        `- ${row.metric}: no-memory=${fmt(row.noMemory)}, v9=${fmt(row.mindV9)}, v10=${fmt(row.mindV10)}.`
+    );
+  }
+
+  if (!summary.activeConditions.includes('no-memory')) {
+    return [
+      '- Sin baseline `no-memory` medido en esta corrida; no se compara Mind contra no usar memoria.',
+    ];
+  }
+  const rows = summary.diffs.mindVsNoMemoryByCondition.filter(row => row.baseline !== null);
+  if (rows.length === 0) {
+    return ['- Sin datos comparables (A2/B no ejecutados); **pendiente de revisión cualitativa**.'];
+  }
+  const conditions = measuredMindConditions(summary);
+  return rows.flatMap(row =>
+    conditions
+      .filter(condition => row.conditions[condition] !== undefined)
+      .map(
+        condition =>
+          `- ${row.metric}: no-memory=${fmt(row.baseline)}, ${condition}=${fmt(row.conditions[condition] ?? null)}.`
+      )
+  );
+}
+
+function conclusionCostLines(summary: RunSummary): string[] {
+  const conditions = measuredMindConditions(summary);
+  if (conditions.length === 0) {
+    return ['- Costo registrado: n/a (sin condiciones Mind medidas).'];
+  }
+  return conditions.map(condition => {
+    const a2Cost = summary.conditions[condition]?.a2?.costUsd ?? null;
+    const bCost = summary.conditions[condition]?.b?.costUsd ?? null;
+    return `- Costo registrado \`${condition}\`: A2=\`${fmt(a2Cost, 4)}\` USD, B=\`${fmt(bCost, 4)}\` USD.`;
+  });
 }
 
 function conclusions(summary: RunSummary): string {
   const lines: string[] = [];
+  const questions = conclusionQuestions(summary);
   const lines1 = conclusionComparisonLines(summary);
-  lines.push(`### 1. ${CONCLUSION_QUESTIONS[0]}`, '', ...lines1, '');
+  lines.push(`### 1. ${questions[0]}`, '', ...lines1, '');
 
-  const triples = summary.diffs.mindVsNoMemory;
-  lines.push(`### 2. ${CONCLUSION_QUESTIONS[1]}`, '');
-  if (triples.length === 0) {
-    lines.push(
-      '- Sin datos comparables (A2/B no ejecutados); **pendiente de revisión cualitativa**.',
-      ''
-    );
-  } else {
-    for (const row of triples) {
-      lines.push(
-        `- ${row.metric}: no-memory=${fmt(row.noMemory)}, v9=${fmt(row.mindV9)}, v10=${fmt(row.mindV10)}.`
-      );
-    }
-    lines.push('');
-  }
+  lines.push(`### 2. ${questions[1]}`, '', ...conclusionMemoryLines(summary), '');
 
-  lines.push(`### 3. ${CONCLUSION_QUESTIONS[2]}`, '');
+  lines.push(`### 3. ${questions[2]}`, '');
   const failures = summary.missingStages.length;
   lines.push(
     `- Etapas faltantes: ${failures === 0 ? 'ninguna' : summary.missingStages.join(', ')}.`,
@@ -629,11 +912,10 @@ function conclusions(summary: RunSummary): string {
     ''
   );
 
-  lines.push(`### 4. ${CONCLUSION_QUESTIONS[3]}`, '');
-  const a2Cost = summary.conditions['mind-v10']?.a2?.costUsd;
-  const bCost = summary.conditions['mind-v10']?.b?.costUsd;
   lines.push(
-    `- Costo registrado: A2 v10=${fmt(a2Cost ?? null, 4)} USD, B v10=${fmt(bCost ?? null, 4)} USD.`,
+    `### 4. ${questions[3]}`,
+    '',
+    ...conclusionCostLines(summary),
     '- Relación calidad/costo por resultado: revisión cualitativa de esta única corrida (secciones 7–9); no hay estimación de varianza entre corridas.'
   );
   return lines.join('\n');
@@ -651,6 +933,16 @@ function formatDate(iso: string): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** Home paths are never emitted raw (the report is fail-closed on secrets). */
+function displayPath(path: string | null | undefined): string {
+  if (!path) return 'n/a';
+  return path.replace(/^\/(?:home|Users)\/[^/]+/, '~');
+}
+
+function dirtyLabel(dirty: boolean | null | undefined): string {
+  return dirty === null || dirty === undefined ? 'n/a' : dirty ? 'sí' : 'no';
+}
+
 /** Repo-style header metadata block (cf. docs/search-engine.md). */
 function renderHeader(summary: RunSummary): string {
   const meta = summary.meta;
@@ -658,12 +950,7 @@ function renderHeader(summary: RunSummary): string {
     meta.budget.spentUsd > 0 || Object.values(summary.conditions).some(entry => entry.a2 !== null);
   const estado = paid ? 'corrida medida (A1 + A2)' : 'corrida gratuita (A1 / sin prompts pagos)';
   const datasetSubset = `${meta.subset.conversation} · ${meta.subset.count} preguntas · seed ${meta.subset.seed}`;
-  const v9Entry = summary.conditions['mind-v9'];
-  const v9Ran = Boolean(v9Entry && (v9Entry.a1 || v9Entry.a2 || v9Entry.b));
-  const v9Label = v9Ran
-    ? `- **SHA v9 (main, ejecutado):** \`${meta.shas.v9 ?? 'n/a'}\``
-    : `- **SHA v9 (referencia, no ejecutado en esta corrida):** \`${meta.shas.v9 ?? 'n/a'}\``;
-  return [
+  const lines = [
     '# Informe técnico — Benchmark de memoria para agentes (00008)',
     '',
     `- **Feature:** \`00008-agent-memory-benchmark\``,
@@ -674,11 +961,37 @@ function renderHeader(summary: RunSummary): string {
     `- **Runtime:** Bun \`${meta.versions.bun ?? 'n/a'}\` · OpenCode \`${meta.versions.opencode ?? 'n/a'}\` · SDK \`${meta.versions.sdk ?? 'n/a'}\``,
     `- **Proveedor / Modelo:** \`${meta.model.providerID}\` / \`${meta.model.id}\` (variant \`${meta.model.variant ?? 'default'}\`)`,
     `- **Precios:** costos reales por corrida registrados en la sección 11. \`[MEDIDO]\``,
-    `- **SHA v10 (develop):** \`${meta.shas.v10 ?? 'n/a'}\``,
-    v9Label,
+  ];
+
+  if (isCurrentActive(summary)) {
+    const current = meta.current;
+    lines.push(
+      `- **Checkout actual:** rama \`${current?.branch ?? 'n/a'}\` · HEAD \`${current?.headSha ?? 'n/a'}\` · dirty: ${dirtyLabel(current?.dirty)}`,
+      `- **Versión / schema actuales:** paquete \`${current?.packageVersion ?? 'n/a'}\` · schema \`${current?.schemaVersion ?? 'n/a'}\` · binario \`${displayPath(current?.mindBinary)}\``
+    );
+    for (const condition of ['mind-v9', 'mind-v10'] as const) {
+      if (!summary.activeConditions.includes(condition)) continue;
+      const label = condition === 'mind-v9' ? 'v9 (main, ejecutado)' : 'v10 (develop, ejecutado)';
+      lines.push(
+        `- **SHA ${label}:** \`${meta.shas[condition === 'mind-v9' ? 'v9' : 'v10'] ?? 'n/a'}\``
+      );
+    }
+  } else {
+    const v9Entry = summary.conditions['mind-v9'];
+    const v9Ran = Boolean(v9Entry && (v9Entry.a1 || v9Entry.a2 || v9Entry.b));
+    lines.push(
+      `- **SHA v10 (develop):** \`${meta.shas.v10 ?? 'n/a'}\``,
+      v9Ran
+        ? `- **SHA v9 (main, ejecutado):** \`${meta.shas.v9 ?? 'n/a'}\``
+        : `- **SHA v9 (referencia, no ejecutado en esta corrida):** \`${meta.shas.v9 ?? 'n/a'}\``
+    );
+  }
+
+  lines.push(
     `- **Dataset:** sha256 \`${meta.dataset.sha256 ?? 'n/a'}\` · subset ${datasetSubset}`,
-    `- **Documentos relacionados:** [\`search-engine.md\`](../../docs/search-engine.md) (comportamiento actual de búsqueda), [\`search-benchmarks.md\`](../../docs/search-benchmarks.md) (metodología), [\`README.md\`](README.md).`,
-  ].join('\n');
+    `- **Documentos relacionados:** [\`search-engine.md\`](../../docs/search-engine.md) (comportamiento actual de búsqueda), [\`search-benchmarks.md\`](../../docs/search-benchmarks.md) (metodología), [\`README.md\`](README.md).`
+  );
+  return lines.join('\n');
 }
 
 const EVIDENCE_LEGEND = [
@@ -698,9 +1011,10 @@ const EVIDENCE_LEGEND = [
 /** Explicit measured-vs-recommendation and cross-protocol comparability note. */
 function renderProtocol(summary: RunSummary): string {
   const meta = summary.meta;
-  const conditions = Object.entries(summary.conditions)
-    .filter(([, entry]) => entry.a2 !== null)
-    .map(([condition, entry]) => `${condition} (${entry.a2!.reps} rep(s))`);
+  const conditions = summary.activeConditions
+    .map(condition => ({ condition, entry: summary.conditions[condition] }))
+    .filter(({ entry }) => entry?.a2 != null)
+    .map(({ condition, entry }) => `${condition} (${entry!.a2!.reps} rep(s))`);
   return [
     '## Protocolo y comparabilidad',
     '',
@@ -718,7 +1032,7 @@ function renderProtocol(summary: RunSummary): string {
     'Los números de este informe corresponden a **este** dataset, modelo, juez y protocolo.',
     '**No deben mezclarse** con cifras publicadas por otros autores (LoCoMo original, otros',
     'harness) salvo que compartan exactamente el mismo subset, modelo, juez y número de',
-    'repeticiones. Las comparaciones v9↔v10 y Mind↔sin-memoria son internas a esta corrida.',
+    'repeticiones. Las comparaciones entre las condiciones medidas son internas a esta corrida.',
     '',
     '**Medido vs recomendación.** Las secciones 6 y 11 son medidas; la sección 13 y las',
     'conclusiones separan hechos medidos de recomendaciones para iteraciones futuras.',
@@ -726,10 +1040,8 @@ function renderProtocol(summary: RunSummary): string {
 }
 
 function renderA2ByCategory(summary: RunSummary): string {
-  const ids: ConditionId[] = [];
-  for (const condition of ['no-memory', 'mind-v10', 'mind-v9'] as const) {
-    if (summary.conditions[condition]?.a2) ids.push(condition);
-  }
+  // Active conditions are already in canonical order.
+  const ids = summary.activeConditions.filter(condition => summary.conditions[condition]?.a2);
   const lines = ['### A2 por categoría `[MEDIDO]`', ''];
   if (ids.length === 0) return `${lines[0]}\n\n_not_run_`;
   lines.push(
@@ -753,6 +1065,14 @@ function renderA2ByCategory(summary: RunSummary): string {
 function renderBaselineDeltas(summary: RunSummary): string {
   const rows = summary.diffs.a2Baseline;
   if (rows.length === 0) return '### Delta vs baseline (no-memory) `[CALCULADO]`\n\n_not_run_';
+  // A current-only run has measured values but no baseline: say so instead of
+  // presenting `n/a` deltas as if a comparison had failed.
+  if (isCurrentActive(summary) && !rows.some(row => row.baseline !== null)) {
+    return (
+      '### Delta vs baseline (no-memory) `[CALCULADO]`\n\n' +
+      '_No se midió el baseline `no-memory` en esta corrida; no se calculan deltas._'
+    );
+  }
   const lines = [
     '### Delta vs baseline (no-memory) `[CALCULADO]`',
     '',
@@ -772,7 +1092,10 @@ function renderBaselineDeltas(summary: RunSummary): string {
 }
 
 /** Per-question appendix: one row per question with the per-condition class mix. */
-function renderPerQuestionAppendix(a2: Partial<Record<ConditionId, A2QuestionResult[]>>): string {
+function renderPerQuestionAppendix(
+  a2: Partial<Record<ConditionId, A2QuestionResult[]>>,
+  activeConditions: readonly ConditionId[]
+): string {
   const byId = new Map<string, Partial<Record<ConditionId, A2QuestionResult[]>>>();
   for (const [condition, results] of Object.entries(a2)) {
     for (const result of results ?? []) {
@@ -784,10 +1107,7 @@ function renderPerQuestionAppendix(a2: Partial<Record<ConditionId, A2QuestionRes
     }
   }
   if (byId.size === 0) return '## Anexo — por pregunta\n\n_not_run_';
-  const ids: ConditionId[] = [];
-  for (const condition of ['no-memory', 'mind-v10', 'mind-v9'] as const) {
-    if (a2[condition]) ids.push(condition);
-  }
+  const ids = activeConditions.filter(condition => a2[condition] !== undefined);
   const lines = [
     '## Anexo — por pregunta `[MEDIDO]`',
     '',
@@ -823,6 +1143,80 @@ function renderPerQuestionAppendix(a2: Partial<Record<ConditionId, A2QuestionRes
 
 // ── Assembly ─────────────────────────────────────────────────────────────────
 
+function conditionDescription(condition: ConditionId): string {
+  switch (condition) {
+    case 'no-memory':
+      return '`no-memory` (baseline sin memoria)';
+    case 'mind-v9':
+      return '`mind-v9` (rama `main`, worktree pinneado)';
+    case 'mind-v10':
+      return '`mind-v10` (rama `develop`, worktree pinneado)';
+    case 'mind-current':
+      return '`mind-current` (checkout actual, sin worktree)';
+  }
+}
+
+function methodologyText(summary: RunSummary): string {
+  const active = summary.activeConditions;
+  if (active.length === 0) return 'No hay condiciones medidas en esta corrida.';
+  return (
+    `Condiciones medidas en esta corrida, sobre el mismo modelo, herramientas y prompts: ` +
+    `${active.map(conditionDescription).join(', ')}.\n` +
+    (isCurrentActive(summary)
+      ? 'El checkout actual se ejecuta in situ; las condiciones históricas seleccionadas, desde worktrees git pinneados.'
+      : 'Cada versión de Mind ejecuta su PROPIO código desde un worktree git pinneado.')
+  );
+}
+
+function mindToolLine(summary: RunSummary): string {
+  const measured = measuredMindConditions(summary);
+  if (measured.length === 0) return '- **Mind**: ninguna condición Mind se midió en esta corrida.';
+  const execution = measured.includes('mind-current')
+    ? 'el checkout actual se ejecuta in situ y las condiciones históricas desde worktrees pinneados'
+    : 'desde worktrees git pinneados';
+  return `- **Mind** (${measured.join(', ')}): ${execution}; la comparación es de motores reales, no de schemas.`;
+}
+
+function versionTable(summary: RunSummary): string {
+  const meta = summary.meta;
+  const lines = ['| dato | valor |', '| --- | --- |', `| run id | \`${summary.runId}\` |`];
+  if (isCurrentActive(summary)) {
+    const current = meta.current;
+    lines.push(
+      `| checkout branch | \`${current?.branch ?? 'n/a'}\` |`,
+      `| checkout HEAD | \`${current?.headSha ?? 'n/a'}\` |`,
+      `| checkout dirty | ${dirtyLabel(current?.dirty)} |`,
+      `| versión del paquete | \`${current?.packageVersion ?? 'n/a'}\` |`,
+      `| binario mind | \`${displayPath(current?.mindBinary)}\` |`,
+      `| schema actual | ${current?.schemaVersion ?? 'n/a'} |`
+    );
+  }
+  for (const condition of ['mind-v9', 'mind-v10'] as const) {
+    if (isCurrentActive(summary) && !summary.activeConditions.includes(condition)) continue;
+    const key = condition === 'mind-v9' ? 'v9' : 'v10';
+    lines.push(
+      `| SHA ${condition} | \`${meta.shas[key] ?? 'n/a'}\` |`,
+      `| schema ${condition} | ${PINNED_VERSIONS[key].schemaVersion} |`
+    );
+  }
+  lines.push(
+    `| OpenCode | ${meta.versions.opencode ?? 'n/a'} |`,
+    `| SDK | ${meta.versions.sdk ?? 'n/a'} |`,
+    `| Bun | ${meta.versions.bun ?? 'n/a'} |`,
+    `| modelo | ${meta.model.providerID}/${meta.model.id} (${meta.model.variant ?? 'default'}) |`,
+    `| dataset | ${meta.dataset.url} |`,
+    `| dataset sha256 | \`${meta.dataset.sha256 ?? 'n/a'}\` |`,
+    `| subset | ${meta.subset.conversation} (seed ${meta.subset.seed}, ${meta.subset.count} preguntas) |`
+  );
+  if (!isCurrentActive(summary)) {
+    lines.push(
+      '',
+      'Nota: los rótulos "v9"/"v10" son los de rama del usuario; el schema real de `main` es 8 y el de `develop` es 10.'
+    );
+  }
+  return lines.join('\n');
+}
+
 export interface GenerateReportInput {
   readonly runDir: string;
 }
@@ -836,6 +1230,13 @@ export function generateReport(input: GenerateReportInput): string {
   const evidence = collectIsolationEvidence(runDir);
   const meta = summary.meta;
   const runId = summary.runId;
+
+  if (summary.activeConditions.length === 0) {
+    throw new Error(
+      `run '${runId}' has no measured conditions: no result artifacts were found under ` +
+        `${join(runDir, 'results')}. Refusing to write an all-n/a report; run a stage first.`
+    );
+  }
 
   const hasA2 = Object.keys(a2).length > 0;
   const hasB = Object.keys(b).length > 0;
@@ -854,7 +1255,8 @@ export function generateReport(input: GenerateReportInput): string {
     : unavailable('Evidencia de aislamiento', runId) +
       '\n\nLas comprobaciones fail-closed (rutas, config efectiva, MCP, sesiones vacías,\nagentes/skills/commands/plugins) se ejecutan antes de cada prompt pago.';
 
-  const candidates = [...a2Examples(a2), ...bExamples(b)];
+  const exampleConditions = summary.activeConditions;
+  const candidates = [...a2Examples(a2, exampleConditions), ...bExamples(b, exampleConditions)];
   const helped = candidates.filter(isHelp);
   const hurt = candidates.filter(isHurt);
 
@@ -871,8 +1273,7 @@ export function generateReport(input: GenerateReportInput): string {
     [
       'Medir si un agente OpenCode real recuerda y usa información — no sólo similitud lexical — con y sin Mind.',
       '',
-      'Tres condiciones sobre el mismo modelo, herramientas y prompts: `no-memory` (baseline), `mind-v9` (rama `main`) y `mind-v10` (rama `develop`).',
-      'Cada versión de Mind ejecuta su PROPIO código desde un worktree git pinneado.',
+      methodologyText(summary),
       '',
       '- **A — LoCoMo** (`conv-26`): A1 retrieval (sin LLM) sobre un subconjunto determinista sembrado, y A2 answering real con scoring determinista (token-F1 / abstención adversarial) más un juez LLM ciego como medida secundaria.',
       '- **B — escenarios**: tareas chicas con fase de producción y fase de necesidad, evaluadas por aserciones sobre el workspace (nunca por la prosa del agente).',
@@ -885,7 +1286,7 @@ export function generateReport(input: GenerateReportInput): string {
   sections.push(
     [
       '- **OpenCode real** vía su SDK oficial (agente, herramientas y MCP reales); sin simular decisiones con llamadas directas al LLM. Un proceso aislado por unidad de medida.',
-      '- **Mind v9/v10** desde worktrees pinneados: la comparación es de motores reales, no de schemas.',
+      mindToolLine(summary),
       '- **LoCoMo** como dataset público de memoria conversacional, descargado en runtime y verificado por sha256 (nunca vendorizado).',
       '- **Scoring determinista primero** (reproducible, sin modelo) y **juez LLM ciego** después (anonimizado y con orden aleatorizado), con cola manual para respuestas no parseables.',
     ].join('\n')
@@ -895,25 +1296,7 @@ export function generateReport(input: GenerateReportInput): string {
   sections.push(isolated);
 
   sections.push(`## 4. Versiones exactas`);
-  sections.push(
-    [
-      '| dato | valor |',
-      '| --- | --- |',
-      `| run id | \`${runId}\` |`,
-      `| v9 (main) SHA | \`${meta.shas.v9 ?? 'n/a'}\` |`,
-      `| v10 (develop) SHA | \`${meta.shas.v10 ?? 'n/a'}\` |`,
-      `| schema v9 / v10 | ${PINNED_VERSIONS.v9.schemaVersion} / ${PINNED_VERSIONS.v10.schemaVersion} |`,
-      `| OpenCode | ${meta.versions.opencode ?? 'n/a'} |`,
-      `| SDK | ${meta.versions.sdk ?? 'n/a'} |`,
-      `| Bun | ${meta.versions.bun ?? 'n/a'} |`,
-      `| modelo | ${meta.model.providerID}/${meta.model.id} (${meta.model.variant ?? 'default'}) |`,
-      `| dataset | ${meta.dataset.url} |`,
-      `| dataset sha256 | \`${meta.dataset.sha256 ?? 'n/a'}\` |`,
-      `| subset | ${meta.subset.conversation} (seed ${meta.subset.seed}, ${meta.subset.count} preguntas) |`,
-      '',
-      'Nota: los rótulos "v9"/"v10" son los de rama del usuario; el schema real de `main` es 8 y el de `develop` es 10.',
-    ].join('\n')
-  );
+  sections.push(versionTable(summary));
 
   sections.push(`## 5. Dataset y escenarios`);
   sections.push(
@@ -935,16 +1318,22 @@ export function generateReport(input: GenerateReportInput): string {
 
   sections.push(`## 8. Ejemplos donde Mind ayudó`);
   sections.push(
-    hasA2 || hasB ? renderCandidates(helped) : unavailable('Candidatos (se requiere A2/B)', runId)
+    hasA2 || hasB
+      ? renderCandidates(helped, exampleConditions)
+      : unavailable('Candidatos (se requiere A2/B)', runId)
   );
 
   sections.push(`## 9. Ejemplos donde no aportó/perjudicó`);
   sections.push(
-    hasA2 || hasB ? renderCandidates(hurt) : unavailable('Candidatos (se requiere A2/B)', runId)
+    hasA2 || hasB
+      ? renderCandidates(hurt, exampleConditions)
+      : unavailable('Candidatos (se requiere A2/B)', runId)
   );
 
   sections.push(`## 10. Análisis de uso de subagentes`);
-  sections.push(hasB ? section10(b) : unavailable('Sesiones de subagente', runId));
+  sections.push(
+    hasB ? section10(b, summary.activeConditions) : unavailable('Sesiones de subagente', runId)
+  );
 
   sections.push(`## 11. Calidad vs costo`);
   sections.push(
@@ -962,7 +1351,7 @@ export function generateReport(input: GenerateReportInput): string {
   sections.push(`## Conclusiones`);
   sections.push(conclusions(summary));
 
-  sections.push(renderPerQuestionAppendix(a2));
+  sections.push(renderPerQuestionAppendix(a2, summary.activeConditions));
 
   const report = `${sections.join('\n\n')}\n`;
   assertNoSecrets(report);

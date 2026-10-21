@@ -213,6 +213,11 @@ describe('loadRunSummary', () => {
     expect(summary.conditions['mind-v10']!.a2).toBeNull();
     expect(summary.missingStages).toContain('a2');
     expect(summary.missingStages).toContain('b');
+    // A run without `mind-current` keeps the pre-00014 historical table layout,
+    // including the explicit `n/a` rows for conditions that did not run.
+    expect(renderSummaryTable(summary)).toContain(
+      '| no-memory | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a | n/a |'
+    );
   });
 
   test('is robust to a run with no result files at all', () => {
@@ -221,6 +226,7 @@ describe('loadRunSummary', () => {
     const summary: RunSummary = loadRunSummary(dir);
     expect(summary.conditions['mind-v10']!.a1).toBeNull();
     expect(summary.diffs.a1).toEqual([]);
+    expect(summary.activeConditions).toEqual([]);
     expect(summary.missingStages).toEqual(['a1', 'a2', 'b']);
   });
 
@@ -240,5 +246,228 @@ describe('A1 bucket passthrough', () => {
   test('keeps null metrics as null (never zero)', () => {
     const summary = aggregateA1(makeA1({ hitAt5: null }));
     expect(summary.cat1To4.hitAt5).toBeNull();
+  });
+});
+
+// ── Active conditions (00014) ────────────────────────────────────────────────
+//
+// A summary must derive its active conditions from the artifacts that actually
+// exist, never from the conditions a run merely selected. The legacy v9↔v10
+// fields stay populated for historical runs; a run that measured only
+// `mind-current` must not invent a historical baseline.
+
+describe('active-condition aggregation', () => {
+  const currentOnlyInput = {
+    runId: 'run-current-only',
+    meta: makeMeta(),
+    a1: {
+      'mind-current': makeA1({
+        hitAt5: 0.75,
+        hitAt10: 0.8,
+        evidenceRecallAt10: 0.7,
+        mrr: 0.6,
+        precisionAt10: 0.4,
+        contextTokensAt25: 500,
+      }),
+    },
+    a2: {
+      'mind-current': [makeA2('mind-current', 'q1', 'correct', { judgeScore: 0.9, f1: 0.8 })],
+    },
+    b: { 'mind-current': [makeScenario('mind-current', 'b1', true, { memoryCalls: 2 })] },
+    missing: [],
+  };
+
+  function section(table: string, from: string, to: string | null): string {
+    const start = table.indexOf(from);
+    const end = to === null ? table.length : table.indexOf(to);
+    return table.slice(start, end);
+  }
+
+  test('derives current-only active conditions from artifacts', () => {
+    const summary = buildSummary(currentOnlyInput);
+    expect(summary.activeConditions).toEqual(['mind-current']);
+    // The legacy record shape still carries every canonical condition as null.
+    expect(summary.conditions['mind-v9']!.a1).toBeNull();
+    expect(summary.conditions['mind-v10']!.a2).toBeNull();
+    expect(summary.conditions['no-memory']!.b).toBeNull();
+  });
+
+  test('renders current in the A1, A2 and B tables without historical rows', () => {
+    const table = renderSummaryTable(buildSummary(currentOnlyInput));
+    const a1 = section(table, '### A1', '### A2');
+    const a2 = section(table, '### A2', '### B');
+    const b = section(table, '### B', null);
+
+    expect(a1).toContain('| mind-current |');
+    expect(a1).not.toContain('mind-v9');
+    expect(a1).not.toContain('mind-v10');
+
+    expect(a2).toContain('| mind-current |');
+    expect(a2).not.toContain('no-memory');
+    expect(a2).not.toContain('mind-v9');
+
+    expect(b).toContain('| mind-current |');
+    expect(b).not.toContain('no-memory');
+    expect(b).not.toContain('mind-v10');
+  });
+
+  test('invents no historical baseline or comparison for a current-only run', () => {
+    const summary = buildSummary(currentOnlyInput);
+    expect(summary.diffs.mindVsNoMemory).toEqual([]);
+    expect(summary.diffs.pairwise).toEqual([]);
+    // Baseline-delta rows may carry the measured current value, but never an
+    // invented baseline and never a historical condition.
+    expect(summary.diffs.a2Baseline.length).toBeGreaterThan(0);
+    for (const row of summary.diffs.a2Baseline) {
+      expect(row.condition).toBe('mind-current');
+      expect(row.baseline).toBeNull();
+      expect(row.absolute).toBeNull();
+      expect(row.relative).toBeNull();
+    }
+    expect(summary.diffs.mindVsNoMemoryByCondition.length).toBeGreaterThan(0);
+    for (const row of summary.diffs.mindVsNoMemoryByCondition) {
+      expect(row.baseline).toBeNull();
+      expect(Object.keys(row.conditions)).toEqual(['mind-current']);
+    }
+  });
+
+  test('measures current-vs-baseline deltas for a no-memory+current run', () => {
+    const summary = buildSummary({
+      runId: 'run-baseline-current',
+      meta: makeMeta(),
+      a1: {},
+      a2: {
+        'no-memory': [
+          makeA2('no-memory', 'q1', 'incorrect', { judgeScore: 0.1, f1: 0.3, memoryCalls: 0 }),
+        ],
+        'mind-current': [
+          makeA2('mind-current', 'q1', 'correct', { judgeScore: 0.9, f1: 0.8, memoryCalls: 2 }),
+        ],
+      },
+      b: {
+        'no-memory': [makeScenario('no-memory', 'b1', false)],
+        'mind-current': [makeScenario('mind-current', 'b1', true, { memoryCalls: 2 })],
+      },
+      missing: [],
+    });
+
+    expect(summary.activeConditions).toEqual(['no-memory', 'mind-current']);
+    const judge = summary.diffs.a2Baseline.find(
+      row =>
+        row.condition === 'mind-current' &&
+        row.scope === 'overall' &&
+        row.metric === 'judgeScoreMean'
+    )!;
+    expect(judge.baseline).toBeCloseTo(0.1, 10);
+    expect(judge.value).toBeCloseTo(0.9, 10);
+    expect(judge.absolute).toBeCloseTo(0.8, 10);
+    expect(judge.relative).toBeCloseTo(8, 10);
+
+    // Baseline deltas only cover the measured Mind condition.
+    expect(summary.diffs.a2Baseline.every(row => row.condition === 'mind-current')).toBe(true);
+
+    const comparison = summary.diffs.mindVsNoMemoryByCondition.find(
+      row => row.metric === 'a2.judgeScoreMean'
+    )!;
+    expect(comparison.baseline).toBeCloseTo(0.1, 10);
+    expect(comparison.conditions['mind-current']).toBeCloseTo(0.9, 10);
+    expect(comparison.conditions['mind-v9']).toBeUndefined();
+    expect(comparison.conditions['mind-v10']).toBeUndefined();
+  });
+
+  test('compares every measured Mind condition in deterministic canonical order', () => {
+    const input = {
+      runId: 'run-three-mind',
+      meta: makeMeta(),
+      a1: {
+        'mind-v9': makeA1({ hitAt5: 0 }),
+        'mind-v10': makeA1({ hitAt5: 0.5 }),
+        'mind-current': makeA1({ hitAt5: 0.75 }),
+      },
+      a2: {
+        'no-memory': [makeA2('no-memory', 'q1', 'incorrect', { judgeScore: 0.1 })],
+        'mind-v9': [makeA2('mind-v9', 'q1', 'partial', { judgeScore: 0.5 })],
+        'mind-v10': [makeA2('mind-v10', 'q1', 'correct', { judgeScore: 0.9 })],
+        'mind-current': [makeA2('mind-current', 'q1', 'correct', { judgeScore: 0.95 })],
+      },
+      b: {
+        'no-memory': [makeScenario('no-memory', 'b1', false)],
+        'mind-v9': [makeScenario('mind-v9', 'b1', true)],
+        'mind-v10': [makeScenario('mind-v10', 'b1', true)],
+        'mind-current': [makeScenario('mind-current', 'b1', true)],
+      },
+      missing: [],
+    };
+    const summary = buildSummary(input);
+
+    expect(summary.activeConditions).toEqual(['no-memory', 'mind-v9', 'mind-v10', 'mind-current']);
+
+    const a1Pairs = summary.diffs.pairwise.filter(
+      pair => pair.stage === 'a1' && pair.metric === 'hitAt5'
+    );
+    expect(a1Pairs.map(pair => `${pair.from}->${pair.to}`)).toEqual([
+      'mind-v9->mind-v10',
+      'mind-v9->mind-current',
+      'mind-v10->mind-current',
+    ]);
+    expect(a1Pairs[0]).toMatchObject({ fromValue: 0, toValue: 0.5, absolute: 0.5, relative: null });
+    expect(a1Pairs[1]).toMatchObject({ fromValue: 0, toValue: 0.75, absolute: 0.75 });
+    expect(a1Pairs[2]!.absolute).toBeCloseTo(0.25, 10);
+    expect(a1Pairs[2]!.relative).toBeCloseTo(0.5, 10);
+
+    // The legacy v9↔v10 comparison is retained untouched.
+    const legacy = summary.diffs.a1.find(row => row.metric === 'hitAt5')!;
+    expect(legacy.v9).toBe(0);
+    expect(legacy.v10).toBe(0.5);
+
+    // A2 and B get deterministic pairwise rows as well, never against the baseline.
+    expect(summary.diffs.pairwise.some(pair => pair.stage === 'a2')).toBe(true);
+    expect(summary.diffs.pairwise.some(pair => pair.stage === 'b')).toBe(true);
+    expect(
+      summary.diffs.pairwise.every(pair => pair.from !== 'no-memory' && pair.to !== 'no-memory')
+    ).toBe(true);
+    expect(buildSummary(input).diffs.pairwise).toEqual(summary.diffs.pairwise);
+  });
+
+  test('keeps the legacy v9/v10/no-memory output unchanged', () => {
+    const legacyInput = {
+      runId: 'run-legacy',
+      meta: makeMeta(),
+      a1: {
+        'mind-v9': makeA1({ hitAt5: 0, mrr: 0 }),
+        'mind-v10': makeA1({ hitAt5: 0.5, mrr: 0.5 }),
+      },
+      a2: {
+        'no-memory': [makeA2('no-memory', 'q1', 'incorrect', { judgeScore: 0.1 })],
+        'mind-v9': [makeA2('mind-v9', 'q1', 'partial', { judgeScore: 0.5 })],
+        'mind-v10': [makeA2('mind-v10', 'q1', 'correct', { judgeScore: 0.9 })],
+      },
+      b: {},
+      missing: ['a1:no-memory', 'b'],
+    };
+    const summary = buildSummary(legacyInput);
+    expect(summary.activeConditions).toEqual(['no-memory', 'mind-v9', 'mind-v10']);
+
+    const table = renderSummaryTable(summary);
+    const a1 = section(table, '### A1', '### A2');
+    const a2 = section(table, '### A2', '### B');
+    expect(a1).toContain('| mind-v9 |');
+    expect(a1).toContain('| mind-v10 |');
+    expect(a1).not.toContain('mind-current');
+    expect(a2).toContain('| no-memory |');
+    expect(a2).toContain('| mind-v9 |');
+    expect(a2).toContain('| mind-v10 |');
+    expect(a2).not.toContain('mind-current');
+
+    // Legacy baseline deltas stay v9/v10-only and in the same order.
+    expect(new Set(summary.diffs.a2Baseline.map(row => row.condition))).toEqual(
+      new Set(['mind-v9', 'mind-v10'])
+    );
+    // Legacy pairwise data is exactly the v9→v10 comparison.
+    const a1Pairs = summary.diffs.pairwise.filter(
+      pair => pair.stage === 'a1' && pair.metric === 'hitAt5'
+    );
+    expect(a1Pairs.map(pair => `${pair.from}->${pair.to}`)).toEqual(['mind-v9->mind-v10']);
+    expect(summary.diffs.mindVsNoMemory.length).toBeGreaterThan(0);
   });
 });

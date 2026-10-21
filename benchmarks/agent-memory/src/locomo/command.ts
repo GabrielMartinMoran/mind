@@ -17,17 +17,19 @@ import {
   type ConditionId,
   type EngineVersion,
 } from '../config';
-import type { MindEngineAdapter } from '../engines/mind-engine';
+import { createMindCurrentEngine, type MindEngineAdapter } from '../engines/mind-engine';
 import { createMindV10Engine } from '../engines/mind-v10';
 import { createMindV9Engine } from '../engines/mind-v9';
 import type { CommandRunner } from '../exec';
-import { ensureWorktree } from '../mind/worktree';
+import { ensureWorktree, readSchemaInfo } from '../mind/worktree';
 import {
   createRunId,
   createRunLayout,
   createRunMeta,
+  readCheckoutProvenance,
   writeRunMeta,
   withStage,
+  type CheckoutProvenance,
   type RunMeta,
 } from '../run';
 import { captureToolVersions } from '../versions';
@@ -53,6 +55,16 @@ export interface LocomoCommandDeps {
   readonly stderr: (line: string) => void;
   /** Injectable for tests; defaults to the real dataset fetcher. */
   readonly fetchDatasetFn?: typeof fetchDataset;
+  /** Injectable for tests; defaults to reading the real checkout. */
+  readonly provenanceFn?: (repoRoot: string, dbPath: string | null) => CheckoutProvenance;
+}
+
+function currentSchemaVersion(dbPath: string): number | null {
+  try {
+    return readSchemaInfo(dbPath).schemaVersion;
+  } catch {
+    return null;
+  }
 }
 
 function createEngine(
@@ -73,7 +85,9 @@ function createEngine(
     cwd: conditionDir,
     runner: deps.runner,
   };
-  return version === 'v9' ? createMindV9Engine(shared) : createMindV10Engine(shared);
+  if (version === 'v9') return createMindV9Engine(shared);
+  if (version === 'current') return createMindCurrentEngine(shared);
+  return createMindV10Engine(shared);
 }
 
 function summarizeA1(a1: A1Result): Record<string, unknown> {
@@ -104,7 +118,10 @@ export async function runLocomoCommand(
     condition => engineForCondition(condition) !== null
   );
   if (mindConditions.length === 0) {
-    deps.stderr('locomo A1 requires at least one Mind condition (mind-v9, mind-v10).');
+    deps.stderr(
+      'locomo A1 requires at least one Mind condition (mind-current by default; ' +
+        'mind-v9 or mind-v10 for historical comparisons).'
+    );
     return 2;
   }
 
@@ -119,6 +136,13 @@ export async function runLocomoCommand(
   const versions = await captureToolVersions(deps.runner, { repoRoot: deps.repoRoot }).catch(
     () => ({ opencode: null, sdk: null, bun: Bun.version })
   );
+  const current =
+    mindConditions.includes('mind-current') && layout.conditions['mind-current']
+      ? (deps.provenanceFn ?? ((root, dbPath) => readCheckoutProvenance(root, { dbPath })))(
+          deps.repoRoot,
+          join(layout.conditions['mind-current'].dir, 'mind.db')
+        )
+      : undefined;
   let meta: RunMeta = createRunMeta({
     layout,
     shas: { v9: null, v10: null },
@@ -128,6 +152,8 @@ export async function runLocomoCommand(
     subset: { seed: DEFAULT_SEED, count: 0, conversation: DEFAULT_CONVERSATION },
     limits: DEFAULT_LIMITS,
     budget: { maxCostUsd: 0, spentUsd: 0 },
+    activeConditions: mindConditions,
+    ...(current ? { current } : {}),
   });
   const save = (next: RunMeta): void => {
     meta = next;
@@ -248,6 +274,18 @@ export async function runLocomoCommand(
         `${condition}: ingest ${ingest.turns} turns in ${Math.round(ingest.ingestMs)}ms ` +
           `(${ingest.msPerTurn.toFixed(1)} ms/turn); verified=${ingest.verification.ok}`
       );
+
+      // The current database only exists after ingest; record its real schema
+      // now so a current run carries the complete provenance block.
+      if (version === 'current' && meta.current && meta.current.schemaVersion === null) {
+        save({
+          ...meta,
+          current: {
+            ...meta.current,
+            schemaVersion: currentSchemaVersion(join(conditionDir, 'mind.db')),
+          },
+        });
+      }
 
       save(withStage(meta, `${condition}:a1`, 'running'));
       const a1 = await runA1(engine, subset.items, { space });

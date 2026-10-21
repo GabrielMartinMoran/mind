@@ -1,7 +1,7 @@
 // Report generator tests — section coverage, injected numbers, the secret
 // scan and determinism, all against handcrafted fixtures.
 
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -142,6 +142,125 @@ describe('section 12 limitations are fact-driven', () => {
     const s12 = report.slice(report.indexOf('## 12.'), report.indexOf('## 13.'));
     expect(s12).toContain('5 preguntas');
     expect(s12).not.toContain('30 preguntas');
+  });
+});
+
+describe('measured-condition reports', () => {
+  function withCurrent(meta = makeMeta()): ReturnType<typeof makeMeta> {
+    return {
+      ...meta,
+      current: {
+        branch: 'feat/test-branch',
+        headSha: 'abc1234',
+        dirty: false,
+        packageVersion: '0.1.0-test',
+        schemaVersion: 10,
+        mindBinary: '/opt/mind/mind',
+      },
+    };
+  }
+
+  test('a no-memory + mind-current run renders measured baseline deltas only', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-report-baseline-'));
+    writeFixtureRun(dir, {
+      meta: withCurrent(),
+      a1: { 'mind-current': makeA1({ hitAt5: 0.6, mrr: 0.35 }) },
+      a2: {
+        'no-memory': [makeA2('no-memory', 'conv-26#1', 'incorrect', { judgeScore: 0.1, f1: 0.3 })],
+        'mind-current': [
+          makeA2('mind-current', 'conv-26#1', 'correct', { judgeScore: 0.9, f1: 0.8 }),
+        ],
+      },
+      b: {
+        'no-memory': [makeScenario('no-memory', 'b1', false)],
+        'mind-current': [makeScenario('mind-current', 'b1', true)],
+      },
+    });
+    const report = generateReport({ runDir: dir });
+    expect(report).toContain('### Delta vs baseline (no-memory)');
+    expect(report).toContain(
+      '| mind-current | overall | judgeScoreMean | 0.100 | 0.900 | +0.800 |'
+    );
+    expect(report).toContain('| a2.judgeScoreMean | 0.100 | 0.900 |');
+    // The baseline is measured, so the report must not deny every comparison:
+    // it only says there is no pairwise Mind-vs-Mind comparison.
+    expect(report).toContain(
+      'No se seleccionó una comparación pairwise entre condiciones Mind; se muestra el baseline `no-memory`.'
+    );
+    expect(report).not.toContain(
+      'No se seleccionó una comparación entre condiciones en esta corrida.'
+    );
+    expect(report).not.toContain('mind-v9');
+    expect(report).not.toContain('mind-v10');
+    expect(report).not.toContain('A1 no ejecutado');
+    // No historical v9↔v10 question or claim when neither side was measured.
+    expect(report).not.toContain('¿Mejora v10 respecto de v9?');
+    expect(report).toContain('¿Cómo se comparan las condiciones medidas?');
+    expect(report).not.toContain('es la comparación pedida');
+    // §6 must not deny every comparison when the measured baseline is shown.
+    const section6 = report.slice(report.indexOf('## 6.'), report.indexOf('## 7.'));
+    expect(section6).toContain(
+      'No se seleccionó una comparación pairwise entre condiciones Mind; se muestra el baseline `no-memory`.'
+    );
+    expect(section6).not.toContain('el informe es absoluto para las condiciones medidas');
+    expect(report).not.toContain('el informe es absoluto para las condiciones medidas');
+  });
+
+  test('v9 + v10 + current renders measured pairwise comparisons and keeps the legacy diff', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-report-pairwise-'));
+    writeFixtureRun(dir, {
+      meta: withCurrent(),
+      a1: {
+        'mind-v9': makeA1({ hitAt5: 0 }),
+        'mind-v10': makeA1({ hitAt5: 0.5 }),
+        'mind-current': makeA1({ hitAt5: 0.75 }),
+      },
+      a2: {
+        'no-memory': [makeA2('no-memory', 'conv-26#1', 'incorrect', { judgeScore: 0.1 })],
+        'mind-v9': [makeA2('mind-v9', 'conv-26#1', 'partial', { judgeScore: 0.5 })],
+        'mind-v10': [makeA2('mind-v10', 'conv-26#1', 'correct', { judgeScore: 0.9 })],
+        'mind-current': [makeA2('mind-current', 'conv-26#1', 'correct', { judgeScore: 0.95 })],
+      },
+      b: {
+        'no-memory': [makeScenario('no-memory', 'b1', false)],
+        'mind-v9': [makeScenario('mind-v9', 'b1', true)],
+        'mind-v10': [makeScenario('mind-v10', 'b1', true)],
+        'mind-current': [makeScenario('mind-current', 'b1', true)],
+      },
+    });
+    const report = generateReport({ runDir: dir });
+    // Measured-only pairwise comparisons in deterministic order.
+    expect(report).toContain('| mind-v9 → mind-v10 |');
+    expect(report).toContain('| mind-v9 → mind-current |');
+    expect(report).toContain('| mind-v10 → mind-current |');
+    // The legacy v9↔v10 diff remains available, with its historical question
+    // and caveat only because both historical conditions were measured.
+    expect(report).toContain('### Diffs v9 → v10');
+    expect(report).toContain('¿Mejora v10 respecto de v9?');
+    expect(report).toContain('comparación histórica seleccionada');
+    // Examples use the active conditions, not a fixed v9/v10/no-memory triple.
+    expect(report).toContain('| benchmark | id | no-memory | mind-v9 | mind-v10 | mind-current |');
+    // Per-question appendix columns follow the active conditions.
+    expect(report).toContain('mind-current (clase/juez)');
+  });
+
+  test('rejects an empty run with an actionable error instead of an all-n/a report', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-report-empty-'));
+    writeFixtureRun(dir, {});
+    expect(() => generateReport({ runDir: dir })).toThrow(/no measured conditions/i);
+  });
+
+  test('runReport fails and writes nothing for an empty run', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'bench-report-empty-repo-'));
+    writeFixtureRun(join(repoRoot, 'runs', 'run-empty'), {});
+    const err: string[] = [];
+    const code = runReport(
+      { runId: 'run-empty', runsRoot: 'runs', outPath: 'REPORT.md' },
+      { repoRoot, stdout: () => undefined, stderr: line => err.push(line) }
+    );
+    expect(code).toBe(1);
+    expect(err.join('\n')).toContain('no measured conditions');
+    expect(existsSync(join(repoRoot, 'REPORT.md'))).toBe(false);
   });
 });
 

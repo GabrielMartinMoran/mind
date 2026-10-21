@@ -13,7 +13,7 @@ import type { CommandRunner } from './exec';
 import { runLocomoCommand } from './locomo/command';
 import type { SubsetName } from './locomo/subset';
 import { runReportCommand } from './report';
-import { createRunId } from './run';
+import { createRunId, mergeActiveConditions } from './run';
 
 export interface FullCommandOptions {
   /** Explicit run id, or null to generate a fresh one shared by every stage. */
@@ -95,8 +95,14 @@ export async function runFullCommand(
   const mindConditions = options.conditions.filter(
     condition => engineForCondition(condition) !== null
   );
+  // A1 is Mind-only, but the paid stages also measure `no-memory`. Merge so no
+  // stage drops a condition that ran in an earlier stage of the same run.
+  const activeConditions = mergeActiveConditions(mindConditions, options.conditions);
   if (mindConditions.length === 0) {
-    deps.stderr('full: A1 requires at least one Mind condition (mind-v9, mind-v10).');
+    deps.stderr(
+      'full: A1 requires at least one Mind condition (mind-current by default; ' +
+        'mind-v9 or mind-v10 for historical comparisons).'
+    );
     return 2;
   }
 
@@ -141,7 +147,7 @@ export async function runFullCommand(
         runId,
         runsRoot: options.runsRoot,
         workRoot: options.workRoot,
-        conditions: options.conditions,
+        conditions: activeConditions,
         budgetUsd: options.budgetUsd,
         reps: options.reps ?? 1,
         judgeOnly: false,
@@ -158,7 +164,7 @@ export async function runFullCommand(
           runId,
           runsRoot: options.runsRoot,
           workRoot: options.workRoot,
-          conditions: options.conditions,
+          conditions: activeConditions,
           scenarios: options.scenarios,
           budgetUsd: options.budgetUsd,
         },

@@ -27,7 +27,14 @@ import {
 import { loadCredentialEnv } from '../opencode/credentials';
 import type { SessionDriver } from '../opencode/driver';
 import { createProcessExecutor } from '../opencode/executor';
-import { readRunMeta, withStage, writeRunMeta, type RunMeta, type StageStatus } from '../run';
+import {
+  mergeActiveConditions,
+  readRunMeta,
+  withStage,
+  writeRunMeta,
+  type RunMeta,
+  type StageStatus,
+} from '../run';
 import { captureToolVersions } from '../versions';
 
 import { runA2, type A2UnitExecutor } from './a2';
@@ -313,6 +320,17 @@ function sourceDatabases(
   return sources;
 }
 
+/** Mind conditions whose ingested database is missing from a prepared run. */
+export function missingPreparedDatabases(
+  runDir: string,
+  conditions: readonly ConditionId[]
+): ConditionId[] {
+  return conditions.filter(
+    condition =>
+      engineForCondition(condition) !== null && !existsSync(join(runDir, condition, 'mind.db'))
+  );
+}
+
 /**
  * Resolve the provider credential env for paid stages. An explicit
  * `deps.credentialEnv` (including `{}`) always wins, so tests never touch the
@@ -356,6 +374,10 @@ export async function runA2Command(
     return 1;
   }
   let meta = readRunMeta(metaPath);
+  meta = {
+    ...meta,
+    activeConditions: mergeActiveConditions(meta.activeConditions, options.conditions),
+  };
   const writer: MetaWriter = {
     set: next => {
       meta = next;
@@ -392,6 +414,21 @@ export async function runA2Command(
   } catch (error) {
     deps.stderr(String(error));
     return 1;
+  }
+
+  // A2 answers from an ingested database. A Mind condition without one must
+  // never run with a null DB: fail closed with the actionable missing list.
+  if (!options.judgeOnly) {
+    const missing = missingPreparedDatabases(runDir, options.conditions);
+    if (missing.length > 0) {
+      const message =
+        `a2: missing prepared Mind database(s) for ${missing.join(', ')}; run the free ` +
+        `locomo A1 stage with the same conditions first (locomo --conditions ` +
+        `${options.conditions.join(',')}).`;
+      writer.update('a2:start', 'failed', message);
+      deps.stderr(message);
+      return 1;
+    }
   }
 
   const budget = new BudgetGuard({ maxCostUsd: options.budgetUsd });

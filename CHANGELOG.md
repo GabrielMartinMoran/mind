@@ -57,10 +57,10 @@ Example:
 - Added `pinned` and `tierTransition` (`promote`/`demote`) to MCP `memory_update`. Updates stay atomic through one `patchMemory` call, an empty update returns the existing memory, and existing calls keep working unchanged.
 - Added `label` and `direction` (`outgoing`/`incoming`) to the linked summaries returned by `memory_read`, and fixed directional resolution so checkpoint recovery no longer includes the checkpoint itself through an incoming link.
 - Added a `references` block of living references to `space_get`, plus bounded T3 previews that report returned count and total availability instead of scanning the whole tier.
-- Added the B5–B10 real-agent scenarios to the benchmark harness (durable writing, relinking, supersession, tier maintenance, cross-session continuity, and semantic recall) with per-scenario RAG control, isolated databases, and `not_run` gating. Results are recorded in `docs/history/00010-cognitive-memory-lifecycle/cognitive-memory-lifecycle-report.md`.
-- Added `docs/cognitive-memory-lifecycle.md` (memory model, tiers, lifecycle, writing, supersession, linking, living references, tool usage) and `docs/history/00010-cognitive-memory-lifecycle/cognitive-memory-lifecycle-report.md` (implementation, tests, and measured B5–B10 validation).
-- Added `docs/skill-first-distribution.md` (single protocol source, complete skill, brief activation, installation model, lifecycle corrections) and `docs/history/00011-skill-first-distribution/skill-first-distribution-report.md` (implementation report with before/after dependencies, test evidence, and unverified behavior).
-- Added `docs/history/00012-merge-readiness/merge-readiness-report.md` with the scoped corrections, files, lockfile/CI changes, checkpoint atomicity guarantees, local test results, and the split between free OpenCode validation and unrun paid B11.
+- Added the B5–B10 real-agent scenarios to the benchmark harness (durable writing, relinking, supersession, tier maintenance, cross-session continuity, and semantic recall) with per-scenario RAG control, isolated databases, and `not_run` gating. Execution evidence remains in `.pas/`; the durable behavior is summarized in `docs/cognitive-memory-lifecycle.md`.
+- Added `docs/cognitive-memory-lifecycle.md` (memory model, tiers, lifecycle, writing, supersession, linking, living references, tool usage).
+- Added `docs/skill-first-distribution.md` (single protocol source, complete skill, brief activation, installation model, lifecycle corrections).
+- Added the scoped merge-readiness corrections, including lockfile/CI changes, checkpoint atomicity guarantees, and the split between free OpenCode validation and unrun paid B11.
 - Added a free, gated OpenCode 2.0.28 skill-discovery integration test (`BENCH_INTEGRATION=1`) covering canonical skill discovery, brief L2 activation, MCP config/handshake, `/api/skill` polling, and the isolation allowlist without a model call.
 - Added a prepared, gated benchmark B11 scenario for skill-first activation and pending-work continuity. It is paid, not run, and its live result remains `not_run`.
 - Added `docs/README.md`, a living documentation index that groups memory, search, agents, development, benchmarks, releases, and historical reports, with a one-sentence answer for each entry.
@@ -98,8 +98,12 @@ Example:
 - Changed the root to Bun-only: `bun.lock` is the only lockfile and the release script no longer reads, writes, or aligns npm-lock versions.
 - Changed OpenCode skill-first status: free discovery/config/handshake is validated on 2.0.28; paid B11 and live model behavior remain unverified.
 - Changed benchmark B11 to verify skill-before-Mind ordering per session instead of in aggregate, accept both `skill` tool calls and `type: 'skill'` messages, reject `system_instructions` after the skill, and fail explicitly when per-session evidence is missing. The paid run is still not executed.
-- Changed the documentation layout into living pages and versioned history: moved nine temporal reports into `docs/history/<feature>/` with frozen banners, fixed cross-links, and redirected the benchmark report generator to the living search page.
+- Changed the documentation layout so living pages are the default: temporal reports were moved into `docs/history/<feature>/` with frozen banners, cross-links were fixed, and the benchmark report generator was redirected to the living search page. A later cleanup retained only exceptional historical evidence and removed the rest after extracting durable conclusions.
+- Changed the documentation policy so `docs/history/` is not an automatic archive: only exceptional evidence with durable technical value is retained, and execution, merge, and validation reports stay in `.pas/`.
+- Changed `docs/README.md` to list the six living pages and the three retained historical reports explicitly.
+- Changed the documentation link tests to enforce invariants (index coverage, banners, non-empty files, relative links, release notes, and policy phrases) instead of a fixed report list and count.
 - Changed the benchmark `REPORT.md` header to link the living search-engine page instead of the frozen optimization report.
+- Changed the agent memory benchmark documentation to describe `mind-current` as the default condition, explicit historical comparisons, current-only B11, nine scenarios, optional historical worktrees, single-condition absolute reports, B10 limitations, and the measured residual benchmark advisories. Corrected the three `AGENTS.md` search-pipeline descriptions from parallel channels to logically independent channels executed sequentially on one synchronous SQLite connection.
 
 ### Fixed
 
@@ -128,6 +132,7 @@ Example:
 
 - Removed `@opencode/sdk` from the root dependencies; it now belongs to the benchmark subproject. Removed the unused `bun-style` dependency; terminal styling uses `ansi-styles`.
 - Removed the stale root `package-lock.json`; `bun.lock` is the only root lockfile. Removed npm-lock handling from `scripts/release.sh` and the matching test fixtures.
+- Removed six temporal historical reports after extracting their durable conclusions into `docs/search-engine.md`, `docs/search-benchmarks.md`, and the existing living pages: the search audit, search optimization plan, search follow-up implementation report, cognitive-memory-lifecycle implementation report, skill-first-distribution implementation report, and merge-readiness report.
 
 ## [1.6.0] - 2026-06-30
 

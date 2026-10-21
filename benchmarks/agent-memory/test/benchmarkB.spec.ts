@@ -1915,6 +1915,46 @@ describe('scenario requirements gating', () => {
     expect(run.results[0]!.notRunReason).toBeNull();
   });
 
+  test('gates a skill-first scenario to mind-current only', () => {
+    const scenario = simpleScenario({ requires: ['skill-first'] });
+    expect(scenarioGateReason(scenario, 'no-memory', {})).toContain('skill-first');
+    expect(scenarioGateReason(scenario, 'mind-v9', {})).toContain('skill-first');
+    expect(scenarioGateReason(scenario, 'mind-v10', {})).toContain('skill-first');
+    expect(scenarioGateReason(scenario, 'mind-current', {})).toBeNull();
+    // B11 keeps the Mind reason first and the current-only reason second.
+    expect(B11_SCENARIO.requires).toEqual(['mind-memory', 'skill-first']);
+    expect(scenarioGateReason(B11_SCENARIO, 'no-memory', {})).toContain('Mind');
+    expect(scenarioGateReason(B11_SCENARIO, 'mind-v9', {})).toContain('mind-current');
+  });
+
+  test('B11 runs only on mind-current; the other three are not_run with zero failures', async () => {
+    const probe: Scenario = {
+      ...B11_SCENARIO,
+      seed: undefined,
+      makeAssertion: () => ({ pass: true, details: ['probe'] }),
+    };
+    const { run } = await runProbe(probe, {
+      conditions: ['no-memory', 'mind-v9', 'mind-v10', 'mind-current'],
+    });
+    const byCondition = Object.fromEntries(run.results.map(result => [result.condition, result]));
+
+    expect(byCondition['no-memory']!.notRunReason).toContain('Mind');
+    for (const condition of ['mind-v9', 'mind-v10'] as const) {
+      const result = byCondition[condition]!;
+      expect(result.status).toBe('not_run');
+      expect(result.notRunReason).toContain('skill-first');
+      expect(result.sessions).toHaveLength(0);
+    }
+    expect(byCondition['mind-current']!.notRunReason).toBeNull();
+    expect(byCondition['mind-current']!.sessions).toHaveLength(2);
+
+    expect(run.aggregates.reduce((total, entry) => total + entry.notRun, 0)).toBe(3);
+    for (const condition of ['no-memory', 'mind-v9', 'mind-v10'] as const) {
+      const aggregate = run.aggregates.find(entry => entry.condition === condition)!;
+      expect(aggregate).toMatchObject({ notRun: 1, failed: 0 });
+    }
+  });
+
   test('gates B5/B6 not_run under no-memory without sessions or failures', async () => {
     let sessionCalls = 0;
     const { run } = await runHarness(['no-memory'], {

@@ -13,13 +13,12 @@
   **NO modificó el motor de producción**: cada prototipo corrió en una copia aislada
   sin `.git` bajo `/tmp/opencode/search-followup/`, y la instrumentación fue aditiva
   y neutral por defecto. La Parte A (schema v10 definitivo + invalidación del caché
-  cross-process) sí está implementada y se documenta por separado en
-  [`search-optimization-followup.md`](search-optimization-followup.md).
+  cross-process) sí está implementada; el comportamiento vigente se describe en
+  [`search-engine.md`](../../search-engine.md).
 - **Documentos relacionados:** informe de la iteración previa
   [`search-optimization-report.md`](../00004-search-optimization/search-optimization-report.md) (feature `00004`),
-  auditoría [`search-audit.md`](../00003-search-audit/search-audit.md) (feature `00003`), metodología de
-  benchmarks [`search-benchmarks.md`](../../search-benchmarks.md), reporte consolidado de
-  Parte B (`.pas/state/active/00005-search-followup/research-report.md`).
+  metodología de benchmarks [`search-benchmarks.md`](../../search-benchmarks.md) y
+  comportamiento vigente [`search-engine.md`](../../search-engine.md).
 
 ## Etiquetas de evidencia
 

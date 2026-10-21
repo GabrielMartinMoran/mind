@@ -98,6 +98,7 @@ Feature: Final security, documentation, and merge readiness
       Given docs/README.md
       When the living documents are enumerated
       Then every living document is linked from the index
+      And every retained historical report is listed separately
       And no historical report is presented as current behavior
 
     @integration
@@ -107,18 +108,20 @@ Feature: Final security, documentation, and merge readiness
       Then every target exists
 
     @contract
-    Scenario: Historical reports are frozen and separated
-      Given a historical report moved to docs/history
+    Scenario: Retained historical evidence is frozen and separated
+      Given a retained historical report under docs/history
       When its header is read
       Then it states that it is historical and frozen
       And it points to the current behavior
 
     @contract
-    Scenario: No temporal report remains in the living docs root
+    Scenario: Temporal reports stay outside versioned living docs
       Given the docs root
-      When implementation, audit, and merge reports are listed
-      Then they live under docs/history
+      When implementation, audit, merge, and validation reports are enumerated
+      Then only exceptional retained evidence lives under docs/history
+      And execution reports live under .pas or are removed
       And release notes remain in docs/release-notes
+      And docs/history is not an automatic archive
 
     @contract
     Scenario: The documentation policy is present in AGENTS.md
@@ -126,6 +129,9 @@ Feature: Final security, documentation, and merge readiness
       When the documentation section is read
       Then it explains living vs temporal documentation
       And it defines the status vocabulary and update-before-create rule
+      And it sends execution, merge, validation, and test reports to .pas
+      And it says no feature is required to produce a permanent report
+      And it says docs/history is not an automatic archive
       And it names the canonical protocol and index
 
     @manual

@@ -66,8 +66,9 @@ bench-agent-memory-probe: ## Run the free T1 platform/isolation probes (no LLM c
 bench-agent-memory-smoke: ## Paid credential smoke (ONE minimal prompt; reads key at runtime)
 	cd benchmarks/agent-memory && bun run smoke
 
-bench-agent-memory-locomo: ## Free LoCoMo A1 retrieval run (no LLM; SUBSET=pilot|full)
-	cd benchmarks/agent-memory && bun run locomo --subset $(if $(SUBSET),$(SUBSET),pilot) --conditions mind-v9,mind-v10
+bench-agent-memory-locomo: ## Free LoCoMo A1 retrieval run (no LLM; SUBSET=pilot|full; CONDITIONS optional)
+	cd benchmarks/agent-memory && bun run locomo --subset $(if $(SUBSET),$(SUBSET),pilot) \
+		$(if $(CONDITIONS),--conditions $(CONDITIONS),)
 
 bench-agent-memory-scenarios: ## Paid agent scenario run (requires --budget; SCENARIOS=b1,b4)
 	cd benchmarks/agent-memory && bun run scenarios \
@@ -83,7 +84,7 @@ bench-agent-memory-answers: ## Paid A2 answering + judge for a prepared run (RUN
 	fi
 	cd benchmarks/agent-memory && bun run locomo --answers \
 		--run-id $(RUN) \
-		--conditions $(if $(CONDITIONS),$(CONDITIONS),no-memory,mind-v10) \
+		$(if $(CONDITIONS),--conditions $(CONDITIONS),) \
 		--reps $(if $(REPS),$(REPS),1) \
 		$(if $(BUDGET),--budget $(BUDGET),) \
 		$(if $(CONFIRM),--confirm,)

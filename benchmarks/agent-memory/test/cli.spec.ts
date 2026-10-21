@@ -35,12 +35,20 @@ function deps(exitCode = 0): DispatchDeps & {
 }
 
 describe('parseCliArgs', () => {
-  test('defaults to help with the standard paths', () => {
+  test('defaults to help, standard paths and the current condition', () => {
     const options = parseCliArgs([]);
     expect(options.command).toBe('help');
     expect(options.runsRoot).toBe('benchmarks/agent-memory/runs');
-    expect(options.conditions.length).toBe(3);
+    expect(options.conditions).toEqual(['mind-current']);
     expect(options.budgetUsd).toBeNull();
+  });
+
+  test('keeps historical and no-memory conditions available explicitly', () => {
+    const historical = parseCliArgs(['locomo', '--conditions', 'mind-v9,mind-v10']);
+    expect(historical.conditions).toEqual(['mind-v9', 'mind-v10']);
+
+    const baseline = parseCliArgs(['locomo', '--condition', 'no-memory']);
+    expect(baseline.conditions).toEqual(['no-memory']);
   });
 
   test('parses every supported flag', () => {

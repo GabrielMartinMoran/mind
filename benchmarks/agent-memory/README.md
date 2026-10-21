@@ -11,17 +11,23 @@ use information — not just lexical similarity.
 > For the cross-block handoff analysis (measured facts, gaps and prioritized
 > experiments), see [`ANALYSIS.md`](ANALYSIS.md).
 
-It compares three conditions on the same model, tools and prompts:
+It compares four conditions on the same model, tools and prompts:
 
-| Condition   | Memory                                                              |
-| ----------- | ------------------------------------------------------------------- |
-| `no-memory` | none (baseline)                                                     |
-| `mind-v9`   | Mind at `main@36d2f1e` (schema 8, pre-multichannel engine)          |
-| `mind-v10`  | Mind at `develop@c7029b3` (schema 10, multichannel search pipeline) |
+| Condition      | Memory                                                                 |
+| -------------- | ---------------------------------------------------------------------- |
+| `mind-current` | the invoking checkout (default)                                        |
+| `no-memory`    | none (baseline, explicit)                                              |
+| `mind-v9`      | Mind at `main@36d2f1e` (schema 8, pre-multichannel engine; explicit)   |
+| `mind-v10`     | Mind at `develop@c7029b3` (schema 10, multichannel pipeline; explicit) |
+
+`mind-current` is the default condition. It runs the checkout you invoke the
+harness from, uses `<repo-root>/mind`, and creates no worktree. Historical
+conditions (`mind-v9`, `mind-v10`) and the `no-memory` baseline are explicit
+options: they are selected only with `--conditions` or `--condition`. Historical
+conditions run their own code from a pinned git worktree.
 
 `v9`/`v10` are the user's branch labels; the report records the real schema
-versions (8 and 10) to avoid confusion. Each version runs its **own** code from
-a pinned git worktree.
+versions (8 and 10) to avoid confusion.
 
 ## What it measures
 
@@ -30,10 +36,11 @@ a pinned git worktree.
     tokens.
   - **A2 answering** (real OpenCode): correct / partial / incorrect /
     abstention / hallucination, memory calls, tokens and cost, latency.
-- **B — agent scenarios**: 8 small scenarios (architectural decision, known
-  bug, decision change, sub-agent transfer, distributed information, absent
-  information, tier maintenance, semantic recall). Evaluated by tests/assertions,
-  never by the agent's prose.
+- **B — agent scenarios**: 9 small scenarios (persistent architectural decision,
+  sub-agent transfer, durable writing, relinking, decision change and
+  supersession, tier maintenance, cross-session continuity, semantic recall,
+  and skill-first activation). Evaluated by tests/assertions, never by the
+  agent's prose.
 
 A and B are always reported separately.
 
@@ -41,9 +48,10 @@ A and B are always reported separately.
 
 - [Bun](https://bun.sh) (repo uses Bun 1.3.x).
 - Install the harness's own dependencies once:
-  `cd benchmarks/agent-memory && bun install`. The subproject owns its
-  `package.json`, `bun.lock`, and `tsconfig.json`; the root `bun install` does
-  not install benchmark dependencies.
+  `cd benchmarks/agent-memory && bun install --frozen-lockfile`. The subproject
+  remains an independent Bun project with its own `package.json`, `bun.lock`,
+  and `tsconfig.json`; the root `bun install` does not install benchmark
+  dependencies.
 - A real OpenCode install (`opencode --version`; the harness is verified against
   **2.0.28**). The pinned SDK (`@opencode/sdk@2.0.28`) is a dependency of this
   benchmark subproject, not of the root package.
@@ -57,8 +65,13 @@ A and B are always reported separately.
 
 ## Isolation (fail-closed)
 
-Every condition runs in its own temporary tree under
+Every condition gets its own isolated run tree under
 `benchmarks/agent-memory/runs/<run-id>/<condition>/`:
+
+- The `mind` binary differs by mode: `mind-current` runs the invoking checkout's
+  `<repo-root>/mind`; historical conditions run the binary from their own pinned
+  worktree. The run tree holds the isolated environment and data, not a copy of
+  the current checkout.
 
 - a private `HOME` and `XDG_{CONFIG,DATA,STATE,CACHE}_HOME`, so OpenCode never
   reads user config/plugins/skills, never reuses the shared background service,
@@ -91,29 +104,37 @@ only through its spawn environment.
 
 ## Budget policy
 
-Paid stages require an explicit `--budget <usd>` cap and refuse to run without
-it. A run aborts immediately when the cap would be crossed.
+Paid CLI stages (`locomo --answers`, `--judge-only`, `scenarios`, and `full`)
+require an explicit `--budget <usd>` cap and refuse to run without it. A run
+aborts immediately when the cap would be crossed. The standalone credential
+smoke probe is separate: it sends one minimal prompt under a documented ≤$0.05
+envelope and does not accept `--budget` or `--confirm`.
 
-| Stage    | Cap                |
-| -------- | ------------------ |
-| smoke    | ≤ $0.05            |
-| pilot    | $5 (approved)      |
-| full run | not yet authorized |
+| Stage    | Cap                 |
+| -------- | ------------------- |
+| smoke    | ≤ $0.05             |
+| pilot    | $5 (approved)       |
+| full run | caller-supplied cap |
 
 ## Commands
 
 Everything below runs from the subproject directory. From the repository root,
 prefix with `cd benchmarks/agent-memory &&`, or use the `make` convenience
-targets (they delegate into the subproject).
+targets (they delegate into the subproject). Install dependencies with the
+frozen lockfile:
 
 ```sh
-cd benchmarks/agent-memory && bun install
+cd benchmarks/agent-memory && bun install --frozen-lockfile
+```
 
+### Free commands
+
+```sh
 # Unit + contract tests (fast; integration skipped)
 bun test test
 bun run test:experiments
 
-# Integration tests (reuses/creates pinned worktrees; no LLM)
+# Integration tests (may create pinned historical worktrees; no LLM)
 BENCH_INTEGRATION=1 bun test test
 
 # Free OpenCode skill-first discovery test (no LLM; skipped without opencode)
@@ -125,87 +146,118 @@ bun run probe
 # Harness CLI (all flags: bun run cli --help)
 bun run cli probe
 bun run cli clean           # remove run dirs
-bun run cli clean --all      # + prepared worktrees
+bun run cli clean --all     # + prepared worktrees and scratch
 
-# Free LoCoMo A1 retrieval run (no LLM, no --budget): downloads the dataset
-# (sha256-pinned), ingests conv-26 into both pinned engines and scores retrieval.
-bun run cli locomo --subset pilot --conditions mind-v9,mind-v10   # 5 questions
-bun run cli locomo --subset full --conditions mind-v9,mind-v10    # 30 questions
+# Free LoCoMo A1 retrieval (no LLM, no --budget). Default: mind-current.
+# Downloads the sha256-pinned dataset, ingests conv-26 into the current engine,
+# and scores retrieval.
+bun run cli locomo --subset pilot   # 5 questions
+bun run cli locomo --subset full    # 30 questions
 
-# Paid LoCoMo A2 answering + judge (require an existing free run + budget/confirm)
+# Free full orchestration: A1 + REPORT only
+bun run full
+```
+
+### Paid commands
+
+Paid CLI stages (`locomo --answers`, `--judge-only`, `scenarios`, and `full`)
+require an explicit `--budget` cap and `--confirm`; without both, paid work is
+refused before sending a prompt. These commands are documented, not executed by
+the free suites.
+
+```sh
+# LoCoMo A2 answering + judge for an existing free run
 bun run cli locomo --answers --run-id <id> --budget 5 --confirm
 bun run cli locomo --judge-only --run-id <id> --budget 5 --confirm
 
-# Paid credential smoke (ONE minimal prompt; reads the key at runtime, writes
-# sanitized evidence to probes/evidence/openrouter-smoke.json)
-bun run smoke
+# Agent scenarios (default: all 9 scenarios under mind-current)
+bun run cli scenarios --budget 5 --confirm
+bun run cli scenarios --scenarios b1,b4 --budget 5 --confirm
 
-# Full orchestration: free A1 always; paid A2+scenarios only with BUDGET; then REPORT
-bun run full                       # free A1 + REPORT only
-bun run full --budget 5 --confirm  # + paid A2 + scenarios + REPORT
+# Full orchestration: free A1 always, then paid A2 + scenarios + REPORT
+bun run full --budget 5 --confirm
 ```
+
+### Standalone credential smoke
+
+`bun run smoke` is not a CLI stage. It runs `probes/smoke-openrouter.ts`, sends
+one minimal prompt, and writes sanitized evidence to
+`probes/evidence/openrouter-smoke.json`. It accepts only `--out <path>` and does
+not take `--budget` or `--confirm`; its documented envelope is one prompt at most
+$0.05.
+
+B5–B9, B10, and B11 are gated by their declared capabilities: under
+`no-memory` they are `not_run` with zero sessions. B10 is also `not_run` without
+RAG and an embedding credential, and B11 is eligible only under `mind-current`
+(see “Benchmark B” below).
+
+### Execution modes and worktrees
+
+- **Default (`mind-current`)** evaluates the invoking checkout. It runs
+  `<repo-root>/mind` and prepares no worktree.
+- **Historical comparison** (`mind-v9`, `mind-v10`) is opt-in through
+  `--conditions`. The harness prepares a pinned worktree for each explicitly
+  selected historical condition and records its actual commit SHA.
+- **`no-memory`** is a baseline and is never selected by default.
+- **B11-only historical selections** prepare no worktree because B11 is
+  ineligible outside `mind-current`.
+- `bun run cli clean --all` removes prepared worktrees and scratch under
+  `.work/`.
 
 From the repository root, the same flows via Makefile convenience targets:
 
 ```sh
 make bench-agent-memory-test
 make bench-agent-memory-probe
-make bench-agent-memory-locomo                 # SUBSET=pilot (default)
+make bench-agent-memory-locomo                  # SUBSET=pilot (default), mind-current
 make bench-agent-memory-locomo SUBSET=full
-make bench-agent-memory-full                       # free A1 + REPORT only
-make bench-agent-memory-full BUDGET=5 CONFIRM=1    # + paid A2 + scenarios + REPORT
-make bench-agent-memory-report RUN=<run-id>        # default benchmarks/agent-memory/REPORT.md
+make bench-agent-memory-full                    # free A1 + REPORT only
+make bench-agent-memory-full BUDGET=5 CONFIRM=1 # + paid A2 + scenarios + REPORT
+make bench-agent-memory-report RUN=<run-id>     # default benchmarks/agent-memory/REPORT.md
 make bench-agent-memory-report RUN=<run-id> OUT=path/to/REPORT.md
 ```
 
-### Pilot run (T7b) — `mind-v10` only
+### Optional historical comparisons
 
-The reduced pilot runs a **single condition** (`mind-v10`, i.e. `develop`), with
-no `no-memory`/`mind-v9` baselines and no benchmark-B scenarios. Run the three
-stages in order; pick a `RUN_ID` (or omit `--run-id` on stage 1 to generate one
-and reuse the printed id).
+Historical conditions remain available for explicit comparisons. These runs
+were not executed for this documentation; paid stages remain manual and
+budget-gated.
 
 ```sh
-# Stage 1 (FREE): worktrees + dataset + ingest + A1 retrieval for mind-v10 only
-bun run cli locomo \
-  --subset pilot --conditions mind-v10 --run-id <RUN_ID>
+# Free A1 for historical engines (prepares their pinned worktrees)
+bun run cli locomo --subset pilot --conditions mind-v9,mind-v10
 
-# Stage 2 (PAID, cap $5): A2 answering + blind judge for mind-v10 only
-bun run cli locomo --answers \
-  --run-id <RUN_ID> --conditions mind-v10 --budget 5 --confirm
+# Paid A2 comparison against the baseline (requires the free run first)
+bun run cli locomo --answers --run-id <RUN_ID> \
+  --conditions no-memory,mind-v9,mind-v10 --budget 5 --confirm
 
-# Stage 3 (FREE): REPORT.md from the run artifacts
+# Paid scenario comparison (B11 is not_run outside mind-current)
+bun run cli scenarios --scenarios b1,b4,b5,b6,b7,b8,b9,b10,b11 \
+  --conditions no-memory,mind-v9,mind-v10 --budget 5 --confirm
+
+# Historical full run (free A1, paid A2/scenarios, report)
+bun run full --conditions no-memory,mind-v9,mind-v10 --budget 5 --confirm
+
+# Report from any run (free)
 bun run cli report --run-id <RUN_ID>
 ```
 
-Artifacts: `benchmarks/agent-memory/runs/<RUN_ID>/{meta.json,subset.json,results/}`,
-the ingested DB at `runs/<RUN_ID>/mind-v10/mind.db`, and
-`benchmarks/agent-memory/REPORT.md`.
-
-> The `make bench-agent-memory-locomo` / `bench-agent-memory-full` targets are
-> wired for the full multi-condition run and are **not** the T7b path; use the
-> staged CLI commands above for the `mind-v10`-only pilot.
-
-Paid benchmark B scenarios (require an explicit `--budget` + `--confirm`):
-
-```sh
-bun run cli scenarios \
-  --scenarios b1,b4,b5,b6,b7,b8,b9,b10,b11 --conditions no-memory,mind-v9,mind-v10 --budget 5 --confirm
-# or, from the repo root: make bench-agent-memory-scenarios SCENARIOS=b1,b4,b5,b6,b7,b8,b9,b10,b11
-# B5/B6/B7/B8/B9 need a Mind engine; under no-memory they are reported as not_run.
-# B10 also needs RAG + an embedding credential; otherwise it is not_run, never failed.
-```
+A historical comparison is reproducible because each historical condition runs
+its own pinned code from a worktree. `mind-current` can be combined with
+historical conditions in the same run; it still uses the invoking checkout.
 
 ## LoCoMo A1 (free)
 
 `locomo` runs the free half of benchmark A end-to-end:
 
-1. prepare the pinned `v9`/`v10` worktrees (`git worktree add` + `bun install`);
+1. prepare the invoking checkout for `mind-current`, and pinned worktrees (`git
+worktree add` + frozen `bun install`) only for explicitly selected
+   historical conditions;
 2. download LoCoMo (`https://github.com/snap-research/locomo`, **CC BY-NC 4.0**)
    into `.work/dataset/` (gitignored) and verify/pin its sha256;
 3. select a deterministic subset of `conv-26` (pilot = 1 per category = 5;
    full = 6 per category = 30; seeded `mulberry32`, default seed `20261018`);
-4. per engine: create `locomo/conv-26`, ingest one T3 memory per turn
+4. per selected engine: create `locomo/conv-26`, ingest one T3 memory per turn
    (`name = dia_id`, `content = "[<date_time>] <speaker>: <text>"`, tags
    `locomo` + `session:<n>`), verify count == turns and name-set == dia_id set,
    then score A1 retrieval through `GET /api/search` (top-25).
@@ -327,6 +379,11 @@ today:
   provider: the two seed `mind add` calls make embedding requests billed by the
   provider, and the session itself is a normal paid OpenCode session. Offline
   dry-runs use synthetic DBs/workspaces and the gated integration test.
+  **B10 limitations.** B10 is outcome-only: a passing artifact shows the answer
+  was correct with RAG enabled, not that the semantic channel produced it. The
+  two seed `mind add` embedding requests are not counted in the reported session
+  cost, and one run per scenario measures feasibility rather than an improvement
+  over a baseline.
 - **B11 — skill-first activation and pending-work continuity (prepared, NOT
   run).** Two sessions share the unit environment. The seed installs the real
   canonical `mind-management` skill and its brief L2 activation through
@@ -347,11 +404,16 @@ today:
   carries the pending item and a `resume.txt` that reflects it. Because the
   stored session results carry no timestamps, the checkpoint claim is
   provenance-limited to "**survived both sessions**"; it does not prove the
-  checkpoint was created in session 1. It declares `requires: ['mind-memory']`,
-  no RAG, and `allowedSkills: ['opencode','report','mind-management']` so the
-  isolation gate treats the installed skill as expected rather than
-  contamination. B11 is **gated and paid**: it is never executed by the free
-  suites, no paid run is authorized, and its real result remains `not_run`.
+  checkpoint was created in session 1. It declares
+  `requires: ['mind-memory', 'skill-first']`, no RAG, and
+  `allowedSkills: ['opencode','report','mind-management']` so the isolation gate
+  treats the installed skill as expected rather than contamination. `skill-first`
+  means the current canonical skill-first activation, not merely any installed
+  skill, so B11 is eligible **only** under `mind-current`; `no-memory`,
+  `mind-v9`, and `mind-v10` record it as `not_run` with zero sessions and zero
+  cost, and a historical selection prepares no worktree. B11 is **gated and
+  paid**: it is never executed by the free suites, no paid run is authorized,
+  and its real result remains `not_run`.
 
   **What is verified for free vs unverified.** The gated
   `test/skill-discovery.integration.spec.ts` runs real `mind setup opencode` in a
@@ -369,9 +431,11 @@ today:
   build or provider omits them, the assertion reports the limitation instead of
   inventing a skill id.
 
-B5/B6/B7/B8/B9/B11 declare `requires: ['mind-memory']`, so the `no-memory`
-condition records them as `not_run` with zero sessions instead of executing a
-memory task without a database. B10 additionally declares `rag: true` and
+B5/B6/B7/B8/B9 declare `requires: ['mind-memory']`, and B11 adds
+`'skill-first'`, so the `no-memory` condition records them as `not_run` with
+zero sessions instead of executing a memory task without a database. B11 is
+additionally `not_run` under `mind-v9`/`mind-v10` and eligible only under
+`mind-current`. B10 additionally declares `rag: true` and
 `requires: ['mind-memory', 'semantic-recall']`, so it is `not_run` without a Mind
 condition **and** the embedding credential. Their seed/assertions use
 `MIND_DB_PATH`/`MIND_DATA_DIR` from the isolated unit environment, never the live
@@ -431,11 +495,21 @@ statuses. Only the per-item files under `results/*.json` are read defensively
   `report --run-id <id> [--out <path>]`). The default output is
   `benchmarks/agent-memory/REPORT.md`.
 - **A and B stay separate.** Section 6 carries the A1 retrieval table, the A2
-  answering table and the B scenarios table, plus v9→v10 absolute/relative
-  diffs and a Mind-vs-`no-memory` comparison. No global mixed percentage is
-  ever produced.
+  answering table and the B scenarios table. Tables render only the conditions
+  that actually ran. No global mixed percentage is ever produced.
+- **Single condition means absolute results.** A run with only `mind-current`
+  reports its absolute metrics, cost, and provenance. It invents no historical
+  baseline and no improvement percentage.
+- **Multiple conditions compare measured conditions only.** Baseline deltas and
+  pairwise comparisons cover the active conditions; the legacy v9→v10
+  absolute/relative diff appears only when both historical conditions were
+  measured.
+- **Current provenance is recorded, not guessed.** The report header and
+  conclusions use the run's recorded branch, HEAD SHA, dirty flag, package and
+  schema versions, and mind binary.
 - **Honest about missing stages.** An A1-only run marks A2/B as `not_run`
-  throughout instead of guessing.
+  throughout instead of guessing. A run with no result artifacts is rejected
+  instead of emitting a misleading all-`n/a` report.
 - The aggregate `results/summary.json` is written next to the per-item results
   and is the machine-readable source of the report.
 
@@ -452,9 +526,9 @@ statuses. Only the per-item files under `results/*.json` are read defensively
   the same prompt template (no DB, no MCP, `memory_calls = 0`).
 - **Per-category + delta.** The report and `summary.json` break A2 down by the
   dataset-order categories (multi-hop, temporal, open-domain, single-hop,
-  adversarial) and report the delta of `mind-v9`/`mind-v10` against `no-memory`,
-  both overall and per category (absolute always; relative only when the
-  baseline is non-zero).
+  adversarial) and report the delta of every active Mind condition against
+  `no-memory` when the baseline was measured, both overall and per category
+  (absolute always; relative only when the baseline is non-zero).
 
 ## Curated results export
 
@@ -471,21 +545,22 @@ Both files are secret-scanned before writing (home paths, `sk-*`/`sk-or-*` keys,
 bearer tokens, credential env assignments), so they are safe to commit. The
 report itself still defaults to `benchmarks/agent-memory/REPORT.md`.
 
-## T8b — full publishable run (30Q × 3 reps × {no-memory, mind-v10})
+## Historical comparison example (optional)
 
-Run the stages in order, reusing one `RUN_ID` (omit `--run-id` on stage 1 to
-generate one; the printed id is echoed by the CLI).
+This staged example compares historical conditions with the baseline over the
+30-question subset and 3 repetitions. It is optional and paid at stage 2, and it
+was not executed for this documentation. Add `mind-current` to either stage to
+include the invoking checkout in the same comparison.
 
 ```sh
-# Stage 1 (FREE): worktrees + dataset + ingest + A1 for mind-v10 (30Q subset)
-bun run cli locomo \
-  --subset full --conditions mind-v10 --run-id <RUN_ID>
+# Stage 1 (FREE): historical worktrees + dataset + ingest + A1
+bun run cli locomo --subset full --conditions mind-v9,mind-v10 --run-id <RUN_ID>
 
-# Stage 2 (PAID, cap $5): A2 answering + blind judge, 3 reps, mind-v10 + baseline
-bun run cli locomo --answers \
-  --run-id <RUN_ID> --conditions no-memory,mind-v10 --reps 3 --budget 5 --confirm
+# Stage 2 (PAID, cap $5): A2 answering + blind judge, 3 reps
+bun run cli locomo --answers --run-id <RUN_ID> \
+  --conditions no-memory,mind-v9,mind-v10 --reps 3 --budget 5 --confirm
 
-# Stage 3 (FREE): restyled REPORT.md + curated export under results/<RUN_ID>/
+# Stage 3 (FREE): REPORT.md + curated export under results/<RUN_ID>/
 bun run cli report --run-id <RUN_ID>
 ```
 
@@ -506,6 +581,28 @@ to `score`) and register a condition in `src/config.ts`.
 ingestion is non-deterministic (per-turn LLM extraction) and it pulls a Python
 stack, which would not be comparable under a single deterministic protocol. Use
 the interface above as the integration point if it is added later.
+
+## Security and residual advisories
+
+Both the root project and this subproject use frozen installs and a blocking
+high-severity audit in CI (`.github/workflows/main.yml`). Neither gate is
+suppressed with `|| true` or `continue-on-error`.
+
+Measured on 2026-10-21 with Bun 1.3.14:
+
+- Root: `bun audit --audit-level=high` exits 0 with “No vulnerabilities found”.
+- Benchmark: `bun audit --audit-level=high` exits 0, so no critical or high
+  advisory remains. The full `bun audit` still reports two lower-severity
+  transitive advisories through the pinned `@opencode/sdk@2.0.28`:
+  - `sprintf-js <=1.1.3` (moderate, GHSA-hp3w-g68c-fv3c), path
+    `@opencode/sdk › @opencode/core › gray-matter › js-yaml › argparse › sprintf-js`;
+  - `@ai-sdk/provider-utils >=4.0.0-beta.10 <4.0.33` (low,
+    GHSA-866g-f22w-33x8), path
+    `@opencode/sdk › @opencode/core › @ai-sdk/vercel › @ai-sdk/openai-compatible › @ai-sdk/provider-utils`.
+
+The fix requires changing the pinned SDK or its transitive graph, which is out of
+scope for the benchmark. The high gate passes, but the dependency graph is **not**
+vulnerability-free; do not describe it as clean beyond the critical/high gate.
 
 ## Cleanup
 
