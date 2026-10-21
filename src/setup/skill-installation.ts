@@ -7,9 +7,11 @@
 //
 // Policy: only the exact `mind-management` skill in an explicit Mind-managed
 // location is updateable. The ownership marker is provenance, not
-// authorization (old copies without it are backed up and updated). Other
-// skills are never touched. Filesystem classification uses `lstat` so a
-// symlink is replaced rather than followed and broken links are repairable.
+// authorization (old copies without it are replaced). Other skills are never
+// touched. Filesystem classification uses `lstat` so a symlink is replaced
+// rather than followed and broken links are repairable. Skill content is never
+// backed up inside discovery roots: `atomicWriteText` keeps the old bytes on a
+// failed write, and warnings record any replaced symlink target.
 import * as fs from 'node:fs';
 import { homedir } from 'node:os';
 import * as path from 'node:path';
@@ -171,8 +173,8 @@ export function resolveSymlinkType(
 
 /**
  * Ensure the single canonical skill exists. A no-op when the bytes already
- * match (no backup, no rewrite). Any same-name content in the managed
- * canonical location is backed up and replaced.
+ * match (no rewrite). Any same-name content in the managed canonical location
+ * is replaced in place.
  */
 export function ensureCanonicalSkill(
   rendered = renderMindManagementSkill()
@@ -256,8 +258,8 @@ export function ensureMindManagementSkill(
 
 /**
  * Ensure `targetDir` is a real directory. A symlink or a non-directory at a
- * managed path is backed up (recording a link target for symlinks) and
- * repaired instead of writing through it or throwing ENOTDIR.
+ * managed path is removed and repaired instead of writing through it or
+ * throwing ENOTDIR.
  */
 function prepareManagedDirectory(targetDir: string): string[] {
   const warnings: string[] = [];
@@ -269,18 +271,19 @@ function prepareManagedDirectory(targetDir: string): string[] {
   }
 
   if (stat.isSymbolicLink()) {
-    backupManagedSkill(targetDir);
+    const oldTarget = readLinkOrNull(targetDir);
     fs.unlinkSync(targetDir);
     ensureDirectory(targetDir);
-    warnings.push(`Repaired symlink at ${targetDir}; the old link target was backed up.`);
+    warnings.push(
+      `Repaired symlink at ${targetDir}; the old link target was ${oldTarget ?? 'unknown'}.`
+    );
     return warnings;
   }
 
   if (!stat.isDirectory()) {
-    backupManagedSkill(targetDir);
     fs.rmSync(targetDir, { recursive: true, force: true });
     ensureDirectory(targetDir);
-    warnings.push(`Repaired non-directory path at ${targetDir}; the old path was backed up.`);
+    warnings.push(`Repaired non-directory path at ${targetDir}; the old path was removed.`);
     return warnings;
   }
 
@@ -289,7 +292,7 @@ function prepareManagedDirectory(targetDir: string): string[] {
 
 /**
  * Write the rendered SKILL.md into an existing managed directory. A symlink at
- * the file path is recorded and replaced, never followed.
+ * the file path is recorded in the warning and replaced, never followed.
  */
 function writeManagedSkillFile(targetDir: string, rendered: string): string[] {
   const warnings = prepareManagedDirectory(targetDir);
@@ -302,17 +305,19 @@ function writeManagedSkillFile(targetDir: string, rendered: string): string[] {
   }
 
   if (stat.isSymbolicLink()) {
-    backupManagedSkill(dest);
+    const oldTarget = readLinkOrNull(dest);
     fs.unlinkSync(dest);
     atomicWriteText(dest, rendered);
+    warnings.push(
+      `Repaired symlink at ${dest}; the old link target was ${oldTarget ?? 'unknown'}.`
+    );
     return warnings;
   }
 
   if (stat.isDirectory()) {
-    const backupPath = uniquePath(`${dest}.bak.${backupTimestamp()}`);
-    fs.renameSync(dest, backupPath);
+    fs.rmSync(dest, { recursive: true, force: true });
     atomicWriteText(dest, rendered);
-    warnings.push(`Repaired directory at ${dest}; it was moved to ${backupPath}.`);
+    warnings.push(`Repaired directory at ${dest}; it was removed.`);
     return warnings;
   }
 
@@ -320,7 +325,6 @@ function writeManagedSkillFile(targetDir: string, rendered: string): string[] {
     return warnings;
   }
 
-  backupManagedSkill(dest);
   atomicWriteText(dest, rendered);
   return warnings;
 }
@@ -332,8 +336,8 @@ function ensureManagedSkillFile(targetDir: string, rendered: string): string[] {
 
 /**
  * Link strategy: point the dedicated directory at the canonical skill. A
- * foreign or broken directory symlink is recorded and replaced; when linking
- * is unavailable or extras must be preserved, fall back to a managed copy.
+ * foreign or broken directory symlink is replaced; when linking is unavailable
+ * or extras must be preserved, fall back to a managed copy.
  */
 function ensureLinkedSkill(
   targetDir: string,
@@ -360,9 +364,12 @@ function ensureLinkedSkill(
     if (resolvesTo(targetDir, canonicalDir)) {
       return warnings;
     }
-    backupManagedSkill(targetDir);
+    const oldTarget = readLinkOrNull(targetDir);
     fs.unlinkSync(targetDir);
     if (tryCreateDirectorySymlink(canonicalDir, targetDir, symlinkSync)) {
+      warnings.push(
+        `Replaced foreign symlink at ${targetDir}; the old link target was ${oldTarget ?? 'unknown'}.`
+      );
       return warnings;
     }
     warnings.push(
@@ -387,9 +394,6 @@ function ensureLinkedSkill(
   const extras = listMeaningfulEntries(targetDir);
 
   if (extras.length === 0) {
-    if (destStat !== null) {
-      backupManagedSkill(targetDir);
-    }
     fs.rmSync(targetDir, { recursive: true, force: true });
     if (tryCreateDirectorySymlink(canonicalDir, targetDir, symlinkSync)) {
       return warnings;
@@ -408,8 +412,7 @@ function ensureLinkedSkill(
 
 /**
  * Remove a legacy shadow copy that would take precedence over the canonical
- * skill. The same-name skill in a managed legacy location is backed up before
- * pruning; unrelated resources in the directory are preserved.
+ * skill. Unrelated resources in the directory are preserved.
  */
 function pruneLegacyShadow(shadowDir: string, canonicalDir: string): string[] {
   const stat = lstatOrNull(shadowDir);
@@ -421,15 +424,16 @@ function pruneLegacyShadow(shadowDir: string, canonicalDir: string): string[] {
     if (resolvesTo(shadowDir, canonicalDir)) {
       return [];
     }
-    backupManagedSkill(shadowDir);
+    const oldTarget = readLinkOrNull(shadowDir);
     fs.unlinkSync(shadowDir);
-    return [`Replaced legacy shadow symlink at ${shadowDir}; its target was backed up.`];
+    return [
+      `Replaced legacy shadow symlink at ${shadowDir}; the old link target was ${oldTarget ?? 'unknown'}.`,
+    ];
   }
 
   if (!stat.isDirectory()) {
-    backupManagedSkill(shadowDir);
     fs.rmSync(shadowDir, { recursive: true, force: true });
-    return [`Removed legacy shadow path at ${shadowDir}; it was backed up.`];
+    return [`Removed legacy shadow path at ${shadowDir}.`];
   }
 
   const dest = path.join(shadowDir, SKILL_FILENAME);
@@ -439,7 +443,6 @@ function pruneLegacyShadow(shadowDir: string, canonicalDir: string): string[] {
   }
 
   const extras = listMeaningfulEntries(shadowDir);
-  backupManagedSkill(shadowDir);
 
   if (extras.length === 0) {
     fs.rmSync(shadowDir, { recursive: true, force: true });
@@ -490,15 +493,14 @@ function verifyInstalled(targetDir: string, rendered: string): boolean {
 // ---------------------------------------------------------------------------
 
 /**
- * Back up a managed path before replacing it.
+ * Back up a blocking non-directory ancestor before repairing it (for example a
+ * file where `~/.agents` must be created). Never used inside a skill root.
  *
  * - Regular file: timestamped sibling copy (`.bak.<timestamp>`).
  * - Symlink: sibling sidecar recording `LINK_TARGET=<target>`; never copies
  *   external bytes.
- * - Directory: sibling directory containing only `SKILL.md` (or a LINK_TARGET
- *   sidecar when that file is a symlink); unrelated resources stay in place.
  */
-function backupManagedSkill(targetPath: string): string | null {
+function backupRepairPath(targetPath: string): string | null {
   const stat = lstatOrNull(targetPath);
   if (stat === null) {
     return null;
@@ -508,27 +510,6 @@ function backupManagedSkill(targetPath: string): string | null {
 
   if (stat.isSymbolicLink()) {
     fs.writeFileSync(backupPath, `LINK_TARGET=${fs.readlinkSync(targetPath)}\n`);
-    return backupPath;
-  }
-
-  if (stat.isDirectory()) {
-    const skillPath = path.join(targetPath, SKILL_FILENAME);
-    const skillStat = lstatOrNull(skillPath);
-    if (skillStat === null) {
-      return null;
-    }
-    fs.mkdirSync(backupPath, { recursive: true });
-    if (skillStat.isSymbolicLink()) {
-      fs.writeFileSync(
-        path.join(backupPath, SKILL_FILENAME),
-        `LINK_TARGET=${fs.readlinkSync(skillPath)}\n`
-      );
-    } else if (skillStat.isFile()) {
-      fs.copyFileSync(skillPath, path.join(backupPath, SKILL_FILENAME));
-    } else {
-      fs.rmSync(backupPath, { recursive: true, force: true });
-      return null;
-    }
     return backupPath;
   }
 
@@ -589,6 +570,14 @@ function readFileOrNull(filePath: string): string | null {
   }
 }
 
+function readLinkOrNull(filePath: string): string | null {
+  try {
+    return fs.readlinkSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
 function listMeaningfulEntries(dirPath: string): string[] {
   return fs
     .readdirSync(dirPath)
@@ -616,7 +605,7 @@ function ensureDirectory(dirPath: string): void {
     const stat = lstatOrNull(candidate);
     if (stat !== null) {
       if (!stat.isDirectory()) {
-        backupManagedSkill(candidate);
+        backupRepairPath(candidate);
         fs.rmSync(candidate, { recursive: true, force: true });
       }
       break;

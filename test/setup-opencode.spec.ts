@@ -3,6 +3,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   writeFileSync,
@@ -20,6 +21,24 @@ function stripJsoncComments(text: string): string {
   // Strip /* block */ and // line comments. Naive but adequate for
   // opencode.jsonc fixtures in these tests.
   return text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
+}
+
+/** Every `.bak.*` path recursively beneath `dirPath` (files and directories). */
+function backupEntries(dirPath: string): string[] {
+  if (!existsSync(dirPath)) {
+    return [];
+  }
+  const found: string[] = [];
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    const entryPath = join(dirPath, entry.name);
+    if (entry.name.includes('.bak.')) {
+      found.push(entryPath);
+    }
+    if (entry.isDirectory()) {
+      found.push(...backupEntries(entryPath));
+    }
+  }
+  return found;
 }
 
 function extractFunctionSource(pluginText: string, signature: string): string {
@@ -317,9 +336,13 @@ describe('OpenCode setup integration', () => {
     await runSetup('opencode');
 
     const canonicalPath = join(tempHome, '.agents', 'skills', 'mind-management', 'SKILL.md');
+    const canonicalDir = join(tempHome, '.agents', 'skills', 'mind-management');
+    const opencodeSkillsRoot = join(tempHome, '.config', 'opencode', 'skills');
     expect(existsSync(canonicalPath)).toBe(true);
     expect(readFileSync(canonicalPath, 'utf-8')).toBe(renderMindManagementSkill());
     expect(existsSync(join(shadowDir, 'SKILL.md'))).toBe(false);
+    expect(backupEntries(opencodeSkillsRoot)).toEqual([]);
+    expect(backupEntries(canonicalDir)).toEqual([]);
   });
 
   test('writes OpenCode prudent automation plugin by default', async () => {

@@ -159,8 +159,10 @@ handshake are brief activation only. If the skill cannot be loaded, call the
 Agents load the skill once at session start and reload it after compaction.
 Mind does not track reads in a database, enforce a quota, or create a checkpoint
 just to record activation. Setup updates only the exact `mind-management` skill
-in its managed locations; it leaves other skills untouched and backs up a
-previous `SKILL.md` before replacing it. See the
+in its managed locations; it leaves other skills untouched and replaces
+`SKILL.md` atomically without leaving a skill backup. Ancestor-repair and agent
+config backups remain outside skill paths. Older skill backups are not deleted
+automatically; remove them manually if desired. See the
 [documentation index](docs/README.md),
 [`docs/skill-first-distribution.md`](docs/skill-first-distribution.md), and the
 [agent integration matrix](docs/agent-integration-matrix.md).

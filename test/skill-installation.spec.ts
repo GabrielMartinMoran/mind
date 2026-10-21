@@ -99,14 +99,22 @@ function backupNames(dirPath: string, prefix: string): string[] {
   return readdirSync(dirPath).filter(name => name.startsWith(prefix));
 }
 
-function backupDirsFor(dirPath: string): string[] {
-  const parent = dirname(dirPath);
-  const prefix = `${dirPath.split('/').pop()}.bak.`;
-  return readdirSync(parent).filter(name => name.startsWith(prefix));
-}
-
-function skillBackupFiles(dirPath: string): string[] {
-  return backupNames(dirPath, 'SKILL.md.bak.');
+/** Every `.bak.*` path recursively beneath `dirPath` (files and directories). */
+function backupEntries(dirPath: string): string[] {
+  if (!existsSync(dirPath)) {
+    return [];
+  }
+  const found: string[] = [];
+  for (const entry of readdirSync(dirPath, { withFileTypes: true })) {
+    const entryPath = join(dirPath, entry.name);
+    if (entry.name.includes('.bak.')) {
+      found.push(entryPath);
+    }
+    if (entry.isDirectory()) {
+      found.push(...backupEntries(entryPath));
+    }
+  }
+  return found;
 }
 
 function createSymlink(target: string, linkPath: string, type: 'dir' | 'file' = 'dir'): void {
@@ -138,10 +146,10 @@ describe('canonical skill installation', () => {
 
     expect(result.path).toBe(canonicalFile());
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(before);
-    expect(skillBackupFiles(canonicalDir())).toEqual([]);
+    expect(backupEntries(canonicalDir())).toEqual([]);
   });
 
-  test('backs up and updates an old copy without the ownership marker', () => {
+  test('replaces an old copy without the ownership marker and leaves no backup', () => {
     mkdirSync(canonicalDir(), { recursive: true });
     writeFileSync(canonicalFile(), oldMindSkillContent());
 
@@ -149,18 +157,14 @@ describe('canonical skill installation', () => {
 
     expect(result.path).toBe(canonicalFile());
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
-
-    const backups = skillBackupFiles(canonicalDir());
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toBe(
-      oldMindSkillContent()
-    );
+    expect(backupEntries(canonicalDir())).toEqual([]);
+    expect(backupEntries(dirname(canonicalDir()))).toEqual([]);
 
     ensureCanonicalSkill();
-    expect(skillBackupFiles(canonicalDir())).toHaveLength(1);
+    expect(backupEntries(canonicalDir())).toEqual([]);
   });
 
-  test('backs up and updates a marked copy whose content differs', () => {
+  test('replaces a marked copy whose content differs and leaves no backup', () => {
     mkdirSync(canonicalDir(), { recursive: true });
     writeFileSync(canonicalFile(), markerOldContent());
 
@@ -168,15 +172,10 @@ describe('canonical skill installation', () => {
 
     expect(result.path).toBe(canonicalFile());
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
-
-    const backups = skillBackupFiles(canonicalDir());
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toBe(
-      markerOldContent()
-    );
+    expect(backupEntries(canonicalDir())).toEqual([]);
   });
 
-  test('updates a same-name canonical skill in the managed location', () => {
+  test('updates a same-name canonical skill in the managed location without a backup', () => {
     mkdirSync(canonicalDir(), { recursive: true });
     writeFileSync(canonicalFile(), foreignSkillContent());
 
@@ -184,12 +183,19 @@ describe('canonical skill installation', () => {
 
     expect(result.path).toBe(canonicalFile());
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
+    expect(backupEntries(canonicalDir())).toEqual([]);
+  });
 
-    const backups = skillBackupFiles(canonicalDir());
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toBe(
-      foreignSkillContent()
-    );
+  test('leaves pre-existing skill backups for manual cleanup', () => {
+    const skillsRoot = dirname(canonicalDir());
+    const oldBackup = join(skillsRoot, 'mind-management.bak.20260101T000000000Z');
+    mkdirSync(oldBackup, { recursive: true });
+    writeFileSync(join(oldBackup, 'SKILL.md'), 'historical backup');
+
+    ensureCanonicalSkill();
+
+    expect(existsSync(oldBackup)).toBe(true);
+    expect(backupEntries(skillsRoot)).toEqual([oldBackup]);
   });
 
   test('never modifies another skill beside mind-management', () => {
@@ -282,11 +288,14 @@ describe('shadow migration', () => {
         agent,
         notes: 'keep me',
       });
-      expect({ agent, backups: backupDirsFor(shadowDir).length }).toEqual({ agent, backups: 1 });
+      expect({ agent, backups: backupEntries(dirname(shadowDir)).length }).toEqual({
+        agent,
+        backups: 0,
+      });
     }
   });
 
-  test('removes a managed shadow directory that only contains SKILL.md', () => {
+  test('removes a managed shadow directory that only contains SKILL.md without a backup', () => {
     const shadowDir = join(tempHome, '.config', 'opencode', 'skills', 'mind-management');
     mkdirSync(shadowDir, { recursive: true });
     writeFileSync(join(shadowDir, 'SKILL.md'), oldMindSkillContent());
@@ -294,14 +303,10 @@ describe('shadow migration', () => {
     installMindManagementSkill('opencode');
 
     expect(existsSync(shadowDir)).toBe(false);
-    const backups = backupDirsFor(shadowDir);
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(dirname(shadowDir), backups[0] as string, 'SKILL.md'), 'utf-8')).toBe(
-      oldMindSkillContent()
-    );
+    expect(backupEntries(dirname(shadowDir))).toEqual([]);
   });
 
-  test('migrates a same-name shadow skill in the managed legacy location', () => {
+  test('migrates a same-name shadow skill in the managed legacy location without a backup', () => {
     ensureCanonicalSkill();
     const shadowDir = join(tempHome, '.cursor', 'skills', 'mind-management');
     mkdirSync(shadowDir, { recursive: true });
@@ -311,16 +316,12 @@ describe('shadow migration', () => {
 
     expect(result.path).toBe(getAgentSkillPath('cursor'));
     expect(existsSync(join(shadowDir, 'SKILL.md'))).toBe(false);
-    const backups = backupDirsFor(shadowDir);
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(dirname(shadowDir), backups[0] as string, 'SKILL.md'), 'utf-8')).toBe(
-      foreignSkillContent()
-    );
+    expect(backupEntries(dirname(shadowDir))).toEqual([]);
   });
 });
 
 describe('dedicated client directories', () => {
-  test('backs up and replaces an old managed Claude copy with a symlink', () => {
+  test('replaces an old managed Claude copy with a symlink and no backup', () => {
     ensureCanonicalSkill();
     const targetDir = getAgentSkillLayout('claude-code').targetDir;
     mkdirSync(targetDir, { recursive: true });
@@ -330,12 +331,7 @@ describe('dedicated client directories', () => {
 
     expect(result.path).toBe(join(targetDir, 'SKILL.md'));
     expect(lstatSync(targetDir).isSymbolicLink()).toBe(true);
-
-    const backups = backupDirsFor(targetDir);
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(dirname(targetDir), backups[0] as string, 'SKILL.md'), 'utf-8')).toBe(
-      oldMindSkillContent()
-    );
+    expect(backupEntries(dirname(targetDir))).toEqual([]);
   });
 
   test('preserves extra files in a client directory and refreshes only SKILL.md', () => {
@@ -351,10 +347,10 @@ describe('dedicated client directories', () => {
     expect(lstatSync(targetDir).isSymbolicLink()).toBe(false);
     expect(readFileSync(join(targetDir, 'SKILL.md'), 'utf-8')).toBe(renderMindManagementSkill());
     expect(readFileSync(join(targetDir, 'extra.md'), 'utf-8')).toBe('keep me');
-    expect(skillBackupFiles(targetDir)).toHaveLength(1);
+    expect(backupEntries(targetDir)).toEqual([]);
   });
 
-  test('updates a same-name dedicated client skill in the managed location', () => {
+  test('updates a same-name dedicated client skill in the managed location without a backup', () => {
     ensureCanonicalSkill();
     const targetDir = getAgentSkillLayout('claude-code').targetDir;
     mkdirSync(targetDir, { recursive: true });
@@ -364,7 +360,7 @@ describe('dedicated client directories', () => {
 
     expect(result.path).toBe(join(targetDir, 'SKILL.md'));
     expect(readFileSync(join(targetDir, 'SKILL.md'), 'utf-8')).toBe(renderMindManagementSkill());
-    expect(backupDirsFor(targetDir)).toHaveLength(1);
+    expect(backupEntries(dirname(targetDir))).toEqual([]);
   });
 
   test('falls back to a managed copy when directory symlinks are unavailable', () => {
@@ -382,11 +378,12 @@ describe('dedicated client directories', () => {
     expect(lstatSync(targetDir).isSymbolicLink()).toBe(false);
     expect(readFileSync(join(targetDir, 'SKILL.md'), 'utf-8')).toBe(renderMindManagementSkill());
 
-    const backupsBefore = skillBackupFiles(targetDir).length;
+    const backupsBefore = backupEntries(targetDir).length;
     const second = installMindManagementSkill('claude-code', { symlinkSync: failingSymlink });
 
     expect(second.warnings.filter(warning => /managed copy/i.test(warning))).toHaveLength(0);
-    expect(skillBackupFiles(targetDir)).toHaveLength(backupsBefore);
+    expect(backupEntries(targetDir)).toHaveLength(backupsBefore);
+    expect(backupEntries(targetDir)).toEqual([]);
   });
 });
 
@@ -406,15 +403,11 @@ describe('symlink safety', () => {
     expect(lstatSync(canonicalDir()).isSymbolicLink()).toBe(false);
     expect(readFileSync(externalFile, 'utf-8')).toBe('EXTERNAL CONTENT');
     expect(lstatSync(externalFile).mtimeMs).toBe(mtimeBefore);
-
-    const backups = backupDirsFor(canonicalDir());
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(dirname(canonicalDir()), backups[0] as string), 'utf-8')).toContain(
-      `LINK_TARGET=${externalDir}`
-    );
+    expect(result.warnings.some(warning => warning.includes(externalDir))).toBe(true);
+    expect(backupEntries(dirname(canonicalDir()))).toEqual([]);
   });
 
-  test('repairs a broken directory symlink and records the old target', () => {
+  test('repairs a broken directory symlink and reports the old target', () => {
     const missingTarget = join(tempHome, 'missing-target');
     createSymlink(missingTarget, canonicalDir(), 'dir');
 
@@ -423,11 +416,8 @@ describe('symlink safety', () => {
     expect(result.path).toBe(canonicalFile());
     expect(lstatSync(canonicalDir()).isDirectory()).toBe(true);
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
-    const backups = backupDirsFor(canonicalDir());
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(dirname(canonicalDir()), backups[0] as string), 'utf-8')).toContain(
-      `LINK_TARGET=${missingTarget}`
-    );
+    expect(result.warnings.some(warning => warning.includes(missingTarget))).toBe(true);
+    expect(backupEntries(dirname(canonicalDir()))).toEqual([]);
   });
 
   test('replaces a file-level SKILL.md symlink without touching its target', () => {
@@ -443,14 +433,11 @@ describe('symlink safety', () => {
     expect(lstatSync(canonicalFile()).isFile()).toBe(true);
     expect(readFileSync(externalFile, 'utf-8')).toBe('EXTERNAL FILE CONTENT');
     expect(lstatSync(externalFile).mtimeMs).toBe(mtimeBefore);
-    const backups = skillBackupFiles(canonicalDir());
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(canonicalDir(), backups[0] as string), 'utf-8')).toContain(
-      `LINK_TARGET=${externalFile}`
-    );
+    expect(result.warnings.some(warning => warning.includes(externalFile))).toBe(true);
+    expect(backupEntries(canonicalDir())).toEqual([]);
   });
 
-  test('replaces a foreign dedicated symlink and records its target', () => {
+  test('replaces a foreign dedicated symlink and reports its target', () => {
     ensureCanonicalSkill();
     const targetDir = getAgentSkillLayout('claude-code').targetDir;
     const externalDir = join(tempHome, 'external-claude-skill');
@@ -463,11 +450,8 @@ describe('symlink safety', () => {
     expect(result.path).toBe(getAgentSkillPath('claude-code'));
     expect(realpathSync(targetDir)).toBe(realpathSync(canonicalDir()));
     expect(readFileSync(join(externalDir, 'SKILL.md'), 'utf-8')).toBe('EXTERNAL CLAUDE CONTENT');
-    const backups = backupDirsFor(targetDir);
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(dirname(targetDir), backups[0] as string), 'utf-8')).toContain(
-      `LINK_TARGET=${externalDir}`
-    );
+    expect(result.warnings.some(warning => warning.includes(externalDir))).toBe(true);
+    expect(backupEntries(dirname(targetDir))).toEqual([]);
   });
 });
 
@@ -482,11 +466,7 @@ describe('portable repair behavior', () => {
     expect(result.warnings.length).toBeGreaterThan(0);
     expect(lstatSync(canonicalDir()).isDirectory()).toBe(true);
     expect(readFileSync(canonicalFile(), 'utf-8')).toBe(renderMindManagementSkill());
-    const backups = backupDirsFor(canonicalDir());
-    expect(backups).toHaveLength(1);
-    expect(readFileSync(join(dirname(canonicalDir()), backups[0] as string), 'utf-8')).toBe(
-      'NOT A DIRECTORY'
-    );
+    expect(backupEntries(dirname(canonicalDir()))).toEqual([]);
   });
 
   test('repairs a regular file used as a dedicated skill path without ENOTDIR', () => {
@@ -503,7 +483,7 @@ describe('portable repair behavior', () => {
     expect(readFileSync(getAgentSkillPath('claude-code'), 'utf-8')).toBe(
       renderMindManagementSkill()
     );
-    expect(backupDirsFor(targetDir)).toHaveLength(1);
+    expect(backupEntries(dirname(targetDir))).toEqual([]);
   });
 
   test('repairs a regular file at ~/.agents instead of throwing ENOTDIR', () => {

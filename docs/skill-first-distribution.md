@@ -73,27 +73,39 @@ signatures, and other skill directories are never modified.
 
 The install contract is defensive:
 
-- Install when absent; leave byte-identical content untouched (no write, no
-  backup); back up and update when the bytes differ.
-- A regular `SKILL.md` backup is a timestamped sibling (`.bak.<timestamp>`).
-  When a managed directory contains extra resources, only `SKILL.md` is backed
-  up and replaced; the extras stay in place.
+- Install when absent and leave byte-identical content untouched. When the bytes
+  differ, replace the file atomically without a persistent backup inside the
+  skill path.
+- When a managed directory contains extra resources, replace only `SKILL.md`
+  and keep the extras in place.
 - Classification uses `lstat`, so a symlink is never followed. A foreign or
-  broken directory symlink, and a file-level `SKILL.md` symlink, are recorded
-  as `LINK_TARGET=<target>` in a backup sidecar and replaced without copying or
-  writing through external content.
-- A non-directory at a managed path is backed up and repaired instead of
-  raising `ENOTDIR`.
+  broken directory symlink, and a file-level `SKILL.md` symlink, are unlinked
+  and replaced without copying or writing through external content; the warning
+  names the old target.
+- A non-directory at a managed path is removed and repaired with a warning
+  instead of raising `ENOTDIR`.
 - Writes stage in a sibling temporary file and rename into place, so a crash
   cannot leave a partial file.
 - On Windows, setup creates a directory junction and falls back to a managed
   copy when linking is unavailable. It does not require elevated privileges.
 
+Two backup mechanisms remain outside skill discovery paths: timestamped sibling
+backups when setup must repair a blocking non-directory ancestor such as
+`~/.agents`, and agent config-file backups written by the safe-config helpers.
+Neither affects managed skill content.
+
 Setup also migrates same-name shadow copies that would take precedence over
-the canonical skill, such as an old `~/.cursor/skills/mind-management`. It backs
-up the shadowing `SKILL.md`, removes it, and preserves unrelated resources in
-the directory. Detection uses `lstat`, so a broken managed link still marks the
-integration as installed and can be repaired on the next refresh.
+the canonical skill, such as an old `~/.cursor/skills/mind-management`. It removes
+the shadowing `SKILL.md` without leaving a discoverable backup and preserves
+unrelated resources in the directory. Detection uses `lstat`, so a broken managed
+link still marks the integration as installed and can be repaired on the next
+refresh.
+
+Skill updates do not delete backups created by earlier versions. Historical
+artifacts such as `<skill dir>/SKILL.md.bak.*` and
+`<skills root>/mind-management.bak.*/SKILL.md` can remain discoverable. Inspect
+them and remove them manually if you no longer need them. Setup does not remove
+them automatically because their provenance cannot be proven.
 
 ## Checkpoint lifecycle rules
 

@@ -19,11 +19,14 @@ fourth badge.
 Skill policy: only the exact `mind-management` skill in an explicit
 Mind-managed location is installed or updated. Same-name content in those
 locations is updateable (the ownership marker is provenance, not
-authorization); other skills are never touched. Updates back up the previous
-`SKILL.md`, preserve auxiliary files, and use `lstat`/`realpath`: foreign or
-broken symlinks are recorded as `LINK_TARGET` and replaced without writing
-through them, and non-directory managed paths are repaired instead of raising
-`ENOTDIR`.
+authorization); other skills are never touched. Updates replace `SKILL.md`
+atomically without persistent backups inside skill paths and preserve auxiliary
+files. They use `lstat`/`realpath`: foreign or broken symlinks are unlinked and
+replaced without writing through them, with the warning naming the old target,
+and non-directory managed paths are repaired instead of raising `ENOTDIR`.
+Ancestor-repair and agent config backups remain outside skill paths. Setup does
+not auto-delete backups left by earlier versions; remove them manually if
+desired.
 
 ## Matrix
 

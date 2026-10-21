@@ -21,15 +21,15 @@ Feature: Final quality pass and merge readiness
     Scenario: An old copy without the ownership marker is updated
       Given a mind-management SKILL.md without the current marker
       When setup runs
-      Then the old content is backed up
-      And the file is replaced with the current rendered skill
+      Then the file is replaced with the current rendered skill
+      And no skill backup is left behind
 
     @integration
     Scenario: A current copy with the marker is updated when it differs
       Given a mind-management SKILL.md with the marker but old content
       When setup runs
-      Then the old content is backed up
-      And the file is replaced with the current rendered skill
+      Then the file is replaced with the current rendered skill
+      And no skill backup is left behind
 
     @integration
     Scenario: An identical skill is left untouched
@@ -50,22 +50,24 @@ Feature: Final quality pass and merge readiness
       Given the managed skill path is a symlink to an external directory
       When setup runs
       Then the external directory is unchanged
-      And the old link target is recorded in a backup
+      And the warning names the old link target
       And the managed path is replaced safely
+      And no skill backup is left behind
 
     @integration
     Scenario: A broken symlink is repaired
       Given the managed skill path is a symlink to a missing target
       When setup runs
-      Then the old target is recorded
+      Then the warning names the old target
       And the skill is installed successfully
+      And no skill backup is left behind
 
     @integration
     Scenario: Auxiliary files are preserved
       Given the managed skill directory contains an unrelated notes file
       When setup updates SKILL.md
       Then the notes file is unchanged
-      And only SKILL.md is backed up and replaced
+      And only SKILL.md is replaced without a backup
 
     @integration
     Scenario: A non-directory managed path does not crash setup

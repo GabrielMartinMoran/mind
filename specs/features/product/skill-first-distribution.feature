@@ -214,7 +214,7 @@ Feature: Skill-first distribution and lifecycle corrections
     Scenario: Mind-managed shadow copies are migrated
       Given an old Mind-managed copy in a higher-precedence client directory
       When setup runs
-      Then the old copy is backed up and removed or refreshed
+      Then the old copy is removed or refreshed without leaving a discoverable backup
       And the client resolves the canonical skill
       And unrelated files in the directory are preserved
 
