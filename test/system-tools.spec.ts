@@ -34,6 +34,21 @@ const PRODUCT_PROTOCOL_FORBIDDEN_TERMS = [
 ];
 
 describe('MCP System Tools', () => {
+  test('system instructions are the labeled fallback used when the skill is unavailable', async () => {
+    const rendered = renderSystemInstructions();
+
+    expect(rendered.startsWith('# Mind Memory Protocol (fallback)')).toBe(true);
+    expect(rendered).toContain('complete fallback copy for the `mind` MCP server');
+    expect(rendered).toContain(
+      'used only when the `mind-management` skill is not listed or cannot be loaded'
+    );
+    expect(rendered).toContain('The skill is the primary source of truth');
+    expect(rendered).toContain('load it unconditionally before any Mind use');
+    // @ts-ignore — handler accepts 0 args but type system requires 1
+    const response = await createSystemTools().system_instructions.handler();
+    expect(response.instructions_version).toBe('2.1.0');
+  });
+
   test('system instructions renderer should match snapshot', () => {
     const snapshotText = readFileSync(SYSTEM_INSTRUCTIONS_SNAPSHOT_PATH, 'utf-8');
 

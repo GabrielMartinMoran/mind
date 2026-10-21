@@ -204,4 +204,19 @@ describe('documentation links', () => {
     expect(policyText).toMatch(/host-specific benchmark numbers/i);
     expect(policyText).toMatch(/no feature is required to produce a permanent report/i);
   });
+
+  test('project AGENTS.md precedence is documented', () => {
+    const normalized = (file: string) => readFileSync(file, 'utf8').replace(/\s+/g, ' ');
+
+    const skillFirst = normalized(join(DOCS, 'skill-first-distribution.md'));
+    expect(skillFirst).toMatch(/project AGENTS\.md precedence/i);
+    expect(skillFirst).toContain('must point to the `mind-management` skill');
+    expect(skillFirst).toContain('`system_instructions` fallback');
+    expect(skillFirst).toContain('must not restate the Mind protocol');
+
+    const matrix = normalized(join(DOCS, 'agent-integration-matrix.md'));
+    expect(matrix).toContain('project `AGENTS.md` files after the global file');
+    expect(matrix).toContain('Project files must point to the skill');
+    expect(matrix).toContain('`system_instructions` fallback');
+  });
 });

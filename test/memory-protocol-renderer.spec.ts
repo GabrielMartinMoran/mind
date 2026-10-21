@@ -36,8 +36,24 @@ describe('memory protocol renderer', () => {
     expect(rendered).toContain(renderSkillActivation());
     expect(rendered).toContain('mind-management');
     expect(rendered).toContain('system_instructions');
+    expect(rendered).toContain('source of truth');
+    expect(rendered).toContain('unconditionally');
     expect(rendered).toContain('session start');
     expect(rendered).toContain('compaction');
+    expect(rendered).toContain(
+      'The source of truth is the `mind-management` skill, not this file.'
+    );
+  });
+
+  test('the activation is a pointer rather than over-emphasized protocol text', () => {
+    const rendered = renderMemoryProtocol('opencode');
+
+    for (const emphasis of ['MANDATORY', 'CRITICAL', 'no exceptions']) {
+      expect({ emphasis, present: rendered.includes(emphasis) }).toEqual({
+        emphasis,
+        present: false,
+      });
+    }
   });
 
   test('L2 output does not contain the canonical protocol body', () => {
@@ -55,7 +71,7 @@ describe('memory protocol renderer', () => {
 
   test('renders the agent-specific title label', () => {
     for (const { agent, label } of AGENTS) {
-      expect(renderMemoryProtocol(agent)).toContain(`# Mind Memory Protocol (${label})`);
+      expect(renderMemoryProtocol(agent)).toContain(`# Mind activation pointer (${label})`);
     }
   });
 

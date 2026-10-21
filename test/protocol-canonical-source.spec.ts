@@ -74,6 +74,13 @@ function countOccurrences(text: string, needle: string): number {
   return text.split(needle).length - 1;
 }
 
+function extractSkillDescription(skill: string): string {
+  const frontmatterEnd = skill.indexOf('\n---', 3);
+  const frontmatter = skill.slice(3, frontmatterEnd);
+  const afterDescription = frontmatter.split('description: >')[1] ?? '';
+  return afterDescription.split('\nlicense:')[0]?.replace(/\s+/g, ' ').trim() ?? '';
+}
+
 function sectionFor(body: string, heading: string): string {
   const start = body.indexOf(`## ${heading}`);
   if (start === -1) {
@@ -154,13 +161,17 @@ describe('canonical cognitive protocol source', () => {
     }
   });
 
-  test('L2 instructions name the skill and the fallback', () => {
+  test('L2 instructions name the skill as the source of truth and the fallback', () => {
     for (const agent of L2_AGENTS) {
       const output = renderMemoryProtocol(agent);
 
       expect(output).toContain(renderSkillActivation());
       expect(output).toContain('mind-management');
       expect(output).toContain('system_instructions');
+      expect(output).toContain(
+        'The source of truth is the `mind-management` skill, not this file.'
+      );
+      expect(output).toContain('unconditionally');
     }
   });
 
@@ -172,6 +183,31 @@ describe('canonical cognitive protocol source', () => {
     expect(skill).toContain('license: MIT');
     expect(skill).toContain(renderSkillLoadNote());
     expect(skill.indexOf(renderSkillLoadNote())).toBeLessThan(skill.indexOf(BODY_MARKER));
+  });
+
+  test('the skill description carries the source-of-truth contract and pointer boundary', () => {
+    const description = extractSkillDescription(renderMindManagementSkill());
+
+    expect(description).toContain("Mind's single source of truth");
+    expect(description).toContain('load this skill unconditionally');
+    expect(description).toContain('before any Mind use');
+    expect(description).toContain('Do not call a Mind MCP tool until');
+    expect(description).toContain('only a pointer');
+    expect(description).toContain('does not replace this skill');
+    expect(description).toContain('not listed or cannot be loaded');
+    expect(description).not.toContain('space_get');
+  });
+
+  test('the skill load note repeats the source-of-truth contract and fallback', () => {
+    const loadNote = renderSkillLoadNote();
+
+    expect(loadNote).toContain('single source of truth');
+    expect(loadNote).toContain('unconditionally');
+    expect(loadNote).toContain('before any Mind use');
+    expect(loadNote).toContain('after compaction');
+    expect(loadNote).toContain('not listed or cannot be loaded');
+    expect(loadNote).toContain('`system_instructions`');
+    expect(loadNote).toContain('pointers only');
   });
 
   test('no normative paragraph is duplicated within the complete outputs', () => {

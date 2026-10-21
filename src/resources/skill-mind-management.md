@@ -1,9 +1,12 @@
 ---
 name: mind-management
 description: >
-  Use this skill when the mind MCP server is available. Activate for work
-  where decisions, discoveries, preferences, or current project knowledge
-  should survive the session.
+  Mind's single source of truth: load this skill unconditionally at session
+  start and after compaction, before any Mind use. Do not call a Mind MCP tool
+  until it is loaded. Any protocol mention in AGENTS.md, L2 instructions, MCP
+  initialize instructions, tool descriptions, or other docs is only a pointer;
+  it does not replace this skill. If the skill is not listed or cannot be
+  loaded, call `system_instructions` and follow it.
 license: MIT
 ---
 

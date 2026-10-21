@@ -143,20 +143,23 @@ mind setup refresh      # refresh detected mind-managed integrations
 
 `mind setup refresh` is conservative by default. It refreshes only detected
 integrations, where detection means mind finds an existing mind-owned signal,
-such as an MCP config, managed protocol block, hook/plugin/script, or installed
-mind-management skill. Use `--dry-run` to preview changes, `--all` to refresh
-all supported agents, or `--agent <name>` to target one agent.
+such as an MCP config, managed activation pointer block, hook/plugin/script, or
+installed mind-management skill. Use `--dry-run` to preview changes, `--all` to
+refresh all supported agents, or `--agent <name>` to target one agent.
 
 ### Skill-first protocol
 
 Mind keeps one canonical protocol and one complete `mind-management` skill. The
 skill installs once at `~/.agents/skills/mind-management`; Claude Code and
 Antigravity receive a symlink or managed copy because they do not read the
-global directory. Client L2 instructions and the MCP `initialize.instructions`
-handshake are brief activation only. If the skill cannot be loaded, call the
-`system_instructions` MCP tool for the complete protocol at version `2.1.0`.
+global directory. The skill is the single source of truth for Mind. Load it
+unconditionally at session start and after compaction, before any Mind use; do
+not call a Mind MCP tool until it is loaded. Client L2 instructions and the MCP
+`initialize.instructions` handshake are activation pointers, not the protocol.
+If the skill is not listed or cannot be loaded, call the `system_instructions`
+MCP tool for the complete protocol at version `2.1.0`. That fallback is
+complete but secondary; the skill is the primary source of truth.
 
-Agents load the skill once at session start and reload it after compaction.
 Mind does not track reads in a database, enforce a quota, or create a checkpoint
 just to record activation. Setup updates only the exact `mind-management` skill
 in its managed locations; it leaves other skills untouched and replaces
@@ -571,7 +574,7 @@ Rollout policy:
 - Cursor **L3** writes the documented `{ "version": 1, "hooks": { ... } }` schema with `sessionStart`, `preCompact`, `sessionEnd`, and `stop`, but hook execution is marked **unverified** because it was not live-tested
 - Existing integrations outside Wave 1 remain wired in the same capability model with explicit status
 - Windsurf/Devin writes `~/.config/devin/mcp_config.json` (the legacy `~/.windsurf/mcp.json` path is detection-only); VS Code/Copilot writes portable `~/.copilot/mcp-config.json`; Antigravity writes `~/.gemini/config/mcp_config.json` and uses `~/.gemini/config/skills`
-- Pi Agent is a **supported** L1/L2 integration with MCP at `~/.pi/agent/mcp.json`, a brief managed pointer in `~/.pi/agent/AGENTS.md`, and the shared `~/.agents` skill; Mind does not install a Pi plugin and marks L3 **unverified**
+- Pi Agent is a **supported** L1/L2 integration with MCP at `~/.pi/agent/mcp.json`, a managed activation pointer in `~/.pi/agent/AGENTS.md`, and the shared `~/.agents` skill; Mind does not install a Pi plugin and marks L3 **unverified**
 - Codex, Gemini CLI, VS Code/Copilot, and Antigravity document hooks, but Mind does not implement L3 automation for them
 
 `mind setup opencode` is idempotent and non-destructive:
@@ -591,7 +594,7 @@ Rollout policy:
 - `command = "<path-to-mind>"`
 - `args = ["mcp"]`
 
-It also non-destructively upserts a managed Memory Protocol block in `~/.codex/AGENTS.md`.
+It also non-destructively upserts a managed Mind activation pointer block in `~/.codex/AGENTS.md`. Project `AGENTS.md` files must point to the skill and fallback, not restate the protocol.
 
 `mind setup cursor` keeps existing MCP setup behavior and configures global L3 hooks using the documented envelope:
 
@@ -603,7 +606,7 @@ It also non-destructively upserts a managed Memory Protocol block in `~/.codex/A
 `mind setup pi` configures the Pi Agent with the minimal integration:
 
 - writes `~/.pi/agent/mcp.json` with `mcpServers.mind` over stdio
-- upserts a brief managed activation block in `~/.pi/agent/AGENTS.md` without touching unrelated content
+- upserts a managed activation pointer block in `~/.pi/agent/AGENTS.md` without touching unrelated content
 - installs the shared `~/.agents/skills/mind-management` skill and migrates a managed Pi-specific shadow copy
 - does not install a Pi plugin; Pi documents extensions, but Mind marks hook automation **unverified**
 

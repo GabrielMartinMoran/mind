@@ -44,6 +44,13 @@ describe('MCP initialize instructions', () => {
       expect(instructions).toContain('system_instructions');
       expect(instructions).not.toContain('## ORIENT');
       expect(instructions).not.toContain('<!-- mind-cognitive-protocol:body -->');
+
+      expect((instructions ?? '').length).toBeLessThanOrEqual(512);
+      const first512 = (instructions ?? '').slice(0, 512);
+      expect(first512).toContain('source of truth');
+      expect(first512).toContain('unconditionally');
+      expect(first512).toContain('mind-management');
+      expect(first512).toContain('system_instructions');
     } finally {
       if (client) {
         await client.close().catch(() => {});

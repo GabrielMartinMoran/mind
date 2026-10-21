@@ -1,14 +1,17 @@
 export const SKILL_NAME = 'mind-management';
 
 const ACTIVATION_TEXT =
-  `When the mind MCP server is available, load the \`${SKILL_NAME}\` skill once at session start ` +
-  'and again after compaction. The skill is the canonical protocol for retrieval, writing, ' +
-  'maintenance, linking, and checkpoints. If the skill cannot be loaded, call ' +
-  '`system_instructions` for the complete protocol.';
+  `\`${SKILL_NAME}\` is Mind's single source of truth. Load it unconditionally at session start ` +
+  'and after compaction, before any Mind use; do not call a Mind MCP tool until loaded. ' +
+  'AGENTS.md, L2, MCP initialize, tool descriptions, and docs are pointers only; they do not ' +
+  'replace the skill. If the skill is not listed or cannot be loaded, call ' +
+  '`system_instructions` and follow it.';
 
 const SKILL_LOAD_NOTE_TEXT =
-  'Canonical Mind protocol: load this skill at session start and again after compaction. ' +
-  'If it cannot be loaded, call `system_instructions` for the complete protocol.';
+  `\`${SKILL_NAME}\` is Mind's single source of truth. Load it unconditionally before any Mind ` +
+  'use and again after compaction. AGENTS.md, L2, MCP initialize, tool descriptions, and docs ' +
+  'are pointers only; they do not replace the skill. If the skill is not listed or cannot be ' +
+  'loaded, call `system_instructions` and follow it.';
 
 /** Brief activation shared by L2 instructions and the MCP initialize handshake. */
 export function renderSkillActivation(): string {

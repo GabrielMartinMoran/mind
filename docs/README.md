@@ -23,9 +23,9 @@ frozen and is not current truth. The maintenance policy is in
 
 ## Agents and setup
 
-- [Skill-first distribution](skill-first-distribution.md) — explains the single
-  canonical protocol, the `mind-management` skill, brief activation, and the
-  exact-name installation and update model.
+- [Skill-first distribution](skill-first-distribution.md) — explains the
+  `mind-management` skill as the single source of truth, activation pointers,
+  and the exact-name installation and update model.
 - [Agent integration matrix](agent-integration-matrix.md) — records the MCP and
   skill paths, instruction support, hooks, and validation status for every
   supported client.

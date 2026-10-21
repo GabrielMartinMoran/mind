@@ -6,11 +6,10 @@ model solves three problems: duplicated protocol text drifts, per-client copies
 shadow each other, and long instruction payloads get truncated or ignored.
 
 This page explains the distribution model and the lifecycle rules that keep it
-consistent. The normative instructions themselves live in the canonical
-protocol at
+consistent. The canonical body lives at
 [`src/resources/protocols/mind-cognitive-protocol.md`](../src/resources/protocols/mind-cognitive-protocol.md).
-Read the protocol for the exact tool calls; read this page to understand how
-Mind delivers it.
+The installed `mind-management` skill is the single source of truth agents
+load; read this page to understand how Mind delivers it.
 
 ## One canonical body, one complete skill
 
@@ -19,37 +18,58 @@ Mind keeps a single token-free protocol body. Three render paths consume it:
 - **The skill.** `mind-management` is the complete artifact an agent loads. It
   combines YAML frontmatter, a short self-load note, and the full protocol
   body.
-- **L2 instructions.** Setup writes a brief activation that names the skill and
-  the fallback. It does not repeat the body.
-- **MCP `initialize.instructions`.** The server returns the same brief
-  activation during the handshake.
+- **L2 instructions.** Setup writes an activation pointer that names the skill
+  and the fallback. It does not repeat the body.
+- **MCP `initialize.instructions`.** The server returns the same activation
+  pointer during the handshake.
 
 `system_instructions` remains the complete protocol and the explicit fallback
-when the skill cannot be loaded. The response reports
+when the skill is not listed or cannot be loaded. The response reports
 `instructions_version: "2.1.0"`.
 
 `src/cli/skill-activation.ts` owns the activation text and the skill load note.
 Changing the wording there updates setup and the MCP handshake together. No
 client receives an independent complete copy of the protocol.
 
-## Activation is brief, the skill is complete
+## The skill is the single source of truth
 
-Loading a skill costs context, so the model loads it once per context and
-reloads it after compaction or context loss. It does not track reads in a
-database, simulate `#pragma once`, impose a quota, or create an artificial
-checkpoint to prove that activation happened.
+The `mind-management` skill is the single source of truth for Mind. Load it
+unconditionally at session start and after compaction, before any Mind use; do
+not call a Mind MCP tool until it is loaded. The skill is the complete protocol
+for retrieval, writing, linking, and checkpoints.
 
-| Surface                     | Content                         | When it is used               |
-| --------------------------- | ------------------------------- | ----------------------------- |
-| L2 instructions             | Skill name, load note, fallback | Every session start           |
-| MCP initialize instructions | Skill name, load note, fallback | MCP handshake                 |
-| `mind-management` skill     | Frontmatter + full body         | Session start and compaction  |
-| `system_instructions`       | Full body                       | When the skill is unavailable |
+Any protocol mention in AGENTS.md, L2 instructions, MCP
+`initialize.instructions`, tool descriptions, or these docs is only a pointer;
+it does not replace the skill. If the skill is not listed or cannot be loaded,
+call `system_instructions` and follow it. That fallback is complete but
+secondary; the skill is the primary source of truth. Mind does not track reads
+in a database, enforce a quota, or create a checkpoint to prove that activation
+happened.
 
-The brief activation survives client truncation and single-line display. Pi,
-for example, surfaces only the first instruction line; Claude Code truncates
-long initialize instructions. The complete protocol still reaches the agent
-through the skill.
+| Surface                     | Content                                         | When it is used                                                            |
+| --------------------------- | ----------------------------------------------- | -------------------------------------------------------------------------- |
+| L2 instructions             | Activation pointer: skill name, fallback        | Written to agent config; points to the skill                               |
+| MCP initialize instructions | Activation pointer: skill name, fallback        | MCP handshake                                                              |
+| `mind-management` skill     | Frontmatter description + load note + full body | Unconditionally at session start and after compaction, before any Mind use |
+| `system_instructions`       | Full body (secondary fallback)                  | When the skill is not listed or cannot be loaded                           |
+
+The pointer survives client truncation and single-line display. Pi, for example,
+surfaces only the first instruction line; Claude Code truncates long initialize
+instructions. The complete protocol still reaches the agent through the skill.
+
+## Project AGENTS.md precedence
+
+Codex reads the global `AGENTS.md` first and project `AGENTS.md` files later, so
+project content overrides earlier guidance. A project file that restates a Mind
+workflow can therefore bypass the source-of-truth contract.
+
+Project `AGENTS.md` files must point to the `mind-management` skill and the
+`system_instructions` fallback. They must not restate the Mind protocol, copy
+the canonical body, or describe themselves as the protocol. The skill is the
+single source of truth; AGENTS.md, the L2 activation pointer, and MCP
+`initialize.instructions` are pointers only. Setup cannot rewrite arbitrary
+project files, so the warning is documentation, not an enforced server-side
+gate.
 
 ## Installation model
 
@@ -177,8 +197,8 @@ validation notes live in
 distinctions are:
 
 - OpenCode previously validated MCP, L2, and plugin behavior. A free
-  `BENCH_INTEGRATION=1` check now also validates skill discovery, the brief L2
-  instruction, MCP configuration and handshake, and `/api/skill` polling on
+  `BENCH_INTEGRATION=1` check now also validates skill discovery, the L2
+  activation pointer, MCP configuration and handshake, and `/api/skill` polling on
   OpenCode 2.0.28 without a model call. Benchmark `mind-current` A2 and B runs
   now apply that same checkout setup in every isolated environment, so the
   benchmark exercises the real integration rather than MCP alone. B11 asserts
@@ -190,7 +210,7 @@ distinctions are:
   link or copy because they do not read global `~/.agents/skills`.
 - Cursor writes the documented hooks envelope, but event payloads, argv shape,
   and execution remain unverified. Do not describe Cursor L3 as functional.
-- Pi is wired at `~/.pi/agent/mcp.json` with a brief managed pointer in
+- Pi is wired at `~/.pi/agent/mcp.json` with a managed activation pointer in
   `~/.pi/agent/AGENTS.md`, the shared skill, and no Pi plugin. Pi documents
   extensions; Mind does not implement one.
 
@@ -218,7 +238,7 @@ The root `Makefile` delegates to the subproject with `cd`, for example
 Benchmark `mind-current` A2 conditions and B1–B11 units run the real
 `<checkout>/mind setup opencode` once per isolated environment. That gives them
 the same integration as a normal OpenCode install: the `mind` MCP server, the
-canonical `mind-management` skill, the brief L2 activation, and the
+canonical `mind-management` skill, the L2 activation pointer, and the
 `system_instructions` fallback. A1 does not prepare an agent, and historical
 `mind-v9`/`mind-v10` plus `no-memory` keep their original integration. B11
 asserts skill-before-Mind ordering per session through that shared preparation;

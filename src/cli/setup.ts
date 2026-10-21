@@ -403,7 +403,7 @@ function ensureClaudeManagedInstructions(instructionPath: string): void {
 
   const managedBody = [
     CLAUDE_MANAGED_BLOCK_START,
-    '## mind Memory Protocol (managed)',
+    '## Mind activation pointer (managed)',
     '',
     `Source: ${instructionPath}`,
     '',
@@ -425,7 +425,7 @@ function ensureCodexManagedInstructions(): void {
 
   const managedBody = [
     CLAUDE_MANAGED_BLOCK_START,
-    '## mind Memory Protocol (managed)',
+    '## Mind activation pointer (managed)',
     '',
     renderMemoryProtocol('codex').trim(),
     CLAUDE_MANAGED_BLOCK_END,
@@ -444,7 +444,7 @@ function ensurePiManagedInstructions(): void {
 
   const managedBody = [
     CLAUDE_MANAGED_BLOCK_START,
-    '## mind Memory Protocol (managed)',
+    '## Mind activation pointer (managed)',
     '',
     renderMemoryProtocol('pi').trim(),
     CLAUDE_MANAGED_BLOCK_END,

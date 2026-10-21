@@ -11,7 +11,7 @@ export function createSystemTools(): SystemTools {
     system_instructions: {
       schema: SystemInstructionsSchema,
       description:
-        'Returns the complete Mind protocol as a fallback when the `mind-management` skill cannot be loaded.',
+        'Returns the complete fallback copy of the Mind protocol when the `mind-management` skill is not listed or cannot be loaded.',
       annotations: { readOnlyHint: true },
       handler: getSystemInstructionsHandler,
     },

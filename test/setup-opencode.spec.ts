@@ -243,7 +243,11 @@ describe('OpenCode setup integration', () => {
 
     const injectedText = readFileSync(injectedPath, 'utf-8');
     expect(injectedText).toBe(renderMemoryProtocol('opencode'));
-    expect(injectedText).toContain('Mind Memory Protocol');
+    expect(injectedText).toContain('Mind activation pointer');
+    expect(injectedText).toContain(
+      'The source of truth is the `mind-management` skill, not this file.'
+    );
+    expect(injectedText).toContain('unconditionally');
     expect(injectedText).toContain('mind-management');
     expect(injectedText).toContain('system_instructions');
     expect(injectedText).not.toContain('## ORIENT');
