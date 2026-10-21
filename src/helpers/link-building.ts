@@ -1,6 +1,7 @@
 // ── Link-building helpers ──
 
 import type { LinkedMemorySummary, MindStore } from '../store/mind-store';
+import type { Link, LinkDirection } from '../types';
 
 /**
  * Enriched link format returned by checkpoint_load and memory_read.
@@ -13,6 +14,33 @@ export interface EnrichedLink {
   tags: string[];
   pinned: boolean;
   changed_at: string;
+  label: string;
+  direction: LinkDirection;
+}
+
+export interface LinkEndpoint {
+  id: string;
+  direction: LinkDirection;
+}
+
+/**
+ * Resolve the memory at the other end of a link relative to `memoryId`.
+ *
+ * Returns null when the link does not touch `memoryId` or would resolve to
+ * `memoryId` itself.
+ */
+export function resolveLinkEndpoint(
+  link: Pick<Link, 'source_id' | 'target_id'>,
+  memoryId: string
+): LinkEndpoint | null {
+  const isOutgoing = link.source_id === memoryId;
+  const otherId = isOutgoing ? link.target_id : link.target_id === memoryId ? link.source_id : null;
+
+  if (!otherId || otherId === memoryId) {
+    return null;
+  }
+
+  return { id: otherId, direction: isOutgoing ? 'outgoing' : 'incoming' };
 }
 
 /**
@@ -35,6 +63,8 @@ export function transformLinkedSummary(summary: LinkedMemorySummary): EnrichedLi
     tags: summary.tags,
     pinned: summary.pinned,
     changed_at: summary.changed_at,
+    label: summary.label,
+    direction: summary.direction,
   };
 }
 
@@ -65,22 +95,37 @@ export function buildLinkedMemoriesArray(
 ): EnrichedLink[] {
   const linked_memories: EnrichedLink[] = [];
   const links = store.getLinks(memoryId);
-  const linksToInclude = typeof limit === 'number' ? links.slice(0, limit) : links;
 
-  for (const link of linksToInclude) {
-    const linkedMem = store.getMemoryById(link.target_id);
-    if (linkedMem) {
-      linked_memories.push({
-        name: linkedMem.name,
-        space: linkedMem.space_name,
-        ref: `${linkedMem.space_name}:${linkedMem.name}`,
-        tier: linkedMem.tier,
-        tags: linkedMem.tags,
-        pinned: linkedMem.pinned,
-        changed_at: linkedMem.changed_at,
-      });
+  // Consider outgoing relations first so incoming relations cannot consume the
+  // optional limit before direct outgoing relations are included.
+  const orderedLinks = [
+    ...links.filter(link => link.source_id === memoryId),
+    ...links.filter(link => link.source_id !== memoryId && link.target_id === memoryId),
+  ];
+
+  for (const link of orderedLinks) {
+    const endpoint = resolveLinkEndpoint(link, memoryId);
+    if (!endpoint) {
+      continue;
     }
+
+    const linkedMem = store.getMemoryById(endpoint.id);
+    if (!linkedMem) {
+      continue;
+    }
+
+    linked_memories.push({
+      name: linkedMem.name,
+      space: linkedMem.space_name,
+      ref: `${linkedMem.space_name}:${linkedMem.name}`,
+      tier: linkedMem.tier,
+      tags: linkedMem.tags,
+      pinned: linkedMem.pinned,
+      changed_at: linkedMem.changed_at,
+      label: link.label,
+      direction: endpoint.direction,
+    });
   }
 
-  return linked_memories;
+  return typeof limit === 'number' ? linked_memories.slice(0, limit) : linked_memories;
 }

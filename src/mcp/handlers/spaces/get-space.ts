@@ -5,11 +5,12 @@ import {
   fetchCheckpointSummaries,
 } from '../../helpers/checkpoint-query';
 import { presentSpaceResponse } from '../../helpers/memory-response';
-import { buildTrendingTierBlock } from '../../helpers/space-orientation';
+import { buildReferencesBlock, buildTrendingTierBlock } from '../../helpers/space-orientation';
 import { buildYamlContent } from '../../helpers/yaml-response';
 import { SpaceGetSchema } from '../../schemas/spaces/get-space';
 
 const TRENDING_PREVIEW_LIMIT = 5;
+const REFERENCES_PREVIEW_LIMIT = 5;
 
 export function getSpaceHandler(store: MindStore) {
   return async (args: unknown) => {
@@ -23,10 +24,11 @@ export function getSpaceHandler(store: MindStore) {
       throw new Error(`Space "${parsed.name}" does not exist.`);
     }
 
-    const [tier1, tier2, tier3, checkpointMemories] = await Promise.all([
+    const [tier1, tier2, tier3, references, checkpointMemories] = await Promise.all([
       buildTrendingTierBlock(store, parsed.name, 1, TRENDING_PREVIEW_LIMIT),
       buildTrendingTierBlock(store, parsed.name, 2, TRENDING_PREVIEW_LIMIT),
       buildTrendingTierBlock(store, parsed.name, 3, TRENDING_PREVIEW_LIMIT),
+      buildReferencesBlock(store, parsed.name, REFERENCES_PREVIEW_LIMIT),
       fetchAllCheckpointMemories(store, parsed.name),
     ]);
 
@@ -55,6 +57,7 @@ export function getSpaceHandler(store: MindStore) {
         tier_2: tier2,
         tier_3: tier3,
       },
+      references,
       active_checkpoints: {
         total: activeCheckpointTotal,
         checkpoints: activeCheckpoints,

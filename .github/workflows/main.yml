@@ -2,9 +2,8 @@ name: CI
 
 on:
   push:
-    branches: ['*']
   pull_request:
-    branches: ['*']
+  workflow_dispatch:
 
 jobs:
   validate:
@@ -18,22 +17,53 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
+
+      - name: Audit dependencies (high)
+        run: bun audit --audit-level=high
 
       - name: Type check
-        run: bun tsc --noEmit
+        run: bun run typecheck
 
       - name: Check formatting (prettier)
-        run: bun run format --check || npx prettier --check .
+        run: bun run format:check
 
       - name: Lint
         run: bun run lint
 
-      - name: Dependency audit
-        run: npm audit --audit-level=high || true
-
       - name: Run tests
         run: bun test test/ web/test
+
+  benchmark-agent-memory:
+    name: Benchmark (agent-memory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: benchmarks/agent-memory
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install benchmark dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Audit benchmark dependencies (high)
+        run: bun audit --audit-level=high
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Unit and contract tests
+        run: bun test test
+
+      - name: Experiment tests
+        run: bun test experiments

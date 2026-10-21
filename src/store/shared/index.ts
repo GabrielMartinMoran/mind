@@ -43,5 +43,10 @@ export {
   type SearchChannelMethod,
   type SearchConfidence,
 } from './search-fusion';
+export {
+  canBypassLexicalAdmission,
+  selectSemanticAdmittedIds,
+  SEMANTIC_ADMISSION_FLOOR,
+} from './semantic-admission';
 export { generateUuid } from './uuid-helpers';
 export { requireMemory, requireSpace, type MemoryRow } from './validation-helpers';

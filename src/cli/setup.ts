@@ -14,15 +14,25 @@ import {
   safeWriteJsonc,
   safeWriteToml,
 } from '../setup/safe-config';
-import { ensureMindManagementSkill } from '../setup/skill-installation';
+import {
+  type AgentSkillType,
+  ensureMindManagementSkill,
+  getAgentSkillLayout,
+  getAgentSkillPath,
+  getAgentSkillSignalPaths,
+  pathExistsLstat,
+} from '../setup/skill-installation';
 export { buildOpenCodeAutomationPlugin } from '../setup/opencode-automation-plugin';
 export { getAgentCapabilities, getAgentCapabilityMatrix } from './capabilities';
 
 import {
+  type AgentSkillDeclaration,
   type CapabilityMap,
   type SupportedAgent,
   formatCapabilityBadge,
+  formatSkillLine,
   getAgentCapabilityMatrix,
+  getAgentSkillDeclaration,
   getSupportedAgents,
 } from './capabilities';
 import { renderMemoryProtocol } from './memory-protocol';
@@ -42,7 +52,10 @@ const CLAUDE_HOOK_SCRIPT_NAME = 'mind-session-summary.sh';
 const CLAUDE_HOOKS_OPT_IN_ENV = 'MIND_SETUP_CLAUDE_ENABLE_HOOKS';
 
 const CURSOR_HOOK_SCRIPT_NAME = 'mind-session-continuity.sh';
-const CURSOR_HOOK_EVENTS = ['sessionStart', 'preCompact', 'stop'] as const;
+// Documented Cursor event names. `sessionEnd` is the documented lifecycle end;
+// older Mind builds emitted a top-level `stop` map without the documented
+// `{ version, hooks }` envelope.
+const CURSOR_HOOK_EVENTS = ['sessionStart', 'preCompact', 'sessionEnd', 'stop'] as const;
 
 const LEGACY_PROTOCOL_FILENAMES = [
   'mind-memory-protocol-opencode.md',
@@ -422,6 +435,25 @@ function ensureCodexManagedInstructions(): void {
   writeText(agentsPath, next);
 }
 
+function ensurePiManagedInstructions(): void {
+  const piDir = path.join(getHomeDir(), '.pi', 'agent');
+  const agentsPath = path.join(piDir, 'AGENTS.md');
+
+  ensureDir(piDir);
+  const current = readText(agentsPath);
+
+  const managedBody = [
+    CLAUDE_MANAGED_BLOCK_START,
+    '## mind Memory Protocol (managed)',
+    '',
+    renderMemoryProtocol('pi').trim(),
+    CLAUDE_MANAGED_BLOCK_END,
+  ].join('\n');
+
+  const next = upsertManagedBlock(current, managedBody);
+  writeText(agentsPath, next);
+}
+
 function shouldEnableClaudeHooks(): boolean {
   const value = (process.env[CLAUDE_HOOKS_OPT_IN_ENV] ?? '').trim().toLowerCase();
   return value === '1' || value === 'true' || value === 'yes';
@@ -474,22 +506,15 @@ function ensureCursorHookScript(): string {
   const script = `#!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v mind >/dev/null 2>&1; then
-  exit 0
-fi
-
+# Mind does not create, overwrite, or complete checkpoints from Cursor hooks.
+# Continuity is agent-driven through the mind-management skill so a hook can
+# never clobber a real active checkpoint's goal or pending work.
 EVENT="\${1:-\${CURSOR_HOOK_EVENT:-unknown}}"
-PROJECT_SPACE="\${MIND_PROJECT_SPACE:-projects/unknown}"
 
 case "$EVENT" in
-  sessionStart)
-    mind checkpoint set "$PROJECT_SPACE" "Cursor session start" "Capture active goal and pending work" --notes "cursor:event=sessionStart" >/dev/null 2>&1 || true
-    ;;
-  preCompact)
-    mind checkpoint set "$PROJECT_SPACE" "Cursor pre-compact" "Snapshot context before compaction" --notes "cursor:event=preCompact" >/dev/null 2>&1 || true
-    ;;
-  stop)
-    mind checkpoint set "$PROJECT_SPACE" "Cursor session stop" "Persist final continuity notes" --notes "cursor:event=stop" >/dev/null 2>&1 || true
+  sessionStart|preCompact|sessionEnd|stop)
+    # Intentional no-op: the lifecycle event is observed but not persisted.
+    :
     ;;
   *)
     exit 0
@@ -505,9 +530,18 @@ function withCursorHooksConfig(
   hookScriptPath: string
 ): Record<string, unknown> {
   const next = { ...config };
+  const hooksRoot =
+    next.hooks && typeof next.hooks === 'object' && !Array.isArray(next.hooks)
+      ? { ...(next.hooks as Record<string, unknown>) }
+      : {};
 
   for (const eventName of CURSOR_HOOK_EVENTS) {
-    const existing = Array.isArray(next[eventName]) ? (next[eventName] as Array<unknown>) : [];
+    // Migrate the pre-documented top-level event map if it is still present.
+    const legacy = Array.isArray(next[eventName]) ? (next[eventName] as Array<unknown>) : [];
+    const current = Array.isArray(hooksRoot[eventName])
+      ? (hooksRoot[eventName] as Array<unknown>)
+      : [];
+    const existing = [...current, ...legacy];
 
     const isManagedEntry = (entry: unknown): boolean => {
       if (!entry || typeof entry !== 'object') {
@@ -530,8 +564,12 @@ function withCursorHooksConfig(
 
     const withoutManaged = existing.filter(entry => !isManagedEntry(entry));
 
-    next[eventName] = [...withoutManaged, managedEntry];
+    hooksRoot[eventName] = [...withoutManaged, managedEntry];
+    delete next[eventName];
   }
+
+  next.version = typeof next.version === 'number' && next.version > 0 ? next.version : 1;
+  next.hooks = hooksRoot;
 
   return next;
 }
@@ -735,10 +773,30 @@ export async function statusServers(): Promise<void> {
 
 // getAgentConfig is now imported from ../setup/agent-config
 
-function printCapabilityDiagnostics(capabilities: CapabilityMap): void {
+function printCapabilityDiagnostics(
+  capabilities: CapabilityMap,
+  skill?: AgentSkillDeclaration
+): void {
   console.log(`   ${formatCapabilityBadge('L1_MCP', capabilities.L1_MCP)}`);
   console.log(`   ${formatCapabilityBadge('L2_INSTRUCTIONS', capabilities.L2_INSTRUCTIONS)}`);
   console.log(`   ${formatCapabilityBadge('L3_HOOKS', capabilities.L3_HOOKS)}`);
+  if (skill) {
+    console.log(`   ${formatSkillLine(skill)}`);
+  }
+}
+
+function installAgentSkill(agent: AgentSkillType): void {
+  try {
+    const skillPath = ensureMindManagementSkill(agent, {
+      warn: message => console.log(`⚠️ ${message}`),
+    });
+    if (skillPath) {
+      console.log(`✅ mind-management skill installed`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`⚠️ skill installation failed: ${message}`);
+  }
 }
 
 // Agent-specific setup handlers (Task 3.4)
@@ -757,16 +815,7 @@ async function setupOpenCode(
     console.log(`⚠️ OpenCode plugin failed: ${message}`);
   }
 
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('opencode');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('opencode');
 
   return result;
 }
@@ -780,16 +829,7 @@ async function setupClaudeCode(
   ensureClaudeManagedInstructions(instructionsPath);
   console.log(`✅ Claude Code protocol instructions configured`);
 
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('claude-code');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('claude-code');
 
   const shouldRefreshHooks = options.refreshExistingClaudeHooks && hasClaudeHooksSignal();
   if (shouldEnableClaudeHooks() || shouldRefreshHooks) {
@@ -817,16 +857,7 @@ async function setupCursor(merged: Record<string, unknown>): Promise<Record<stri
     console.log(`⚠️ hooks setup failed: ${message}`);
   }
 
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('cursor');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('cursor');
 
   return merged;
 }
@@ -835,68 +866,31 @@ async function setupCodex(_configPath: string, _snippet: string): Promise<void> 
   ensureCodexManagedInstructions();
   console.log(`✅ Codex AGENTS protocol configured`);
 
-  // Install mind-management skill (shared ~/.agents/skills for cross-agent compatibility)
-  try {
-    const skillPath = ensureMindManagementSkill('codex');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('codex');
 }
 
 async function setupWindsurf(): Promise<void> {
-  // Install mind-management skill (shared ~/.agents/skills for cross-agent compatibility)
-  try {
-    const skillPath = ensureMindManagementSkill('windsurf');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('windsurf');
 }
 
 async function setupGeminiCli(): Promise<void> {
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('gemini-cli');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('gemini-cli');
 }
 
 async function setupVscode(): Promise<void> {
-  // Install mind-management skill (shared ~/.agents/skills for cross-agent compatibility)
-  try {
-    const skillPath = ensureMindManagementSkill('vscode');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('vscode');
 }
 
 async function setupAntigravity(): Promise<void> {
-  // Install mind-management skill at ~/.gemini/antigravity/skills/mind-management/
-  try {
-    const skillPath = ensureMindManagementSkill('antigravity');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('antigravity');
+}
+
+async function setupPi(): Promise<void> {
+  ensurePiManagedInstructions();
+  console.log(`✅ Pi AGENTS protocol configured`);
+
+  // Pi has documented extensions, but Mind intentionally ships no Pi plugin.
+  installAgentSkill('pi');
 }
 
 // Agents that use stdio transport and need URL field removed
@@ -907,6 +901,7 @@ const STDIO_TRANSPORT_AGENTS: SupportedAgent[] = [
   'gemini-cli',
   'vscode',
   'antigravity',
+  'pi',
 ];
 
 function removeLegacyUrlField(merged: Record<string, unknown>): void {
@@ -991,6 +986,8 @@ export async function runSetup(
       await setupVscode();
     } else if (agent === 'antigravity') {
       await setupAntigravity();
+    } else if (agent === 'pi') {
+      await setupPi();
     }
 
     // For stdio transport agents, remove any leftover url field
@@ -1059,7 +1056,7 @@ export async function runSetup(
       console.log(`   Config updated`);
     }
   }
-  printCapabilityDiagnostics(cfg.capabilities);
+  printCapabilityDiagnostics(cfg.capabilities, getAgentSkillDeclaration(agent));
 }
 
 export interface SetupRefreshOptions {
@@ -1073,40 +1070,28 @@ export interface SetupRefreshResult {
   skippedAgents: SupportedAgent[];
 }
 
-function getSharedSkillPath(): string {
-  return path.join(getHomeDir(), '.agents', 'skills', 'mind-management', 'SKILL.md');
-}
-
-function getAgentSkillSignalPath(agent: SupportedAgent): string | null {
-  const home = getHomeDir();
-  switch (agent) {
-    case 'opencode':
-      return path.join(home, '.config', 'opencode', 'skills', 'mind-management', 'SKILL.md');
-    case 'claude-code':
-      return path.join(home, '.claude', 'skills', 'mind-management', 'SKILL.md');
-    case 'cursor':
-      return path.join(home, '.cursor', 'skills', 'mind-management', 'SKILL.md');
-    case 'gemini-cli':
-      return path.join(home, '.gemini', 'skills', 'mind-management', 'SKILL.md');
-    case 'antigravity':
-      return path.join(home, '.gemini', 'antigravity', 'skills', 'mind-management', 'SKILL.md');
-    case 'codex':
-    case 'windsurf':
-    case 'vscode':
-      return getSharedSkillPath();
-  }
-}
-
 function hasAgentSkillSignal(agent: SupportedAgent): boolean {
-  const skillPath = getAgentSkillSignalPath(agent);
-  if (!skillPath || !fs.existsSync(skillPath)) {
+  // Link-strategy clients have a dedicated directory, so only its SKILL.md is
+  // a signal. The shared canonical copy must not make every client look
+  // detected after a single install.
+  const layout = getAgentSkillLayout(agent);
+  if (layout.strategy === 'link') {
+    // lstat also recognizes a broken managed symlink, so refresh can repair it.
+    return pathExistsLstat(layout.targetDir) || pathExistsLstat(getAgentSkillPath(agent));
+  }
+
+  const managedDirs = [layout.canonicalDir, ...layout.shadowDirs];
+  const skillPaths = getAgentSkillSignalPaths(agent);
+  if (
+    !managedDirs.some(managedPath => pathExistsLstat(managedPath)) &&
+    !skillPaths.some(skillPath => pathExistsLstat(skillPath))
+  ) {
     return false;
   }
 
-  if (!['codex', 'windsurf', 'vscode'].includes(agent)) {
-    return true;
-  }
-
+  // Shared-strategy clients all resolve the same canonical `~/.agents` skill.
+  // Requiring their own config directory prevents one client's install from
+  // making every other shared client look detected.
   const cfg = getAgentConfig(agent);
   return fs.existsSync(path.dirname(cfg.configPath));
 }
@@ -1154,10 +1139,17 @@ export function isAgentIntegrationDetected(agent: SupportedAgent): boolean {
         fs.existsSync(path.join(home, '.cursor', 'hooks', CURSOR_HOOK_SCRIPT_NAME))
       );
     case 'windsurf':
+      // Read-only legacy detection: the documented path is written above.
+      return jsonFileHasMindMcp(path.join(home, '.windsurf', 'mcp.json'));
     case 'gemini-cli':
     case 'vscode':
     case 'antigravity':
       return false;
+    case 'pi':
+      return textFileContains(
+        path.join(home, '.pi', 'agent', 'AGENTS.md'),
+        CLAUDE_MANAGED_BLOCK_START
+      );
   }
 }
 
@@ -1222,7 +1214,12 @@ function getCapabilityBadge(
   return '❌';
 }
 
-function formatAgentRow(agent: string, name: string, capabilities: CapabilityMap): string {
+function formatAgentRow(
+  agent: string,
+  name: string,
+  capabilities: CapabilityMap,
+  skill: AgentSkillDeclaration
+): string {
   // Determine overall badge based on L1_MCP support (L1 is required)
   const overallBadge = getAgentBadge(
     agent.includes('experimental')
@@ -1237,13 +1234,17 @@ function formatAgentRow(agent: string, name: string, capabilities: CapabilityMap
 
   // Truncate name to 12 chars for alignment
   const shortName = name.length > 12 ? name.slice(0, 11) + '…' : name.padEnd(12);
-  return `   ${overallBadge} ${shortName}  L1 ${l1}  L2 ${l2}  L3 ${l3}`;
+  const skillBadge = getAgentBadge(skill.status);
+  return (
+    `   ${overallBadge} ${shortName}  L1 ${l1}  L2 ${l2}  L3 ${l3}\n` +
+    `      ${skillBadge} skill ${skill.status} (${skill.strategy}) ${skill.path}`
+  );
 }
 
 export function listAgents(): void {
   console.log('🧠 Available Agents\n');
 
-  for (const { agent, name, capabilities } of getAgentCapabilityMatrix()) {
-    console.log(formatAgentRow(agent, name, capabilities));
+  for (const { agent, name, capabilities, skill } of getAgentCapabilityMatrix()) {
+    console.log(formatAgentRow(agent, name, capabilities, skill));
   }
 }

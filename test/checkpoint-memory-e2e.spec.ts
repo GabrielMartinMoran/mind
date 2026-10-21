@@ -66,11 +66,11 @@ describe('Phase 6: Integration Tests — Complete Workflows', () => {
     expect(memoryWithLinks.links_failed).toHaveLength(1);
     expect(memoryWithLinks.links_failed[0]?.ref).toBe('nonexistent-memory');
 
-    // 3. Update checkpoint with progress
+    // 3. Update checkpoint with progress; clearing pending signals completion
     const updated = await checkpointTools.checkpoint_save.handler({
       space: 'projects/test-repo',
       goal: 'Implement user auth',
-      pending: 'Update docs', // Progress made
+      pending: '', // work complete
       notes: 'Tests written, implementation complete',
     });
     expect(updated.checkpoint).toBeDefined();

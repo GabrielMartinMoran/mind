@@ -6,12 +6,25 @@ export type SupportedAgent =
   | 'windsurf'
   | 'gemini-cli'
   | 'vscode'
-  | 'antigravity';
+  | 'antigravity'
+  | 'pi';
 export type ExperimentalAgent = never;
 export type Agent = SupportedAgent;
 
 export type CapabilityLevel = 'L1_MCP' | 'L2_INSTRUCTIONS' | 'L3_HOOKS';
 export type CapabilityStatus = 'supported' | 'unsupported' | 'unverified';
+export type SkillStrategy = 'shared' | 'symlink' | 'copy';
+
+/**
+ * Skill installation is a separate surface from L1/L2/L3, not a fourth badge.
+ * `path` is the documented path the client reads, relative to the user's home.
+ */
+export interface AgentSkillDeclaration {
+  status: CapabilityStatus;
+  path: string;
+  strategy: SkillStrategy;
+  evidence: string;
+}
 
 export interface CapabilityDeclaration {
   status: CapabilityStatus;
@@ -26,12 +39,14 @@ export interface CapabilityMatrixEntry {
   agent: Agent | ExperimentalAgent;
   name: string;
   capabilities: CapabilityMap;
+  skill: AgentSkillDeclaration;
 }
 
 export interface SupportedAgentDefinition {
   agent: SupportedAgent;
   name: string;
   capabilities: CapabilityMap;
+  skill: AgentSkillDeclaration;
 }
 
 const CLAUDE_HOOKS_OPT_IN_ENV = 'MIND_SETUP_CLAUDE_ENABLE_HOOKS';
@@ -41,6 +56,16 @@ export const CAPABILITY_LABELS: Record<CapabilityLevel, string> = {
   L2_INSTRUCTIONS: 'L2 instruction/protocol injection',
   L3_HOOKS: 'L3 hooks/session/compaction automation',
 };
+
+export const CANONICAL_SKILL_PATH = '~/.agents/skills/mind-management';
+
+function sharedSkill(evidence: string): AgentSkillDeclaration {
+  return { status: 'supported', path: CANONICAL_SKILL_PATH, strategy: 'shared', evidence };
+}
+
+function linkedSkill(path: string, evidence: string): AgentSkillDeclaration {
+  return { status: 'supported', path, strategy: 'symlink', evidence };
+}
 
 const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
   {
@@ -67,6 +92,10 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
         fallback: `Default remains non-hook mode; run session/compaction protocol manually if opt-in is disabled or unsupported by local Claude tooling.`,
       },
     },
+    skill: linkedSkill(
+      '~/.claude/skills/mind-management',
+      'Claude Code does not read ~/.agents/skills, so setup links ~/.claude/skills/mind-management to the canonical skill (managed-copy fallback). Client skill discovery was not live-validated.'
+    ),
   },
   {
     agent: 'opencode',
@@ -83,7 +112,7 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
         status: 'supported',
         confidence: 'high',
         evidence:
-          'Injects managed mind-memory-protocol.md path first, exact-once, with mind_system_instructions directive.',
+          'Injects managed mind-memory-protocol.md path first, exact-once, with the shared Mind protocol body.',
         fallback: 'N/A',
       },
       L3_HOOKS: {
@@ -95,6 +124,9 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
           'If plugin write or hook execution fails, setup continues and the managed protocol file keeps the manual continuity workflow available.',
       },
     },
+    skill: sharedSkill(
+      'Installed once at ~/.agents/skills/mind-management; managed ~/.config/opencode/skills shadow copies are migrated. Client skill discovery was not live-validated in this task.'
+    ),
   },
   {
     agent: 'codex',
@@ -116,10 +148,14 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
       L3_HOOKS: {
         status: 'unsupported',
         confidence: 'high',
-        evidence: 'No automated session/compaction hooks implemented.',
+        evidence:
+          'Codex now documents lifecycle hooks, but Mind does not implement Codex hook automation.',
         fallback: 'Run session closure protocol manually.',
       },
     },
+    skill: sharedSkill(
+      'Installed once at ~/.agents/skills/mind-management. Client skill discovery was not live-validated in this task.'
+    ),
   },
   {
     agent: 'cursor',
@@ -128,7 +164,7 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
       L1_MCP: {
         status: 'supported',
         confidence: 'high',
-        evidence: 'Writes ~/.cursor/mcp.json mcpServers.mind URL.',
+        evidence: 'Writes ~/.cursor/mcp.json mcpServers.mind with stdio command transport.',
         fallback: 'N/A',
       },
       L2_INSTRUCTIONS: {
@@ -139,38 +175,46 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
         fallback: 'Use AGENTS.md / manual protocol guidance until verified.',
       },
       L3_HOOKS: {
-        status: 'supported',
+        status: 'unverified',
         confidence: 'medium',
         evidence:
-          'Writes ~/.cursor/hooks.json with managed global hook entries and managed executable hook script under ~/.cursor/hooks/.',
+          'Writes the documented ~/.cursor/hooks.json schema ({version:1,hooks:{sessionStart,sessionEnd,preCompact,stop}}) and a managed script under ~/.cursor/hooks/. Hook execution was not live-validated.',
         fallback:
           'If hook file/script writes fail, setup continues and manual checkpoint/session continuity workflow remains available.',
       },
     },
+    skill: sharedSkill(
+      'Installed once at ~/.agents/skills/mind-management; managed ~/.cursor/skills shadow copies are migrated. Cursor also documents ~/.cursor/skills. Client skill discovery was not live-validated.'
+    ),
   },
   {
     agent: 'windsurf',
-    name: 'Windsurf',
+    name: 'Windsurf / Devin',
     capabilities: {
       L1_MCP: {
         status: 'supported',
-        confidence: 'high',
-        evidence: 'Writes ~/.windsurf/mcp.json mcpServers.mind URL.',
+        confidence: 'medium',
+        evidence:
+          'Writes the documented ~/.config/devin/mcp_config.json mcpServers.mind stdio transport. The legacy ~/.windsurf/mcp.json path is detection-only.',
         fallback: 'N/A',
       },
       L2_INSTRUCTIONS: {
         status: 'unsupported',
         confidence: 'high',
-        evidence: 'No instruction/protocol injection integration implemented for Windsurf.',
-        fallback: 'Use manual protocol prompts.',
+        evidence:
+          'No managed instruction/protocol injection for Windsurf/Devin; the shared skill is still installed and documented in the skill surface.',
+        fallback: 'Use manual protocol prompts or the installed skill.',
       },
       L3_HOOKS: {
         status: 'unsupported',
         confidence: 'high',
-        evidence: 'No hooks/session automation code for Windsurf.',
+        evidence: 'No hooks/session automation code for Windsurf/Devin.',
         fallback: 'Execute workflow steps manually.',
       },
     },
+    skill: sharedSkill(
+      'Installed once at ~/.agents/skills/mind-management; Windsurf/Devin documents ~/.config/devin/skills and ~/.agents/skills. Managed ~/.config/devin/skills shadows are migrated. Client skill discovery was not live-validated.'
+    ),
   },
   {
     agent: 'gemini-cli',
@@ -179,7 +223,7 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
       L1_MCP: {
         status: 'supported',
         confidence: 'high',
-        evidence: 'Writes ~/.gemini/settings.json mcpServers.mind URL.',
+        evidence: 'Writes ~/.gemini/settings.json mcpServers.mind with stdio command transport.',
         fallback: 'N/A',
       },
       L2_INSTRUCTIONS: {
@@ -191,34 +235,44 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
       L3_HOOKS: {
         status: 'unsupported',
         confidence: 'high',
-        evidence: 'No hook/session automation implemented for Gemini CLI.',
+        evidence:
+          'Gemini CLI documents hooks, but Mind does not implement Gemini CLI hook automation.',
         fallback: 'Perform session and compaction actions manually.',
       },
     },
+    skill: sharedSkill(
+      'Installed once at ~/.agents/skills/mind-management after migrating any managed ~/.gemini/skills shadow copy. Client skill discovery was not live-validated.'
+    ),
   },
   {
     agent: 'vscode',
-    name: 'VSCode',
+    name: 'VS Code / GitHub Copilot',
     capabilities: {
       L1_MCP: {
         status: 'supported',
         confidence: 'medium',
-        evidence: 'Writes ~/.config/Code/User/mcp.json mcpServers.mind configuration.',
+        evidence:
+          'Writes the portable documented ~/.copilot/mcp-config.json with mcpServers.mind stdio transport. VS Code-native mcp.json with a top-level servers object is documented as an alternative and is not written.',
         fallback: 'N/A',
       },
       L2_INSTRUCTIONS: {
         status: 'unsupported',
         confidence: 'high',
-        evidence: 'No managed protocol injection integration implemented for VSCode yet.',
-        fallback: 'Use repository protocol files manually.',
+        evidence:
+          'No managed instruction/protocol injection for VS Code/Copilot; the shared skill is still installed and documented in the skill surface.',
+        fallback: 'Use repository protocol files or the installed skill manually.',
       },
       L3_HOOKS: {
         status: 'unsupported',
         confidence: 'high',
-        evidence: 'No hooks/session automation implementation for VSCode yet.',
+        evidence:
+          'VS Code/Copilot documents hooks, but Mind does not implement VS Code/Copilot hook automation.',
         fallback: 'Run session continuity steps manually.',
       },
     },
+    skill: sharedSkill(
+      'Installed once at ~/.agents/skills/mind-management; VS Code/Copilot documents ~/.copilot/skills, ~/.claude/skills, and ~/.agents/skills. Managed ~/.copilot/skills shadows are migrated. Client skill discovery was not live-validated.'
+    ),
   },
   {
     agent: 'antigravity',
@@ -227,23 +281,60 @@ const SUPPORTED_AGENT_CAPABILITIES: SupportedAgentDefinition[] = [
       L1_MCP: {
         status: 'supported',
         confidence: 'medium',
-        evidence: 'Writes ~/.gemini/antigravity/mcp_config.json mcpServers.mind stdio transport.',
+        evidence:
+          'Writes the documented ~/.gemini/config/mcp_config.json mcpServers.mind stdio transport. The legacy ~/.gemini/antigravity/mcp_config.json path is no longer written.',
         fallback: 'N/A',
       },
       L2_INSTRUCTIONS: {
         status: 'unsupported',
         confidence: 'high',
         evidence:
-          'No managed instruction/protocol injection integration implemented for Antigravity yet.',
-        fallback: 'Use repository protocol files manually.',
+          'No L2 instruction/protocol injection for Antigravity. Skill installation is a separate surface: setup links ~/.gemini/config/skills/mind-management to the canonical skill.',
+        fallback:
+          'Use repository protocol files, the MCP system_instructions fallback, or the installed skill manually.',
       },
       L3_HOOKS: {
         status: 'unsupported',
         confidence: 'high',
-        evidence: 'No hooks/session automation implementation for Antigravity yet.',
+        evidence:
+          'Antigravity documents hooks, but Mind does not implement Antigravity hook automation.',
         fallback: 'Run session continuity steps manually.',
       },
     },
+    skill: linkedSkill(
+      '~/.gemini/config/skills/mind-management',
+      'Antigravity does not read ~/.agents/skills globally, so setup links ~/.gemini/config/skills/mind-management to the canonical skill (managed-copy fallback) and migrates the legacy ~/.gemini/antigravity/skills shadow. Client skill discovery was not live-validated.'
+    ),
+  },
+  {
+    agent: 'pi',
+    name: 'Pi Agent',
+    capabilities: {
+      L1_MCP: {
+        status: 'supported',
+        confidence: 'high',
+        evidence:
+          'Writes ~/.pi/agent/mcp.json with mcpServers.mind stdio transport (the documented Pi user MCP configuration).',
+        fallback: 'N/A',
+      },
+      L2_INSTRUCTIONS: {
+        status: 'supported',
+        confidence: 'high',
+        evidence:
+          'Upserts a brief managed activation block in ~/.pi/agent/AGENTS.md non-destructively.',
+        fallback: 'Use the installed skill or MCP system_instructions manually.',
+      },
+      L3_HOOKS: {
+        status: 'unverified',
+        confidence: 'low',
+        evidence:
+          'Pi documents extensions, but Mind does not build a Pi plugin, and no Pi hook behavior was live-validated.',
+        fallback: 'Run session continuity steps manually.',
+      },
+    },
+    skill: sharedSkill(
+      'Pi explicitly discovers ~/.agents/skills, so the canonical skill is used directly. Managed ~/.pi/agent/skills shadow copies are migrated. Client skill discovery was not live-validated in this task.'
+    ),
   },
 ];
 
@@ -279,8 +370,16 @@ export function formatCapabilityLine(
   return `- ${CAPABILITY_LABELS[level]}: ${capability.status} (confidence: ${capability.confidence}, evidence: ${capability.evidence}, fallback: ${capability.fallback})`;
 }
 
+export function formatSkillLine(skill: AgentSkillDeclaration): string {
+  return `- Skill installation: ${skill.status} (strategy: ${skill.strategy}, path: ${skill.path}, evidence: ${skill.evidence})`;
+}
+
 export function getAgentCapabilities(agent: Agent): CapabilityMap {
   return getSupportedAgentDefinition(agent).capabilities;
+}
+
+export function getAgentSkillDeclaration(agent: Agent): AgentSkillDeclaration {
+  return getSupportedAgentDefinition(agent).skill;
 }
 
 export function getAgentCapabilityMatrix(): CapabilityMatrixEntry[] {
@@ -288,6 +387,7 @@ export function getAgentCapabilityMatrix(): CapabilityMatrixEntry[] {
     agent: definition.agent,
     name: definition.name,
     capabilities: definition.capabilities,
+    skill: definition.skill,
   }));
 }
 
@@ -300,7 +400,8 @@ export function isAgent(value: string): value is Agent {
     value === 'windsurf' ||
     value === 'gemini-cli' ||
     value === 'vscode' ||
-    value === 'antigravity'
+    value === 'antigravity' ||
+    value === 'pi'
   );
 }
 

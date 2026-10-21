@@ -17,10 +17,6 @@ beforeEach(async () => {
     join(tempDir, 'package.json'),
     `${JSON.stringify({ name: 'mind', version: '1.4.0' }, null, 2)}\n`
   );
-  await writeFile(
-    join(tempDir, 'package-lock.json'),
-    `${JSON.stringify({ name: 'mind', version: '1.2.1', lockfileVersion: 3, packages: { '': { name: 'mind', version: '1.2.1' } } }, null, 2)}\n`
-  );
   await mkdir(join(tempDir, 'test'));
   await writeFile(
     join(tempDir, 'test', 'release-fixture.spec.ts'),
@@ -100,19 +96,17 @@ describe('release script', () => {
     expect(result.commands).toContain('gh release create v1.5.0 --title v1.5.0 --generate-notes');
   });
 
-  it('updates package-lock versions and includes the lockfile in the release commit', async () => {
+  it('releases with the Bun lockfile and no package-lock.json', async () => {
     const result = await runRelease(['minor']);
-    const packageLock = JSON.parse(await readFile(join(tempDir, 'package-lock.json'), 'utf8'));
 
     expect(result.exitCode).toBe(0);
-    expect(packageLock.version).toBe('1.5.0');
-    expect(packageLock.packages[''].version).toBe('1.5.0');
-    expect(result.commands).toContain('git add package.json package-lock.json CHANGELOG.md');
+    expect(result.commands).toContain('git add package.json CHANGELOG.md');
+    expect(result.commands).not.toContain('package-lock.json');
+    expect(await Bun.file(join(tempDir, 'package-lock.json')).exists()).toBe(false);
   });
 
   it('does not change files during simulation and warns when not on main', async () => {
     const beforePackage = await readFile(join(tempDir, 'package.json'), 'utf8');
-    const beforeLock = await readFile(join(tempDir, 'package-lock.json'), 'utf8');
     const beforeChangelog = await readFile(join(tempDir, 'CHANGELOG.md'), 'utf8');
 
     const result = await runRelease(['minor', '--simulate'], 'develop');
@@ -122,7 +116,7 @@ describe('release script', () => {
       '[simulate] warning: release is normally run from main (current: develop)'
     );
     expect(await readFile(join(tempDir, 'package.json'), 'utf8')).toBe(beforePackage);
-    expect(await readFile(join(tempDir, 'package-lock.json'), 'utf8')).toBe(beforeLock);
     expect(await readFile(join(tempDir, 'CHANGELOG.md'), 'utf8')).toBe(beforeChangelog);
+    expect(await Bun.file(join(tempDir, 'package-lock.json')).exists()).toBe(false);
   });
 });

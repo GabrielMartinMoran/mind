@@ -1,9 +1,11 @@
-# Metodología de benchmarks de búsqueda (00004)
+# Metodología de benchmarks de búsqueda
 
 Este documento describe **cómo** se miden el motor de búsqueda, su tamaño y su calidad, y
-**cómo reproducir** esas mediciones. Acompaña al informe técnico
-[`search-optimization-report.md`](search-optimization-report.md) y a la auditoría
-[`search-audit.md`](search-audit.md).
+**cómo reproducir** esas mediciones. Para el comportamiento actual del motor, consulta la
+página viva [search-engine.md](search-engine.md). La evidencia histórica excepcional que
+sostiene estas herramientas está congelada en el
+[informe técnico 00004](history/00004-search-optimization/search-optimization-report.md) y
+en la [investigación de próximos pasos 00005 B](history/00005-search-followup/search-next-steps-research.md).
 
 Las herramientas viven en el repositorio (`scripts/bench-search.ts`,
 `scripts/search-diff.ts`, `scripts/search-eval.ts`, `test/search-eval/**`), de modo que la
@@ -116,6 +118,10 @@ consulta fuzzy (COLD) contra consultas en caliente (warm). El script es
 `cold_cache_pa_only`. Es un costo **por store, una vez tras la última escritura**, no por
 consulta.
 
+Valores medidos del costo cold-cache de P-A: **+30,4 ms** a 1k, **+280,7 ms** a 10k y
+**+1.552,9 ms** a 50k. Son mediciones de un host; la señal durable es que el costo es
+único por store y crece con el vocabulario, no por consulta.
+
 ## Determinismo
 
 El harness emite un **hash estable** de los resultados + scores por consulta
@@ -147,10 +153,14 @@ La suite versionada vive en `test/search-eval/` y `scripts/search-eval.ts`. Es
 **determinista y offline** (RAG off) y no requiere clave de API.
 
 - **Suite v1 (297 casos):** **inmutable** (`baseline.fixture.json`, hash interno
-  `1f5bf98a…`). Ninguna tarea la sobrescribe; sirve de comparación histórica.
+  `1f5bf98a…`). Ninguna tarea la sobrescribe; sirve de comparación histórica. El
+  baseline v1 congelado acierta **246/297**.
 - **Suite v2 (298 casos):** versionada (`baseline.fixture.v2.json`, historical/old-engine)
   y `baseline.fixture.v2.optimized.json` (motor optimizado), con MRR y nDCG@10. Es un gate
   de **estabilidad** de snapshots, no un piso de comportamiento deseado.
+- **Baseline v2 del motor actual:** **237/298**, P **94,0 %**, R **88,5 %**, MRR
+  **0,9505**, nDCG@10 **0,9253**, FP **42**. La suite mide también recall de errores en
+  los primeros tres caracteres, que se mantiene en **8,3 % (1/12)**.
 - **Métricas:** P@k, R@k, TP/FP/FN, noise rate, MRR y nDCG@10, más diffs por consulta.
 
 ## Rutas de artefactos
@@ -171,7 +181,7 @@ La suite versionada vive en `test/search-eval/` y `scripts/search-eval.ts`. Es
     `measurements.json`, `summary.md`.
 
 > Los artefactos de `/tmp` pueden no sobrevivir a un reinicio. Los números clave están
-> transcritos en el informe técnico y en `.pas/state/active/00004-search-optimization/`;
+> transcritos en el [informe técnico histórico](history/00004-search-optimization/search-optimization-report.md);
 > los **scripts** para regenerarlos están commiteados.
 
 ## Límites
@@ -180,7 +190,9 @@ La suite versionada vive en `test/search-eval/` y `scripts/search-eval.ts`. Es
   bytes, no los ms absolutos de un host.
 - **`reps` bajo ⇒ p95/p99 ruidosos.** Interpretar p50 y tamaños.
 - **RSS** es una medición de proceso, no de uso de página del sistema operativo.
-- **100k es proyección**, no medición (extrapolación lineal con escala observada
-  super-lineal; cota optimista).
+- **100k de producción es una proyección**, no una medición (extrapolación lineal con
+  escala observada super-lineal; cota optimista). La investigación 00005 B sí midió un
+  **prototipo sintético** a 100k, pero sólo para comparar estrategias; no describe el
+  corpus real de producción.
 - **El canal semántico no es medible offline** (RAG off, sin embeddings en fixtures); no se
   falseó.

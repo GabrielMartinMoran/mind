@@ -164,6 +164,7 @@ describe('MCP input schema fidelity', () => {
         env: {
           ...process.env,
           MIND_DB_PATH: dbPath,
+          MIND_SYNC_ROOT: tempDir,
         },
       });
       client = new Client({ name: 'mind-tools-list-test', version: '1.0.0' });
@@ -188,7 +189,8 @@ describe('MCP input schema fidelity', () => {
         maximum: 500,
       });
       expect(memoryQueryTool.annotations).toMatchObject({ readOnlyHint: true });
-      expect(memoryQueryTool.description).toContain('See system_instructions');
+      expect(memoryQueryTool.description).not.toContain('See system_instructions');
+      expect(memoryQueryTool.description).toContain('Query memories');
 
       const checkpointQueryTool = requireListedTool(listedTools, 'checkpoint_query');
       expect(checkpointQueryTool.inputSchema.properties?.status).toMatchObject({
@@ -208,6 +210,7 @@ describe('MCP input schema fidelity', () => {
         type: 'object',
         properties: {},
       });
+      expect(systemInstructionsTool.description).toContain('fallback');
 
       const spaceDeleteTool = requireListedTool(listedTools, 'space_delete');
       expect(spaceDeleteTool.annotations).toMatchObject({ destructiveHint: true });
@@ -307,10 +310,14 @@ describe('MCP Memory Tools', () => {
     expect(res.linked_by.length).toBe(1);
     // Links include ref string instead of id
     expect(Object.keys(res.links_to[0] ?? {}).sort()).toEqual(
-      ['changed_at', 'name', 'pinned', 'ref', 'space', 'tags', 'tier'].sort()
+      ['changed_at', 'direction', 'label', 'name', 'pinned', 'ref', 'space', 'tags', 'tier'].sort()
     );
     expect(res.links_to[0]?.ref).toBe('proj:outgoing');
+    expect(res.links_to[0]?.label).toBe('related');
+    expect(res.links_to[0]?.direction).toBe('outgoing');
     expect(res.linked_by[0]?.ref).toBe('proj:incoming');
+    expect(res.linked_by[0]?.label).toBe('related');
+    expect(res.linked_by[0]?.direction).toBe('incoming');
   });
 
   test('memory_query should use default pagination values', async () => {
@@ -451,7 +458,7 @@ describe('MCP Checkpoint Tools', () => {
     await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'First goal',
-      pending: 'First pending',
+      pending: '',
     });
 
     // Update it
@@ -522,7 +529,7 @@ describe('MCP Checkpoint Tools', () => {
     const created = await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'Goal',
-      pending: 'Pending',
+      pending: '',
     });
 
     const res = await tools.checkpoint_done.handler({
@@ -553,7 +560,7 @@ describe('MCP Checkpoint Tools', () => {
     const created = await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'Goal',
-      pending: 'Pending',
+      pending: '',
     });
 
     await tools.checkpoint_done.handler({
@@ -631,7 +638,7 @@ describe('MCP Checkpoint Tools', () => {
     await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'First goal',
-      pending: 'First pending',
+      pending: '',
     });
 
     // Complete first checkpoint (creates session memory, deletes checkpoint)
@@ -766,6 +773,12 @@ describe('MCP Spaces Tools', () => {
       (res.trending_memories.tier_1.memories[0] as Record<string, unknown>)?.updated_at
     ).toBeUndefined();
     expect(res.active_checkpoints).toEqual({ total: 0, checkpoints: [] });
+    expect(res.references).toEqual({
+      total: 0,
+      returned_count: 0,
+      coverage: 'complete',
+      memories: [],
+    });
   });
 
   test('space_update should update description', async () => {
@@ -1167,7 +1180,7 @@ describe('MCP Checkpoint Tools - Session Transformation (Phase 2)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'Complete API refactor',
-      pending: 'Write tests',
+      pending: '',
       linked_memories: ['memory-1', 'memory-2'],
     });
 
@@ -1208,7 +1221,7 @@ describe('MCP Checkpoint Tools - Session Transformation (Phase 2)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'Simple task',
-      pending: 'Done',
+      pending: '',
     });
 
     // Call checkpoint_done
@@ -1238,7 +1251,7 @@ describe('MCP Checkpoint Tools - Session Transformation (Phase 2)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'First task',
-      pending: 'Done',
+      pending: '',
     });
 
     await checkpointTools.checkpoint_done.handler({
@@ -1389,7 +1402,7 @@ describe('MCP Checkpoint Tools - checkpoint_query (Phase 3)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'First task',
-      pending: 'Done',
+      pending: '',
     });
     await checkpointTools.checkpoint_done.handler({
       space: 'projects/mind',

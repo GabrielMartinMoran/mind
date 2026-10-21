@@ -16,10 +16,12 @@ import { renderMemoryProtocol } from '../src/cli/memory-protocol';
 import {
   getAgentCapabilityMatrix,
   getAgentCapabilities,
+  isAgentIntegrationDetected,
   listAgents,
   runSetup,
   runSetupRefresh,
 } from '../src/cli/setup';
+import { installMindManagementSkill } from '../src/setup/skill-installation';
 
 let previousHome = '';
 let previousClaudeHooksOptIn = '';
@@ -53,7 +55,8 @@ describe('Setup capability model', () => {
     const cursor = getAgentCapabilities('cursor');
     expect(cursor.L1_MCP.status).toBe('supported');
     expect(cursor.L2_INSTRUCTIONS.status).toBe('unverified');
-    expect(cursor.L3_HOOKS.status).toBe('supported');
+    // The documented hooks schema is emitted but was never live-validated.
+    expect(cursor.L3_HOOKS.status).toBe('unverified');
 
     const codex = getAgentCapabilities('codex');
     expect(codex.L1_MCP.status).toBe('supported');
@@ -67,6 +70,50 @@ describe('Setup capability model', () => {
     const claude = getAgentCapabilities('claude-code');
     expect(claude.L2_INSTRUCTIONS.status).toBe('supported');
     expect(claude.L3_HOOKS.status).toBe('supported');
+
+    const pi = getAgentCapabilities('pi');
+    expect(pi.L1_MCP.status).toBe('supported');
+    expect(pi.L2_INSTRUCTIONS.status).toBe('supported');
+    // Pi documents extensions, but Mind deliberately does not build a Pi plugin.
+    expect(pi.L3_HOOKS.status).toBe('unverified');
+  });
+
+  test('publishes skill metadata for every agent and a documented Pi entry', () => {
+    const matrix = getAgentCapabilityMatrix();
+    const pi = matrix.find(entry => entry.agent === 'pi');
+    expect(pi).toBeDefined();
+    expect(pi?.name).toBe('Pi Agent');
+    expect(pi?.skill?.status).toBe('supported');
+    expect(pi?.skill?.strategy).toBe('shared');
+    expect(pi?.skill?.path).toBe('~/.agents/skills/mind-management');
+
+    for (const entry of matrix) {
+      expect({ agent: entry.agent, skill: Boolean(entry.skill) }).toEqual({
+        agent: entry.agent,
+        skill: true,
+      });
+      expect(['shared', 'symlink', 'copy']).toContain(entry.skill?.strategy as string);
+    }
+
+    expect(matrix.find(entry => entry.agent === 'claude-code')?.skill?.strategy).toBe('symlink');
+    expect(matrix.find(entry => entry.agent === 'antigravity')?.skill?.strategy).toBe('symlink');
+  });
+
+  test('records documented MCP paths and honest hook statuses', () => {
+    const windsurf = getAgentCapabilities('windsurf');
+    expect(windsurf.L1_MCP.evidence).toContain('~/.config/devin/mcp_config.json');
+
+    const vscode = getAgentCapabilities('vscode');
+    expect(vscode.L1_MCP.evidence).toContain('~/.copilot/mcp-config.json');
+
+    const antigravity = getAgentCapabilities('antigravity');
+    expect(antigravity.L1_MCP.evidence).toContain('~/.gemini/config/mcp_config.json');
+
+    for (const agent of ['codex', 'gemini-cli', 'vscode', 'antigravity'] as const) {
+      const hooks = getAgentCapabilities(agent).L3_HOOKS;
+      expect(hooks.status).toBe('unsupported');
+      expect(hooks.evidence.toLowerCase()).toContain('not implement');
+    }
   });
 
   test('prints explicit capability diagnostics for Claude setup with supported L2/L3', async () => {
@@ -123,6 +170,13 @@ describe('Setup capability model', () => {
     expect(lines.some(line => line.includes('Cursor'))).toBe(true);
     // Capability badges show ⚠️ for unverified status
     expect(lines.some(line => line.includes('⚠️'))).toBe(true);
+    // Skill metadata is printed separately from the L1/L2/L3 badges.
+    expect(lines.some(line => line.includes('skill') && line.includes('shared'))).toBe(true);
+    expect(
+      lines.some(
+        line => line.includes('skill') && line.includes('~/.agents/skills/mind-management') // documented path
+      )
+    ).toBe(true);
   });
 
   test('keeps Cursor L1 setup behavior while configuring managed global hooks artifacts', async () => {
@@ -137,29 +191,32 @@ describe('Setup capability model', () => {
     expect(config.mcpServers.mind.env).toEqual({});
 
     const hooksPath = join(tempHome, '.cursor', 'hooks.json');
-    const hooks = JSON.parse(readFileSync(hooksPath, 'utf-8')) as Record<string, any>;
-    expect(Array.isArray(hooks.sessionStart)).toBe(true);
-    expect(Array.isArray(hooks.preCompact)).toBe(true);
-    expect(Array.isArray(hooks.stop)).toBe(true);
+    const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf-8')) as Record<string, any>;
+    // Documented Cursor schema: { version: 1, hooks: { <event>: [...] } }.
+    expect(hooksConfig.version).toBe(1);
+    expect(hooksConfig.sessionStart).toBeUndefined();
+    expect(Array.isArray(hooksConfig.hooks.sessionStart)).toBe(true);
+    expect(Array.isArray(hooksConfig.hooks.preCompact)).toBe(true);
+    expect(Array.isArray(hooksConfig.hooks.sessionEnd)).toBe(true);
+    expect(Array.isArray(hooksConfig.hooks.stop)).toBe(true);
 
     const hookScriptPath = join(tempHome, '.cursor', 'hooks', 'mind-session-continuity.sh');
     const hookScript = readFileSync(hookScriptPath, 'utf-8');
-    expect(hookScript).toContain('mind checkpoint set');
+    // Hooks must never create, overwrite, or complete a checkpoint.
+    expect(hookScript).not.toContain('checkpoint set');
+    expect(hookScript).not.toMatch(/checkpoint\s+(set|done|complete|recover)/);
+    expect(hookScript).not.toContain('Capture active goal');
+    expect(hookScript).not.toContain('Snapshot context');
+    expect(hookScript).not.toContain('Persist final continuity');
     expect(hookScript).not.toContain('--history');
+    expect(hookScript).toContain('mind-management');
 
-    const startMatches = (hooks.sessionStart as Array<Record<string, any>>).filter(
-      entry => entry?.command === hookScriptPath
-    );
-    const preCompactMatches = (hooks.preCompact as Array<Record<string, any>>).filter(
-      entry => entry?.command === hookScriptPath
-    );
-    const stopMatches = (hooks.stop as Array<Record<string, any>>).filter(
-      entry => entry?.command === hookScriptPath
-    );
-
-    expect(startMatches.length).toBe(1);
-    expect(preCompactMatches.length).toBe(1);
-    expect(stopMatches.length).toBe(1);
+    for (const eventName of ['sessionStart', 'preCompact', 'sessionEnd', 'stop']) {
+      const matches = (hooksConfig.hooks[eventName] as Array<Record<string, any>>).filter(
+        entry => entry?.command === hookScriptPath
+      );
+      expect({ eventName, matches: matches.length }).toEqual({ eventName, matches: 1 });
+    }
   });
 
   test('keeps Cursor hooks setup non-destructive for existing hooks entries', async () => {
@@ -171,8 +228,11 @@ describe('Setup capability model', () => {
       hooksPath,
       JSON.stringify(
         {
-          sessionStart: [{ command: '/custom/start.sh' }],
-          customEvent: [{ command: '/custom/other.sh' }],
+          version: 1,
+          hooks: {
+            sessionStart: [{ command: '/custom/start.sh' }],
+            customEvent: [{ command: '/custom/other.sh' }],
+          },
         },
         null,
         2
@@ -181,10 +241,10 @@ describe('Setup capability model', () => {
 
     await runSetup('cursor');
 
-    const hooks = JSON.parse(readFileSync(hooksPath, 'utf-8')) as Record<string, any>;
-    expect(hooks.customEvent).toEqual([{ command: '/custom/other.sh' }]);
+    const config = JSON.parse(readFileSync(hooksPath, 'utf-8')) as Record<string, any>;
+    expect(config.hooks.customEvent).toEqual([{ command: '/custom/other.sh' }]);
     expect(
-      (hooks.sessionStart as Array<Record<string, any>>).some(
+      (config.hooks.sessionStart as Array<Record<string, any>>).some(
         entry => entry.command === '/custom/start.sh'
       )
     ).toBe(true);
@@ -200,15 +260,19 @@ describe('Setup capability model', () => {
       hooksPath,
       JSON.stringify(
         {
-          sessionStart: [
-            { command: hookScriptPath, args: ['sessionStart'] },
-            { command: hookScriptPath, args: ['sessionStart'] },
-          ],
-          preCompact: [{ command: hookScriptPath, args: ['preCompact'] }],
-          stop: [
-            { command: hookScriptPath, args: ['stop'] },
-            { command: hookScriptPath, args: ['stop'] },
-          ],
+          version: 1,
+          hooks: {
+            sessionStart: [
+              { command: hookScriptPath, args: ['sessionStart'] },
+              { command: hookScriptPath, args: ['sessionStart'] },
+            ],
+            preCompact: [{ command: hookScriptPath, args: ['preCompact'] }],
+            sessionEnd: [{ command: hookScriptPath, args: ['sessionEnd'] }],
+            stop: [
+              { command: hookScriptPath, args: ['stop'] },
+              { command: hookScriptPath, args: ['stop'] },
+            ],
+          },
         },
         null,
         2
@@ -218,37 +282,112 @@ describe('Setup capability model', () => {
     await runSetup('cursor');
     await runSetup('cursor');
 
-    const hooks = JSON.parse(readFileSync(hooksPath, 'utf-8')) as Record<string, any>;
-    expect(
-      (hooks.sessionStart as Array<Record<string, any>>).filter(
-        entry => entry.command === hookScriptPath && entry.args?.[0] === 'sessionStart'
-      ).length
-    ).toBe(1);
-    expect(
-      (hooks.preCompact as Array<Record<string, any>>).filter(
-        entry => entry.command === hookScriptPath && entry.args?.[0] === 'preCompact'
-      ).length
-    ).toBe(1);
-    expect(
-      (hooks.stop as Array<Record<string, any>>).filter(
-        entry => entry.command === hookScriptPath && entry.args?.[0] === 'stop'
-      ).length
-    ).toBe(1);
+    const config = JSON.parse(readFileSync(hooksPath, 'utf-8')) as Record<string, any>;
+    for (const eventName of ['sessionStart', 'preCompact', 'sessionEnd', 'stop']) {
+      expect({
+        eventName,
+        managed: (config.hooks[eventName] as Array<Record<string, any>>).filter(
+          entry => entry.command === hookScriptPath && entry.args?.[0] === eventName
+        ).length,
+      }).toEqual({ eventName, managed: 1 });
+    }
   });
 
   test('keeps Windsurf L1 setup behavior while leaving L2/L3 unsupported', async () => {
     await runSetup('windsurf');
 
-    const configPath = join(tempHome, '.windsurf', 'mcp.json');
+    // Documented path for Windsurf/Devin; the old ~/.windsurf path is legacy.
+    const configPath = join(tempHome, '.config', 'devin', 'mcp_config.json');
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, any>;
+    expect(config.mcpServers.mind.type).toBe('stdio');
+    expect(config.mcpServers.mind.command).toEqual(expect.any(String));
+    expect(config.mcpServers.mind.args).toEqual(['mcp']);
+    expect(config.mcpServers.mind.env).toEqual({});
+    expect(existsSync(join(tempHome, '.windsurf', 'mcp.json'))).toBe(false);
+
+    const capabilities = getAgentCapabilities('windsurf');
+    expect(capabilities.L2_INSTRUCTIONS.status).toBe('unsupported');
+    expect(capabilities.L3_HOOKS.status).toBe('unsupported');
+  });
+
+  test('writes VS Code Copilot and Antigravity MCP files at their documented paths', async () => {
+    await runSetup('vscode');
+    await runSetup('antigravity');
+
+    const vscodePath = join(tempHome, '.copilot', 'mcp-config.json');
+    const vscode = JSON.parse(readFileSync(vscodePath, 'utf-8')) as Record<string, any>;
+    expect(vscode.mcpServers.mind.type).toBe('stdio');
+    expect(vscode.mcpServers.mind.args).toEqual(['mcp']);
+    expect(existsSync(join(tempHome, '.config', 'Code', 'User', 'mcp.json'))).toBe(false);
+
+    const antigravityPath = join(tempHome, '.gemini', 'config', 'mcp_config.json');
+    const antigravity = JSON.parse(readFileSync(antigravityPath, 'utf-8')) as Record<string, any>;
+    expect(antigravity.mcpServers.mind.type).toBe('stdio');
+    expect(antigravity.mcpServers.mind.args).toEqual(['mcp']);
+  });
+
+  test('configures Pi with MCP, a brief AGENTS.md pointer, and the shared skill', async () => {
+    const piDir = join(tempHome, '.pi', 'agent');
+    const agentsPath = join(piDir, 'AGENTS.md');
+
+    mkdirSync(piDir, { recursive: true });
+    writeFileSync(
+      agentsPath,
+      ['# Existing Pi Instructions', '', 'Keep this custom section.', '', '## Footer notes'].join(
+        '\n'
+      )
+    );
+
+    await runSetup('pi');
+    await runSetup('pi');
+
+    const configPath = join(piDir, 'mcp.json');
     const config = JSON.parse(readFileSync(configPath, 'utf-8')) as Record<string, any>;
     expect(config.mcpServers.mind.type).toBe('stdio');
     expect(config.mcpServers.mind.command).toEqual(expect.any(String));
     expect(config.mcpServers.mind.args).toEqual(['mcp']);
     expect(config.mcpServers.mind.env).toEqual({});
 
-    const capabilities = getAgentCapabilities('windsurf');
-    expect(capabilities.L2_INSTRUCTIONS.status).toBe('unsupported');
-    expect(capabilities.L3_HOOKS.status).toBe('unsupported');
+    const agentsMd = readFileSync(agentsPath, 'utf-8');
+    expect(agentsMd).toContain('# Existing Pi Instructions');
+    expect(agentsMd).toContain('## Footer notes');
+    expect(agentsMd).toContain('mind managed protocol start');
+    expect(agentsMd).toContain('mind managed protocol end');
+    expect(agentsMd).toContain('mind-management');
+    expect(agentsMd).not.toContain('## ORIENT');
+    expect(agentsMd).toContain(renderMemoryProtocol('pi').trim());
+    expect(agentsMd.split('<!-- mind managed protocol start -->').length - 1).toBe(1);
+
+    // Shared canonical skill, never a Pi-specific copy.
+    expect(existsSync(join(tempHome, '.agents', 'skills', 'mind-management', 'SKILL.md'))).toBe(
+      true
+    );
+    expect(existsSync(join(piDir, 'plugins', 'mind-automation.js'))).toBe(false);
+    expect(existsSync(join(piDir, 'extensions'))).toBe(false);
+
+    expect(isAgentIntegrationDetected('pi')).toBe(true);
+  });
+
+  test('refreshes a detected Pi integration without creating unrelated configs', async () => {
+    const piDir = join(tempHome, '.pi', 'agent');
+    mkdirSync(piDir, { recursive: true });
+    writeFileSync(
+      join(piDir, 'mcp.json'),
+      JSON.stringify({ mcpServers: { mind: { command: '/stale/mind', args: ['mcp'] } } }, null, 2)
+    );
+
+    const result = await runSetupRefresh({ mode: 'detected' });
+
+    expect(result.refreshedAgents).toEqual(['pi']);
+    const refreshed = JSON.parse(readFileSync(join(piDir, 'mcp.json'), 'utf-8')) as Record<
+      string,
+      any
+    >;
+    expect(refreshed.mcpServers.mind.command).toEqual(expect.any(String));
+    expect(readFileSync(join(piDir, 'AGENTS.md'), 'utf-8')).toContain(
+      'mind managed protocol start'
+    );
+    expect(existsSync(join(tempHome, '.cursor', 'mcp.json'))).toBe(false);
   });
 
   test('prints explicit fallback diagnostics for Gemini unsupported L2/L3', async () => {
@@ -301,7 +440,8 @@ describe('Setup capability model', () => {
     expect(agentsMd).toContain('## Footer notes');
     expect(agentsMd).toContain('mind managed protocol start');
     expect(agentsMd).toContain('mind managed protocol end');
-    expect(agentsMd).toContain('system_instructions');
+    expect(agentsMd).toContain('mind-management');
+    expect(agentsMd).not.toContain('## ORIENT');
     expect(agentsMd).toContain(renderMemoryProtocol('codex').trim());
 
     const startCount = agentsMd.split('<!-- mind managed protocol start -->').length - 1;
@@ -348,7 +488,8 @@ describe('Setup capability model', () => {
     const claudeMd = readFileSync(claudeMdPath, 'utf-8');
 
     expect(claudeMd).toContain('mind managed protocol start');
-    expect(claudeMd).toContain('system_instructions');
+    expect(claudeMd).toContain('mind-management');
+    expect(claudeMd).not.toContain('## ORIENT');
     expect(claudeMd).toContain(renderMemoryProtocol('claude-code').trim());
   });
 
@@ -474,8 +615,8 @@ describe('Setup capability model', () => {
     expect(cursorConfig.mcpServers.mind.env).toEqual({});
 
     // Test windsurf
-    const windsurfDir = join(tempHome, '.windsurf');
-    const windsurfMcpPath = join(windsurfDir, 'mcp.json');
+    const windsurfDir = join(tempHome, '.config', 'devin');
+    const windsurfMcpPath = join(windsurfDir, 'mcp_config.json');
     mkdirSync(windsurfDir, { recursive: true });
 
     const existingWindsurfConfig = {
@@ -714,6 +855,21 @@ describe('Setup capability model', () => {
     expect(existsSync(join(tempHome, '.gemini', 'settings.json'))).toBe(false);
   });
 
+  test('detects shared clients from the canonical skill only when their config exists', () => {
+    installMindManagementSkill('codex');
+
+    expect(isAgentIntegrationDetected('codex')).toBe(false);
+
+    mkdirSync(join(tempHome, '.config', 'opencode'), { recursive: true });
+    expect(isAgentIntegrationDetected('opencode')).toBe(true);
+  });
+
+  test('detects a dedicated client from its skill symlink', () => {
+    installMindManagementSkill('claude-code');
+
+    expect(isAgentIntegrationDetected('claude-code')).toBe(true);
+  });
+
   test('refresh default skips agents with no mind-owned signal', async () => {
     const result = await runSetupRefresh({ mode: 'detected' });
 
@@ -790,9 +946,9 @@ describe('Setup safety: parse failure and atomic writes (cross-agent)', () => {
     expect(backup.mcpServers.github.command).toBe('gh');
   });
 
-  test('aborts and does not overwrite a malformed Windsurf mcp.json', async () => {
-    const windsurfDir = join(tempHome, '.windsurf');
-    const mcpPath = join(windsurfDir, 'mcp.json');
+  test('aborts and does not overwrite a malformed Windsurf mcp_config.json', async () => {
+    const windsurfDir = join(tempHome, '.config', 'devin');
+    const mcpPath = join(windsurfDir, 'mcp_config.json');
     mkdirSync(windsurfDir, { recursive: true });
     const original = '{ "mcpServers": '; // truncated
     writeFileSync(mcpPath, original);
@@ -824,9 +980,9 @@ describe('Setup safety: parse failure and atomic writes (cross-agent)', () => {
     expect(readFileSync(settingsPath, 'utf-8')).toBe(original);
   });
 
-  test('aborts and does not overwrite a malformed VSCode mcp.json', async () => {
-    const vscodeDir = join(tempHome, '.config', 'Code', 'User');
-    const mcpPath = join(vscodeDir, 'mcp.json');
+  test('aborts and does not overwrite a malformed VSCode mcp-config.json', async () => {
+    const vscodeDir = join(tempHome, '.copilot');
+    const mcpPath = join(vscodeDir, 'mcp-config.json');
     mkdirSync(vscodeDir, { recursive: true });
     const original = '{ "mcpServers": '; // truncated
     writeFileSync(mcpPath, original);
@@ -842,7 +998,7 @@ describe('Setup safety: parse failure and atomic writes (cross-agent)', () => {
   });
 
   test('aborts and does not overwrite a malformed Antigravity mcp_config.json', async () => {
-    const antigravityDir = join(tempHome, '.gemini', 'antigravity');
+    const antigravityDir = join(tempHome, '.gemini', 'config');
     const mcpPath = join(antigravityDir, 'mcp_config.json');
     mkdirSync(antigravityDir, { recursive: true });
     const original = '{ "mcpServers": '; // truncated

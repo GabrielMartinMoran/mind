@@ -1,385 +1,346 @@
 # Mind Memory Protocol
 
-This tool contains all the context you need to use mind effectively.
-After this, you can proceed with space_create, memory_add, etc.
+This tool returns the complete Mind memory protocol for the `mind` MCP server.
 
----
+<!-- mind-cognitive-protocol:body -->
 
-## Space Naming Convention
+## How to use this protocol
 
-**For software projects, use the directory/repo name as the space name.**
+Mind keeps knowledge across sessions. The six responsibilities below are
+criteria for choosing the right action, not a fixed sequence. Use the ones the
+current task needs.
 
-Use actual project names so future agents can search and recover the right knowledge.
+- Keep project knowledge in `projects/<repo>`, using the actual repository name.
+- Every memory needs at least one tag.
+- Create a space with `space_create` before adding memories to it.
 
-### Recommended:
+## ORIENT
 
-- `projects/mind` — actual repo name
-- `projects/arcana-web` — actual repo name
-- `projects/api-gateway` — actual directory name
+**Trigger:** A session starts, the task changes, or context was compacted.
 
-**Why**: Future agents search by repo/directory name. Using the actual name makes your memories discoverable.
+Check the project space and any active checkpoint before doing work. `space_get`
+returns overview counts, T1/T2/T3 previews, living references, active
+checkpoints, and T3 availability without loading the whole tier.
 
----
-
-## Before Adding Memories
-
-You MUST create a space with `space_create` before adding memories. Memory tools fail with "Space X does not exist" if the space hasn't been created.
-
----
-
-## Tag Conventions
-
-**Custom tags are allowed.** The following are RECOMMENDED:
-
-### Space tags:
-
-- `type:project` — code project spaces
-- `type:user` — user preferences/settings
-- `type:session` — session summaries
-- `type:config` — cross-project configuration
-- `type:learning` — learned knowledge
-
-### Memory tags:
-
-- `cat:decision` — architectural decision
-- `cat:bugfix` — bug fix
-- `cat:pattern` — established convention
-- `cat:discovery` — technical finding
-- `cat:preference` — user preference
-- `cat:config` — configuration
-- `cat:summary` — session summary (with type:session)
-
-### Status tags:
-
-`status:*` tags are convention-only, not schema-enforced. Use well-normed tags
-such as `status:proposed`, `status:validated`, `status:failed`,
-`status:superseded`, `status:obsolete`, `status:final`, and `status:living`.
-
-### Living reference tags:
-
-Living references must use `type:reference`, exactly one `ref:*` tag, and
-`status:living`. Recommended refs are `ref:project-map`, `ref:architecture`,
-`ref:style`, `ref:domain`, and `ref:workflow`.
-
-Before creating a new tag, query existing memories first: `memory_query { space: "*", search: "<topic>" }`.
-
----
-
-## Space Structure
-
-Organize memories into hierarchical spaces:
-
-- `projects/<REPO_NAME>` — one space per project (use actual repo/directory name)
-- session summaries stay in `projects/<REPO_NAME>` as `session-*` memories tagged `type:session` + `cat:summary` at T3
-- `user/preferences` — global user preferences
-- `user/patterns` — work patterns and conventions
-- `global/config` — cross-project configuration
-
----
-
-## When to Save Memories
-
-### Durable memory threshold
-
-Create or update durable memories when the information is likely useful in
-future sessions:
-
-- Stable decisions
-- Verified root causes
-- Final fixes
-- Reusable patterns
-- User preferences
-- Significant config/domain facts
-
-Keep transient observations, routine progress, and routine validation results with no new findings in checkpoints or session summaries.
-
-Durable memories are separate from session summaries. Use durable memories when
-future sessions need stable decisions, root causes, patterns, preferences,
-config, or domain facts.
-
-Use `memory_add` after:
-
-- Durable bug fix completed
-- Architecture or workflow decision made
-- Non-obvious technical discovery
-- Configuration or environment change
-- Pattern established
-- User preference learned
-
-**When to link**: When a new memory depends on, updates, or explains another memory, pass related memories in `links_to`. After adding with `links_to`, check `links_created` and `links_failed`; retry important failed links with `link_create`.
-
-Persist verified root causes, regressions, risk decisions, or durable validation
-patterns. Don't persist routine validation outcomes unless they change future
-work.
-
-### Before creating a durable memory
-
-Confirm it meets this threshold:
-
-- **Future utility**: Will a future session need this?
-- **Novelty**: Is this new knowledge (not already captured)?
-- **Evidence**: Is it verified (not speculation)?
-- **Stability**: Is it settled (not likely to change soon)?
-
-## If any answer is NO, keep it in the checkpoint or session summary instead.
-
-## Memory Types
-
-- Checkpoint = live/ephemeral work state. Keep goal, pending work, blockers,
-  and next action here.
-- Session summary = chronological log/recovery record. It preserves what
-  happened, but it is evidence, not canonical truth.
-- Durable/canonical memory = atomic actionable knowledge for future sessions.
-- Living reference memory = maintained current truth map for a project, domain,
-  architecture, style, or workflow.
-
-| Need                                                                          | Use                                                | Result                               |
-| ----------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------------------ |
-| Live goal, pending work, blockers, or next action                             | `checkpoint_save`                                  | Active checkpoint                    |
-| End-of-session recovery log                                                   | `checkpoint_done`                                  | Same-space `session-*` summary at T3 |
-| Stable decisions, root causes, patterns, preferences, config, or domain facts | `memory_add` / `memory_update`                     | Durable memory                       |
-| Compact current truth map                                                     | `memory_add` / `memory_update` with reference tags | Living reference                     |
-| Obsolete knowledge with no historical value                                   | `memory_delete`                                    | Removed memory                       |
-
----
-
-## Living Reference Memories
-
-Living references are compact current truth. Create them at T2 by default; let
-reads naturally promote them to T1. Pin only 1–3 critical references when
-explicitly warranted or approved.
-
-Tags are authoritative. Required tags: `type:reference`, exactly one `ref:*`, and `status:living`.
-Recommended refs are `ref:project-map`, `ref:architecture`, `ref:style`,
-`ref:domain`, and `ref:workflow`. The `ref:*` tag defines the reference category; the memory name is the readable identifier.
-
-Recommended names: `architecture-overview`, `project-map`, `style-guide`, `domain-model`, and `workflow-notes`.
-
-Recommended name examples:
-
-- `architecture-overview`
-- `project-map`
-- `style-guide`
-- `domain-model`
-- `workflow-notes`
-
-Recommended sections:
-
-- Purpose
-- Current truth
-- Key areas/files/concepts
-- Active conventions
-- Source memories
-- Last reviewed
-- Maintenance notes
-
-When current truth changes, use `memory_update` on the living reference and
-link it to source memories. Sessions remain evidence/logs, not canonical truth.
-
-### Living reference taxonomy and maintenance
-
-**7 reference types** (required tags: `type:reference` + one `ref:*` + `status:living`):
-
-| ref tag              | Recommended name        | Purpose                                      |
-| -------------------- | ----------------------- | -------------------------------------------- |
-| `ref:project-map`    | `project-map`           | Entry points, key modules, repo layout       |
-| `ref:architecture`   | `architecture-overview` | Stack, layers, data flow, boundaries         |
-| `ref:domain`         | `domain-model`          | Core entities, business rules, vocabulary    |
-| `ref:workflow`       | `workflow-notes`        | CI/CD, release process, testing conventions  |
-| `ref:style`          | `style-guide`           | Code conventions, naming, formatting         |
-| `ref:key-decisions`  | `key-decisions`         | Cross-cutting architectural decisions        |
-| `ref:known-pitfalls` | `known-pitfalls`        | Recurring gotchas and anti-patterns to avoid |
-
-**Creation triggers** — create a living reference when:
-
-- A project space is created → create `project-map` immediately.
-- 3+ durable memories reference the same subsystem → create or update `architecture-overview`.
-- A decision affects 2+ modules → add it to `key-decisions`.
-- A debugging step or workaround repeats → add it to `known-pitfalls`.
-
-**Update triggers** — update a living reference when:
-
-- A decision is changed or superseded → update `key-decisions`.
-- A new module, convention, or workflow is added → update the relevant reference.
-- A pitfall stops applying → mark it resolved in `known-pitfalls`.
-- After a major refactor or release → review all living references.
-
-**Living reference content format:**
-
-- Purpose — why this reference exists.
-- Current truth — what is true now; this is the canonical part.
-- Key areas/files/concepts — what an agent needs to know.
-- Active conventions — rules currently in force.
-- Source memories — links to durable memories this summarizes.
-- Last reviewed — date in YYYY-MM-DD format.
-- Maintenance notes — how to keep this updated.
-
-**Living reference vs durable memory:** durable memories capture events (decisions, fixes, discoveries); living references capture state (the current truth map). When truth changes, update the living reference and link new durable memories as sources.
-
-**Anti-staleness:** Review every living reference at least every 30 days. If unchanged, update `Last reviewed`. If truth changed, update `Current truth` and link new source memories.
-
-**Granularity minimum:** Every project space should have at least a `ref:project-map`. Create higher-level references only when they serve future sessions.
-
----
-
-## Cautious Deletion
-
-Use `memory_delete` only when a memory is clearly obsolete, no longer
-applicable, and has no historical value. Otherwise, mark it with
-`status:obsolete` or `status:superseded` and link the replacement.
-
----
-
-## Memory Content Format
-
-Use this format:
-
-**What**: One sentence — what was done
-**Why**: What motivated it
-**Where**: Files or paths affected
-**Learned**: Gotchas or edge cases (omit if none)
-
-Example:
-
-```
-**What**: Switched from sessions to JWT for authentication
-**Why**: Session storage doesn't scale across multiple server instances
-**Where**: src/middleware/auth.ts, src/routes/login.ts
-**Learned**: Must set httpOnly and secure flags on cookies
+```json tool:checkpoint_query
+{ "space": "projects/mind", "status": "active" }
 ```
 
----
+```json tool:space_get
+{ "name": "projects/mind" }
+```
 
-## Tier System
+If the space is missing, call `space_create` with `tags: ["type:project"]`.
+Use `checkpoint_query { space: "projects/mind" }` to list active checkpoints.
+To restore one, call
+`checkpoint_load { space: "projects/mind", checkpointName: "<name>" }`.
 
-| Tier | Name | Use Case                   | Limit/space |
-| ---- | ---- | -------------------------- | ----------- |
-| T1   | hot  | Critical active info       | 25          |
-| T2   | warm | Default for new memories   | 50          |
-| T3   | cold | Reference info (unlimited) | unlimited   |
+If there is no active checkpoint, look for recent session summaries
+(`type:session` + `cat:summary`) in the project space and orient from them. Do
+not create an artificial checkpoint just to satisfy the ritual.
 
-**Behaviors:**
+## RECALL
 
-- **Auto-promote**: `memory_read` moves memory up one tier (T3→T2→T1)
-- **Pin**: Set `pinned: true` to make a memory immune to promotion and eviction
-- **LRU eviction**: When a tier is full, least-recently-used non-pinned memory moves down one tier
+**Trigger:** You need a decision, root cause, convention, or prior context.
 
----
+Start with a natural, focused question. One query is usually enough; refine only
+when the results are weak or ambiguous.
 
-## Tool Quick Reference
-
-| Category   | Tools                                                               |
-| ---------- | ------------------------------------------------------------------- |
-| Spaces     | space_create, space_list, space_get, space_update, space_delete     |
-| Memories   | memory_add, memory_update, memory_delete, memory_read               |
-| Links      | link_create, link_delete                                            |
-| Query      | memory_query (use `search` parameter for full-text search)          |
-| Checkpoint | checkpoint_save, checkpoint_done, checkpoint_load, checkpoint_query |
-
-**Note**: `search` tool has been removed — use `memory_query { search: "..." }` instead.
-
----
-
-## Pagination
-
-For list tools (`memory_query`):
-
-- `limit`: Number of results (default 25, max 500)
-- `offset`: Zero-based index
-- Response includes `pagination.nextOffset` when more results exist
-
----
-
-## Searching Effectively
-
-`memory_query { space: "<project>", search: "..." }` ranks results with the
-same fused pipeline used by the CLI and API. Each result carries a `confidence`
-bucket (`high`, `medium`, `low`) and a `methods` list naming the channels that
-matched it.
-
-Query grammar:
-
-- `"quoted text"` matches a phrase.
-- `OR` unions alternatives (`auth OR login`); adjacent terms are ANDed.
-- `AND` is the explicit form of the implicit AND.
-- `NOT` excludes the following term (`auth NOT jwt`).
-- A trailing `*` matches a prefix (`type*`).
-- Malformed operator usage degrades to a safe literal match and never errors.
-
-Multi-word queries relax automatically: exact phrase and all-term matches rank
-first, then near matches, substrings, and close spellings. Read `confidence`
-and `methods` to judge each result:
-
-- `high` — a strong exact or all-term match; trust it.
-- `medium` — a relaxed, substring, or semantic match; verify if it matters.
-- `low` — a weak or fuzzy single-channel match; treat it as a lead.
-
-When results are empty or mostly `low`:
-
-1. Simplify to the most distinctive term and drop operators.
-2. Broaden with `OR`, or shorten to a prefix (`conf*`).
-3. Drop filters (`tag`, `tier`, `from`, `to`) or search every space with
-   `space: "*"`.
-4. If search still misses, explore the repo directly, then add or link
-   memories so the knowledge is recoverable next time.
-
----
-
-## Session Workflow
-
-1. **Start**: `checkpoint_query` to find checkpoints, then `checkpoint_load { checkpointName: "<name>" }` to restore a specific one, then `space_get` (use repo name)
-2. **Work**: Add memories as you go with `memory_add` — include tags and `links_to`
-3. **Query**: Find context with `memory_query { search: "<keywords>" }`
-4. **Checkpoint**: Save progress with `checkpoint_save`
-5. **Close**: Checkpoints hold live state; `checkpoint_done` completes the active checkpoint and creates a same-space `session-*` summary memory in `projects/<REPO_NAME>` with `type:session` + `cat:summary` at T3.
-
----
-
-## Example Workflow
-
-```javascript
-// 1. Create a project space (use repo name!)
-space_create {
-  name: "projects/mind",
-  description: "Mind project decisions and patterns",
-  tags: ["type:project"]
-}
-
-// 2. Add a decision memory
-memory_add {
-  space: "projects/mind",
-  name: "JWT over sessions for auth",
-  content: "**What**: Switched from sessions to JWT...\n**Why**: Scale across instances...",
-  tags: ["cat:decision"]
-}
-
-// 3. Add a related discovery with link
-memory_add {
-  space: "projects/mind",
-  name: "Refresh token rotation needed",
-  content: "**What**: JWT requires refresh token rotation...",
-  tags: ["cat:discovery"],
-  links_to: ["JWT over sessions for auth"]  // bare name, same space
-}
-
-// 4. Query decisions
-memory_query { space: "projects/mind", tag: "cat:decision" }
-
-// 5. Search memories
-memory_query { space: "projects/mind", search: "authentication" }
-
-// 6. Session end: close the checkpoint
-checkpoint_done {
-  space: "projects/mind",
-  checkpointName: "checkpoint-2026-03-07T10-00-00-000Z",
-  summary: "## Goal: ...\n## Accomplished: ...\n## Decisions: ..."
+```json tool:memory_query
+{
+  "space": "projects/mind",
+  "search": "Why did we choose JWT for authentication?",
+  "limit": 10
 }
 ```
 
----
+For explicit constraints, use structured syntax as an additional tool.
+`memory_query` supports quoted phrases, `OR`, `AND`, `NOT`, and a trailing `*`
+prefix.
 
-## Common Errors
+```json tool:memory_query
+{
+  "space": "projects/mind",
+  "search": "jwt NOT legacy",
+  "limit": 10
+}
+```
 
-- "Space X does not exist": Create the space first with `space_create`
-- "Memory with id X does not exist": Use `memory_query` to get valid IDs
-- "T1 is full": Unpin some memories or let the system auto-evict
+Results include `confidence` (`high`, `medium`, `low`) and `methods`.
+Use `space: "*"` to search across spaces. `memory_query` does not record access
+or promote tiers.
+
+Read selected memories with `memory_read`. Active use promotes one tier
+(T3 to T2 to T1). For inspection only, pass `noPromote: true`:
+
+```json tool:memory_read
+{ "space": "projects/mind", "name": "auth-token-rotation", "noPromote": true }
+```
+
+RAG is optional and off by default. When enabled, semantic matches can appear
+without sharing words with the query; check `methods` before trusting a weak
+hit.
+
+## LEARN
+
+**Trigger:** You verified stable knowledge that future sessions need: a
+decision, root cause, fix, discovery, preference, constraint, or current truth.
+
+Check for a related or equivalent memory before creating a new one when
+duplication is reasonably possible. Reuse or update the existing memory instead
+of adding a near-duplicate.
+
+Add one atomic memory with a name that states the fact, content that explains
+what, why, and where, and at least one tag. Include `links_to` when the relation
+is known, then check `links_created` and `links_failed`.
+
+### Memory type examples
+
+Architectural decision:
+
+```json tool:memory_add
+{
+  "space": "projects/mind",
+  "name": "semantic-admission-bypass",
+  "content": "**What**: Semantic-only results bypass lexical admission at cosine 0.6.\n**Why**: Paraphrases had no lexical overlap.\n**Where**: src/store/repositories/search-repository.ts",
+  "tags": ["cat:decision", "status:validated"],
+  "links_to": ["search-pipeline"]
+}
+```
+
+Bug and root cause:
+
+```json tool:memory_add
+{
+  "space": "projects/mind",
+  "name": "fts-trigger-null-contentless",
+  "content": "**What**: Contentless trigram FTS cannot use rebuild.\n**Why**: bun:sqlite rejects content= triggers.\n**Where**: src/store/shared/fts-helpers.ts\n**Learned**: Recover with delete-all plus repopulate.",
+  "tags": ["cat:bugfix", "search"]
+}
+```
+
+Discovery:
+
+```json tool:memory_add
+{
+  "space": "projects/mind",
+  "name": "token-set-rescaling-semantic",
+  "content": "**What**: Adding semantic rows before token_set changes lexical normalization.\n**Why**: token_set coverage is recomputed over the combined row set.\n**Where**: src/store/repositories/search-repository.ts",
+  "tags": ["cat:discovery", "search"]
+}
+```
+
+Preference or constraint:
+
+```json tool:memory_add
+{
+  "space": "user/preferences",
+  "name": "avoid-fixed-sleeps-in-tests",
+  "content": "**What**: Tests must not use fixed sleeps.\n**Why**: Slow and flaky under load.\n**Where**: test/**",
+  "tags": ["cat:preference", "testing"]
+}
+```
+
+Current knowledge as a living reference:
+
+```json tool:memory_add
+{
+  "space": "projects/mind",
+  "name": "architecture-overview",
+  "content": "**Purpose**: Current architecture map.\n**Current truth**: CLI, MCP, API, and store share one search pipeline.\n**Source memories**: search-pipeline, semantic-admission-bypass",
+  "tags": ["type:reference", "ref:architecture", "status:living"]
+}
+```
+
+### Supersede a changed decision
+
+Do not overwrite the historical memory. Keep the old record and create a new one
+for the current truth.
+
+Create the replacement with the new decision and its `cat:*` tags:
+
+```json tool:memory_add
+{
+  "space": "projects/mind",
+  "name": "revocable-access-tokens",
+  "content": "**What**: Short-lived access tokens with server-side revocation replace stateless JWTs.\n**Why**: JWTs could not be revoked quickly.\n**Where**: src/auth/session.ts",
+  "tags": ["cat:decision", "auth", "status:validated"]
+}
+```
+
+Mark the historical memory `status:superseded` by sending its original tags plus
+`status:superseded`. `memory_update.tags` replaces the whole set, so re-include
+every original tag. Do not send `content`.
+
+```json tool:memory_update
+{
+  "space": "projects/mind",
+  "name": "jwt-over-sessions",
+  "tags": ["cat:decision", "auth", "status:superseded"]
+}
+```
+
+Link the replacement to the historical memory with `contradicts`:
+
+```json tool:link_create
+{
+  "sourceRef": "projects/mind:revocable-access-tokens",
+  "targetRef": "projects/mind:jwt-over-sessions",
+  "label": "contradicts"
+}
+```
+
+Then update the living references that state the old decision.
+
+## RELATE
+
+**Trigger:** Two memories have a meaningful relation.
+
+Add a link only when it helps future work; unnecessary links add noise.
+
+`memory_add.links_to` creates a generic `related` link from the new memory to
+each target. Use `link_create` when the relation has a specific label and
+direction.
+
+Common labels are `depends_on`, `caused_by`, `extends`, `implements`,
+`contradicts`, and `relates_to`. `link_create` is directional: source to
+target. Use `space:name` refs, or a bare name to resolve in the source space.
+Re-creating the same directed pair replaces its label, so relabel by calling
+`link_create` again. `link_delete` removes that direction and succeeds as a no-op when it is absent.
+If the direction is wrong, create the correct direction and delete the stale one.
+`memory_read` returns each relation's label and direction (`outgoing` or `incoming`).
+
+```json tool:link_create
+{
+  "sourceRef": "projects/mind:session-revocation",
+  "targetRef": "projects/mind:jwt-over-sessions",
+  "label": "implements"
+}
+```
+
+## MAINTAIN
+
+**Trigger:** Knowledge changes, importance changes, or a review finds stale
+truth.
+
+Tiers describe use, not quality: T1 is the working set, T2 is nearby context,
+and T3 is the archive. T3 is not a ranking penalty; search still finds it.
+Inspect a memory with `memory_read` plus `noPromote: true`; use `memory_read`
+without it when you intend to use the memory and want normal promotion.
+`pinned` protects a memory from automatic promotion and LRU eviction, while an
+explicit `tierTransition` still moves it.
+
+```json tool:memory_update
+{
+  "space": "projects/mind",
+  "name": "security-review-checklist",
+  "content": "**What**: Review auth, input validation, and secret handling.\n**Why**: Recurring release gate.",
+  "tags": ["cat:pattern", "security", "release"],
+  "pinned": true,
+  "tierTransition": "promote"
+}
+```
+
+`tags` replaces the existing set. When using `memory_update.tags`, re-include
+the tags you want to keep.
+
+### Supersede a changed decision
+
+Create the replacement, mark the historical memory `status:superseded` without
+changing its content, link the pair with `contradicts`, then update the affected
+living references. The LEARN section shows the exact calls.
+
+### Living references
+
+Living references hold current truth. Required tags are `type:reference`,
+exactly one `ref:*` tag, and `status:living`. Use T2 by default, let reads
+promote them naturally, and pin only when warranted. Link source memories and
+update a reference when truth changes, not on a calendar quota.
+
+| ref tag              | Current truth it maps                |
+| -------------------- | ------------------------------------ |
+| `ref:project-map`    | Entry points, modules, repo layout   |
+| `ref:architecture`   | Stack, layers, data flow, boundaries |
+| `ref:domain`         | Entities, business rules, vocabulary |
+| `ref:workflow`       | CI/CD, release process, testing      |
+| `ref:style`          | Code conventions, naming, formatting |
+| `ref:key-decisions`  | Cross-cutting decisions              |
+| `ref:known-pitfalls` | Recurring gotchas and anti-patterns  |
+
+Delete a memory only when it is obsolete, no longer applicable, and has no
+historical value. Otherwise mark it `status:superseded` or `status:obsolete`
+and link the replacement.
+
+## HANDOFF
+
+**Trigger:** A plan is approved, a subtask finishes, a decision or blocker
+appears, a risky operation is about to start, or the session ends.
+
+Save a checkpoint at those events. Include the goal, pending work, notes, and
+the memories needed to recover:
+
+```json tool:checkpoint_save
+{
+  "space": "projects/mind",
+  "goal": "Replace JWT sessions with revocable tokens",
+  "pending": "Update the auth middleware tests",
+  "notes": "Decision recorded in session-revocation",
+  "linked_memories": ["projects/mind:session-revocation"]
+}
+```
+
+```json tool:checkpoint_query
+{ "space": "projects/mind", "status": "active" }
+```
+
+```json tool:checkpoint_load
+{ "space": "projects/mind", "checkpointName": "checkpoint-2026-10-19T10-00-00-000Z" }
+```
+
+At session end, the checkpoint reflects whether work is still pending. When
+pending work remains, update the checkpoint and do **not** call
+`checkpoint_done`; the next session can recover the task. When the task is
+complete, call `checkpoint_done` to turn the active checkpoint into a
+same-space `session-*` summary at T3 with `type:session` and `cat:summary`.
+Clear `pending` only when the work is finished or explicitly abandoned, and
+record the reason in notes. Provide a meaningful summary of what was done.
+
+```json tool:checkpoint_done
+{
+  "space": "projects/mind",
+  "checkpointName": "checkpoint-2026-10-19T10-00-00-000Z",
+  "summary": "**Goal**: Replace JWT sessions. **Done**: Decision and links recorded. **Pending**: none."
+}
+```
+
+After compaction or a context reset, load the active checkpoint and the
+memories it links to, then recall the task keywords before editing files. If no
+checkpoint exists, look for recent session summaries; do not perform a closing
+ritual or create a placeholder checkpoint.
+
+```json tool:checkpoint_load
+{ "space": "projects/mind", "checkpointName": "checkpoint-2026-10-19T10-00-00-000Z" }
+```
+
+## Appendix: tools, tags, and anti-patterns
+
+Recommended space tags: `type:project`, `type:user`, `type:session`,
+`type:config`, `type:learning`. Recommended memory tags: `cat:decision`,
+`cat:bugfix`, `cat:pattern`, `cat:discovery`, `cat:preference`, `cat:config`,
+`cat:summary`. `status:*` tags are conventions, such as `status:proposed`,
+`status:validated`, `status:failed`, `status:superseded`, `status:obsolete`,
+`status:final`, and `status:living`.
+
+Memory content: state **What** happened, **Why** it matters, **Where** it
+applies, and **Learned** gotchas when useful.
+
+Anti-patterns:
+
+- Saving every observation: keep transient progress in a checkpoint or session
+  summary, and save durable memories for stable knowledge.
+- Searching before every write: check for duplication only when it is
+  reasonably possible.
+- Using `memory_read` just to inspect: pass `noPromote: true`.
+- Replacing a decision by deleting history: update current truth, mark the old
+  decision `status:superseded`, and link the pair with `contradicts`.
+- Demoting memories on a schedule: let use and explicit transitions decide.

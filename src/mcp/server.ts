@@ -7,6 +7,7 @@ import {
   isInitializeRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { renderSkillActivation } from '../cli/skill-activation';
 import { createLogEntry } from '../helpers/logger';
 import type { MindStore } from '../store/mind-store';
 import { withAutoExport } from '../sync/auto-export-store';
@@ -30,6 +31,7 @@ function createMcpServer(store: MindStore): Server {
       capabilities: {
         tools: {},
       },
+      instructions: renderSkillActivation(),
     }
   );
 
@@ -48,9 +50,7 @@ function createMcpServer(store: MindStore): Server {
     return {
       tools: Object.entries(allTools).map(([name, tool]) => ({
         name,
-        description: tool.description
-          ? `${tool.description}\n\nSee system_instructions for full mind usage guidelines.`
-          : `Call system_instructions first to get full mind usage guidelines.\n\nTool: ${name}`,
+        description: tool.description ?? `Tool: ${name}.`,
         inputSchema: tool.schema
           ? zodToJsonSchema(tool.schema)
           : { type: 'object', properties: {} },

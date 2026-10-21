@@ -144,7 +144,7 @@ describe('MCP YAML content stage 1', () => {
     const checkpointSave = await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'Ship stage 1',
-      pending: 'Update MCP YAML responses',
+      pending: '',
       linked_memories: ['yaml-memory'],
     });
     expectYamlParity(checkpointSave);
@@ -191,6 +191,13 @@ describe('MCP YAML content stage 1', () => {
     expect(addResponse.structuredContent?.memory?.space).toBe('projects/mind');
     expect(addResponse.structuredContent?.memory?.changed_at).toEqual(expect.any(String));
 
+    await memoryTools.memory_add.handler({
+      space: 'projects/mind',
+      name: 'living-reference',
+      content: 'Living reference content',
+      tags: ['type:reference', 'status:living'],
+    });
+
     const spaceGetResponse: any = await spaceTools.space_get.handler({ name: 'projects/mind' });
     expectYamlParity(spaceGetResponse);
     expectNoBoundaryLeaks(spaceGetResponse.structuredContent);
@@ -198,6 +205,12 @@ describe('MCP YAML content stage 1', () => {
     expect(
       spaceGetResponse.structuredContent?.trending_memories?.tier_2?.memories?.[0]?.changed_at
     ).toEqual(expect.any(String));
+    expect(spaceGetResponse.structuredContent?.references?.memories?.[0]?.name).toBe(
+      'living-reference'
+    );
+    expect(spaceGetResponse.structuredContent?.references?.memories?.[0]?.changed_at).toEqual(
+      expect.any(String)
+    );
   });
 
   test('checkpoint_query reports missing space with explicit error field and YAML parity', async () => {

@@ -45,3 +45,21 @@ data/
 .mind/
 session-examples/
 .pas/
+
+benchmarks/*
+!benchmarks/agent-memory/
+benchmarks/agent-memory/*
+# Versionable subproject manifests, sources, tests, fixtures, and docs.
+!benchmarks/agent-memory/package.json
+!benchmarks/agent-memory/bun.lock
+!benchmarks/agent-memory/tsconfig.json
+!benchmarks/agent-memory/src/
+!benchmarks/agent-memory/test/
+!benchmarks/agent-memory/fixtures/
+!benchmarks/agent-memory/experiments/
+!benchmarks/agent-memory/probes/
+!benchmarks/agent-memory/README.md
+!benchmarks/agent-memory/ANALYSIS.md
+# Generated artifacts stay ignored even inside the re-included directories.
+benchmarks/agent-memory/experiments/REPORTS/
+benchmarks/agent-memory/probes/evidence/

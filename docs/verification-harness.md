@@ -23,6 +23,23 @@ Hard gates in v1:
 Docker is advisory in v1. The harness uses the existing installer smoke path if
 Docker is available, but Docker warnings do not block a passing result.
 
+## Hosted CI
+
+GitHub Actions (`.github/workflows/main.yml`) is the hosted counterpart to the
+local harness. It triggers on every push, including branch names that contain
+`/`, every pull request to any base branch, and manual dispatch. There are no
+branch or path filters.
+
+The workflow has two independent free jobs. `validate` runs the root frozen
+install, blocking high-severity audit, typecheck, format check, lint, and tests.
+`benchmark-agent-memory` runs the subproject frozen install, blocking
+high-severity audit, typecheck, tests, and experiments. No paid benchmark stage
+runs in CI, and neither audit is suppressed.
+
+A hosted run is required for merge evidence. Local gates and static workflow
+assertions do not prove a hosted pass; observe and record the run URL and job
+conclusions for the pushed commit before claiming CI success.
+
 ## Usage
 
 Run the full harness from the repo root:

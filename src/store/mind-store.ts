@@ -7,6 +7,7 @@ import type {
   Memory,
   MemorySummary,
   Link,
+  LinkDirection,
   Tier,
   SearchFilter,
   MemoryQueryFilter,
@@ -15,6 +16,7 @@ import type {
   SpaceGraphResult,
   LegacyBrain,
   HotMemorySummary,
+  BoundedMemorySummaryResult,
 } from '../types';
 
 import type { ScoredSearchResult } from './repositories/search-repository';
@@ -27,6 +29,8 @@ export interface LinkedMemorySummary {
   tier: Tier;
   tags: string[];
   pinned: boolean;
+  label: string;
+  direction: LinkDirection;
 }
 
 export interface MemoryPatchInput {
@@ -38,6 +42,16 @@ export interface MemoryPatchInput {
   removeTags?: string[];
   addLinksToIds?: string[];
   removeLinksToIds?: string[];
+}
+
+/** Prepared input for the atomic checkpoint-to-session transformation. */
+export interface CompleteCheckpointInput {
+  space: string;
+  checkpointId: string;
+  sessionName: string;
+  sessionContent: string;
+  tags: string[];
+  tier: Tier;
 }
 
 /** Optional pagination for relevance search. Surfaces supply their own defaults. */
@@ -87,6 +101,15 @@ export interface MindStore {
   ): Promise<Memory>;
   deleteMemory(id: string): void;
   deleteMemoryByName(space: string, name: string): void;
+  /**
+   * Atomically transform a checkpoint into a session summary: revalidate the
+   * checkpoint, insert the summary, copy every inbound/outbound link keeping
+   * its direction and label, and delete the checkpoint in one transaction.
+   * The embedding is generated best-effort after commit. If any step fails the
+   * transaction rolls back, leaving no partial summary, copied links, or
+   * deletion.
+   */
+  completeCheckpoint(input: CompleteCheckpointInput): Promise<Memory>;
   /**
    * Record an access (bumps count + last_accessed_at).
    * Also auto-promotes non-pinned memories one tier up (with LRU eviction if destination is full).
@@ -151,6 +174,10 @@ export interface MindStore {
     from?: string;
     to?: string;
   }): Promise<number>;
+
+  // Bounded space-orientation queries (checkpoints excluded, pinned first)
+  getTrendingMemories(space: string, tier: Tier, limit: number): BoundedMemorySummaryResult;
+  getLivingReferences(space: string, limit: number): BoundedMemorySummaryResult;
 
   // Graph view (includes T1..T3 only)
   getSpaceGraph(space: string, opts?: { limit?: number; maxLimit?: number }): SpaceGraphResult;

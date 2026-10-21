@@ -221,32 +221,6 @@ write_version() {
   bun -e "const fs=require('fs'); const p=JSON.parse(fs.readFileSync('package.json','utf8')); p.version='${new_version}'; fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');"
 }
 
-write_package_lock_version() {
-  local new_version="$1"
-  if [ ! -f "package-lock.json" ]; then
-    return
-  fi
-
-  if [ "$SIMULATE" -eq 1 ]; then
-    echo "[simulate] update package-lock.json version -> ${new_version}"
-    return
-  fi
-
-  bun -e '
-    const fs = require("fs");
-    const version = process.argv[1];
-    const file = "package-lock.json";
-    const lock = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (Object.prototype.hasOwnProperty.call(lock, "version")) {
-      lock.version = version;
-    }
-    if (lock.packages?.[""] && Object.prototype.hasOwnProperty.call(lock.packages[""], "version")) {
-      lock.packages[""].version = version;
-    }
-    fs.writeFileSync(file, JSON.stringify(lock, null, 2) + "\n");
-  ' "$new_version"
-}
-
 main() {
   require_cmd git
   require_cmd bun
@@ -286,14 +260,9 @@ main() {
 
   run_cmd bun test test/
   write_version "$next_version"
-  write_package_lock_version "$next_version"
   promote_changelog_release "$next_version"
 
-  local release_files=(package.json CHANGELOG.md)
-  if [ -f "package-lock.json" ]; then
-    release_files=(package.json package-lock.json CHANGELOG.md)
-  fi
-  run_cmd git add "${release_files[@]}"
+  run_cmd git add package.json CHANGELOG.md
   run_cmd git commit -m "chore(release): ${tag}"
   run_cmd git tag "$tag"
   run_cmd git push origin main

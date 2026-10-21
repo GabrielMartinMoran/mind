@@ -3,6 +3,7 @@
  * Used by both CLI `checkpoint complete` and MCP `checkpoint_done`.
  */
 
+import { fetchCheckpointContent } from '../helpers/checkpoint-content';
 import {
   buildOfficialSessionSummaryContent,
   buildSessionSummaryName,
@@ -40,11 +41,27 @@ export async function completeCheckpoint(
     throw new Error(`Checkpoint with id ${checkpointMemoryId} could not be loaded.`);
   }
 
-  // Parse checkpoint content
-  const checkpointContent = JSON.parse(checkpointMemory.content);
+  if (!checkpointMemory.tags.includes('checkpoint')) {
+    throw new Error(
+      `Memory "${checkpointMemory.name}" in "${space}" is not a checkpoint; refusing to complete it.`
+    );
+  }
 
-  // Get links from the checkpoint (linked_memories are stored as links, not in content)
-  const checkpointLinks = store.getLinks(checkpointMemory.id);
+  // Parse checkpoint content
+  const checkpointContent = fetchCheckpointContent(checkpointMemory);
+  if (!checkpointContent) {
+    throw new Error(
+      `Checkpoint "${checkpointMemory.name}" has invalid JSON content and cannot be completed.`
+    );
+  }
+
+  if (checkpointContent.pending.trim().length > 0) {
+    throw new Error(
+      `Checkpoint "${checkpointMemory.name}" still has pending work: "${checkpointContent.pending}". ` +
+        'Update the checkpoint to clear pending work before calling checkpoint_done. ' +
+        'If the work is being abandoned, clear pending explicitly and record why in notes.'
+    );
+  }
 
   // Create session memory content
   const completedAt = now();
@@ -65,35 +82,16 @@ export async function completeCheckpoint(
     },
   });
 
-  // Create session memory with name "session-{timestamp}"
-  // Links will be recreated after creating the session memory
-  const sessionMemory = await store.addMemory(
+  // Insert the summary, copy every relation, and delete the checkpoint in one
+  // transaction. Any failure rolls everything back for a safe retry.
+  const sessionMemory = await store.completeCheckpoint({
     space,
-    buildSessionSummaryName(new Date()),
+    checkpointId: checkpointMemory.id,
+    sessionName: buildSessionSummaryName(new Date()),
     sessionContent,
-    {
-      tags: [...SESSION_SUMMARY_TAGS],
-      tier: SESSION_SUMMARY_TIER,
-    }
-  );
-
-  // Recreate links from and to the checkpoint on the session memory
-  for (const link of checkpointLinks) {
-    try {
-      if (link.source_id === checkpointMemory.id) {
-        store.link(sessionMemory.id, link.target_id, link.label || 'related');
-      }
-
-      if (link.target_id === checkpointMemory.id) {
-        store.link(link.source_id, sessionMemory.id, link.label || 'related');
-      }
-    } catch {
-      // Ignore link errors (best-effort)
-    }
-  }
-
-  // Delete the original checkpoint (not just mark complete)
-  store.deleteMemory(checkpointMemory.id);
+    tags: [...SESSION_SUMMARY_TAGS],
+    tier: SESSION_SUMMARY_TIER,
+  });
 
   return {
     sessionMemory: {

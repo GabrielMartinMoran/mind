@@ -2,3 +2,7 @@
 .claude/
 .cursor/
 .pas/
+benchmarks/agent-memory/probes/evidence/
+benchmarks/agent-memory/REPORT.md
+benchmarks/agent-memory/results/
+benchmarks/agent-memory/experiments/REPORTS/

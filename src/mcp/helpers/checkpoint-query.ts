@@ -1,3 +1,4 @@
+import { fetchAllCheckpoints } from '../../checkpoint/checkpoint-lookup';
 import { fetchCheckpointContent } from '../../helpers/checkpoint-content';
 import type { MindStore } from '../../store/mind-store';
 import type { MemorySummary } from '../../types';
@@ -9,8 +10,6 @@ export interface CheckpointSummary {
   changed_at: string;
   tags: string[];
 }
-
-const CHECKPOINT_BATCH_SIZE = 500;
 
 export function applyCheckpointFilters(
   checkpoints: MemorySummary[],
@@ -83,27 +82,5 @@ export async function fetchAllCheckpointMemories(
   store: MindStore,
   space: string
 ): Promise<MemorySummary[]> {
-  const total = await store.queryMemoriesCount({
-    space,
-    tag: 'checkpoint',
-  });
-
-  if (total === 0) {
-    return [];
-  }
-
-  const checkpoints: MemorySummary[] = [];
-
-  for (let offset = 0; offset < total; offset += CHECKPOINT_BATCH_SIZE) {
-    checkpoints.push(
-      ...store.queryMemories({
-        space,
-        tag: 'checkpoint',
-        limit: CHECKPOINT_BATCH_SIZE,
-        offset,
-      })
-    );
-  }
-
-  return checkpoints;
+  return fetchAllCheckpoints(store, space);
 }

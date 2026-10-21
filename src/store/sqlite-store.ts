@@ -270,6 +270,7 @@ export function createSqliteStore(dbPath: string): MindStore {
     moveMemory: (id, updates) => memoryRepo.moveMemory(id, updates),
     deleteMemory: id => memoryRepo.deleteMemory(id),
     deleteMemoryByName: (space, name) => memoryRepo.deleteMemoryByName(space, name),
+    completeCheckpoint: input => memoryRepo.completeCheckpoint(input),
     recordAccess: id => memoryRepo.recordAccess(id),
     getLinkedMemorySummaries: id => memoryRepo.getLinkedMemorySummaries(id),
     patchMemory: (id, patch) => memoryRepo.patchMemory(id, patch),
@@ -299,6 +300,8 @@ export function createSqliteStore(dbPath: string): MindStore {
     searchFallback: (query, filter) => searchRepo.searchFallback(query, filter),
     queryMemories: filter => searchRepo.queryMemories(filter),
     queryMemoriesCount: filter => searchRepo.queryMemoriesCount(filter),
+    getTrendingMemories: (space, tier, limit) => searchRepo.getTrendingMemories(space, tier, limit),
+    getLivingReferences: (space, limit) => searchRepo.getLivingReferences(space, limit),
     getSpaceGraph: (space, opts) => searchRepo.getSpaceGraph(space, opts),
 
     // Status

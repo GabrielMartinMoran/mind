@@ -16,7 +16,7 @@ const SPACE_TOOL_DESCRIPTIONS: Record<string, string> = {
     'Create a new space with required tags. Use hierarchical names like projects/<repo>, user/preferences, or global/config.',
   space_list: 'List all spaces, optionally filtered by tag.',
   space_get:
-    'Get a space orientation summary with overview counts, changed-at trending memories by tier, and active checkpoints.',
+    'Get a space orientation summary: overview counts, T1/T2/T3 previews with T3 availability, living references, and active checkpoints. Use at session start or when switching tasks.',
   space_update: 'Update a space description and/or replace its tags.',
   space_delete: 'Permanently delete a space and ALL its memories, links, and checkpoints.',
 };

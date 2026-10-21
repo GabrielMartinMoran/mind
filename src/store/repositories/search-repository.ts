@@ -10,10 +10,17 @@ import {
   semanticSearch,
 } from '../../helpers/rag';
 import { normalizeTag } from '../../helpers/tags';
-import type { MemoryQueryFilter, MemorySummary, SearchResult, Tier } from '../../types';
+import type {
+  BoundedMemorySummaryResult,
+  MemoryQueryFilter,
+  MemorySummary,
+  SearchResult,
+  Tier,
+} from '../../types';
 import {
   buildPrimaryMatch,
   buildRungs,
+  canBypassLexicalAdmission,
   countCoveredQueryTokens,
   documentSatisfiesQuery,
   foldedWords,
@@ -22,6 +29,7 @@ import {
   normalizeDateBound,
   normalizeToken,
   parseQuery,
+  selectSemanticAdmittedIds,
   storeGeneration,
   tokenSetScore,
   tokenize,
@@ -87,8 +95,8 @@ export interface SearchDiagnostics {
   fuzzy_cache_rebuilt: boolean;
   /** Cross-connection `PRAGMA data_version` observed on this call's cache check. */
   data_version: number;
-  /** Admission gate outcome: candidates kept vs. dropped. */
-  admission: { kept: number; dropped: number };
+  /** Admission gate outcome: candidates kept vs. dropped (0 when RAG is off). */
+  admission: { kept: number; dropped: number; semantic_admitted: number };
   /** Candidates collected across all channels before admission. */
   total_candidates: number;
   /** Wall-clock milliseconds for the whole `searchMemories` call. */
@@ -304,6 +312,8 @@ export interface SearchRepository {
     from?: string;
     to?: string;
   }): Promise<number>;
+  getTrendingMemories(space: string, tier: Tier, limit: number): BoundedMemorySummaryResult;
+  getLivingReferences(space: string, limit: number): BoundedMemorySummaryResult;
   getSpaceGraph(
     space: string,
     opts?: { limit?: number; maxLimit?: number }
@@ -660,7 +670,12 @@ export function createSearchRepository(
     let fuzzyCacheRebuilt = false;
     let fuzzyCacheDataVersion = 0;
 
+    // `rowsById` is the union of every channel; `lexicalRowsById` is the
+    // lexical-only view that admission and `token_set` must use. Keeping the
+    // views separate freezes lexical admission/scoring when semantic ids are
+    // present: semantic ids are unioned only after the lexical ladder.
     const rowsById = new Map<string, SearchRow>();
+    const lexicalRowsById = new Map<string, SearchRow>();
     const channels: ChannelScores[] = [];
     const addChannel = (method: SearchChannelMethod, scores: Map<string, number>): void => {
       if (scores.size > 0) channels.push({ method, scores });
@@ -695,6 +710,7 @@ export function createSearchRepository(
       const scores = new Map<string, number>();
       for (const row of rows) {
         rowsById.set(row.id, row);
+        lexicalRowsById.set(row.id, row);
         scores.set(row.id, -Number(row.rank) || 0);
       }
       addChannel(rung.method as SearchChannelMethod, scores);
@@ -718,6 +734,7 @@ export function createSearchRepository(
       const scores = new Map<string, number>();
       for (const row of rows) {
         rowsById.set(row.id, row);
+        lexicalRowsById.set(row.id, row);
         scores.set(row.id, -Number(row.rank) || 0);
       }
       addChannel('trigram', scores);
@@ -754,6 +771,7 @@ export function createSearchRepository(
         const scores = new Map<string, number>();
         for (const row of rows) {
           rowsById.set(row.id, row);
+          lexicalRowsById.set(row.id, row);
           scores.set(row.id, -Number(row.rank) || 0);
         }
         addChannel('fuzzy', scores);
@@ -778,6 +796,7 @@ export function createSearchRepository(
       const scores = new Map<string, number>();
       for (const row of rows) {
         rowsById.set(row.id, row);
+        lexicalRowsById.set(row.id, row);
         scores.set(row.id, matchedTokenCount(shortTokens, row.name, row.content));
       }
       addChannel('like', scores);
@@ -791,11 +810,14 @@ export function createSearchRepository(
     }
 
     // Semantic — RAG only; skipped when the breaker is open after a failure.
+    // These ids feed `rowsById` (for fusion) but never the lexical view, so the
+    // admission ladder and `token_set` cannot be influenced by them.
+    let semanticScores = new Map<string, number>();
     if (isRagEnabled() && !isSemanticBreakerOpen()) {
       const channelStart = diagnostics ? performance.now() : 0;
       try {
         const candidateRows = querySemanticCandidateRows(filter);
-        const semanticScores = await semanticScoresForQuery(query, candidateRows);
+        semanticScores = await semanticScoresForQuery(query, candidateRows);
         if (semanticScores.size > 0) {
           const byId = new Map(candidateRows.map(row => [row.id, row]));
           for (const id of semanticScores.keys()) {
@@ -816,11 +838,13 @@ export function createSearchRepository(
       }
     }
 
-    // Token-set coverage: a scoring channel over every candidate found so far.
-    if (queryTokens.length > 0 && rowsById.size > 0) {
+    // Token-set coverage: a scoring channel over the lexical candidates only.
+    // Admitting semantic ids here would change lexical normalization and fused
+    // scores, so semantic rows are deliberately excluded from this view.
+    if (queryTokens.length > 0 && lexicalRowsById.size > 0) {
       const channelStart = diagnostics ? performance.now() : 0;
       const scores = new Map<string, number>();
-      for (const row of rowsById.values()) {
+      for (const row of lexicalRowsById.values()) {
         const coverage = tokenSetScore(queryTokens, tokenize(`${row.name} ${row.content}`));
         if (coverage > 0) scores.set(row.id, coverage);
       }
@@ -839,17 +863,16 @@ export function createSearchRepository(
     if (excludedIds.size > 0) {
       for (const id of excludedIds) {
         rowsById.delete(id);
+        lexicalRowsById.delete(id);
         for (const channel of channels) channel.scores.delete(id);
       }
     }
 
-    // Relevance admission gate: keep only candidates that satisfy the query's
-    // boolean structure under folded matching. Weak partial matches surfaced by
-    // the relaxed channels (trigram/fuzzy/like) are dropped here, so fusion can
-    // rank the relevant set without the precision collapse of admitting every
-    // channel member.
+    // Relevance admission gate: keep only lexical candidates that satisfy the
+    // query's boolean structure under folded matching. The ladder runs on the
+    // lexical view so its `finalRows.size === 0` branches keep their meaning.
     let finalRows = new Map<string, SearchRow>();
-    for (const [id, row] of rowsById) {
+    for (const [id, row] of lexicalRowsById) {
       if (documentSatisfiesQuery(ast, row.name, row.content)) finalRows.set(id, row);
     }
 
@@ -859,14 +882,31 @@ export function createSearchRepository(
     // legacy cascade used, which keeps the relaxed set small and precise.
     if (finalRows.size === 0 && queryTokens.length >= 2) {
       const floor = coverageFloor(queryTokens.length);
-      for (const [id, row] of rowsById) {
+      for (const [id, row] of lexicalRowsById) {
         if (countCoveredQueryTokens(queryTokens, row.name, row.content) >= floor)
           finalRows.set(id, row);
       }
     }
 
-    // Last resort: no coverage tier matched, keep every channel candidate.
-    if (finalRows.size === 0) finalRows = rowsById;
+    // Last resort: no coverage tier matched, keep every lexical channel
+    // candidate. Semantic candidates must not enter here: only the stricter
+    // post-ladder bypass below may admit them.
+    if (finalRows.size === 0) finalRows = new Map(lexicalRowsById);
+
+    // Independent semantic admission: for natural-language queries (single
+    // plain-term group, no NOT), a semantic candidate at/above the stricter
+    // floor reaches fusion even when lexical admission already succeeded. Ids
+    // absent from `rowsById` failed the space/tier/tag filters and are skipped.
+    let semanticAdmitted = 0;
+    if (canBypassLexicalAdmission(ast)) {
+      for (const id of selectSemanticAdmittedIds(semanticScores, excludedIds)) {
+        const row = rowsById.get(id);
+        if (row) {
+          finalRows.set(id, row);
+          semanticAdmitted += 1;
+        }
+      }
+    }
     if (finalRows.size === 0) return [];
 
     const keptIds = new Set(finalRows.keys());
@@ -884,7 +924,11 @@ export function createSearchRepository(
         fuzzy_expansions: fuzzyExpansions,
         fuzzy_cache_rebuilt: fuzzyCacheRebuilt,
         data_version: fuzzyCacheDataVersion,
-        admission: { kept: finalRows.size, dropped: rowsById.size - finalRows.size },
+        admission: {
+          kept: finalRows.size,
+          dropped: rowsById.size - finalRows.size,
+          semantic_admitted: semanticAdmitted,
+        },
         total_candidates: rowsById.size,
         total_ms: performance.now() - diagnosticsStart,
       });
@@ -1106,6 +1150,99 @@ export function createSearchRepository(
     return row.count;
   }
 
+  /**
+   * Bounded summary query shared by space orientation surfaces. Applies every
+   * filter, the exclusion, ordering and the limit in SQL so a tier is never
+   * materialized just to preview a handful of memories.
+   */
+  function queryBoundedMemorySummaries(options: {
+    space: string;
+    tier?: Tier;
+    requiredTags?: string[];
+    excludeTag?: string;
+    limit: number;
+  }): BoundedMemorySummaryResult {
+    const params: any[] = [options.space];
+    const conditions: string[] = ['s.name = ?'];
+
+    if (options.tier !== undefined) {
+      conditions.push('m.tier = ?');
+      params.push(options.tier);
+    }
+
+    for (const tag of options.requiredTags ?? []) {
+      conditions.push(
+        'EXISTS (SELECT 1 FROM memory_tags mt WHERE mt.memory_id = m.id AND mt.tag = ?)'
+      );
+      params.push(normalizeTag(tag));
+    }
+
+    if (options.excludeTag) {
+      conditions.push(
+        'NOT EXISTS (SELECT 1 FROM memory_tags mt WHERE mt.memory_id = m.id AND mt.tag = ?)'
+      );
+      params.push(normalizeTag(options.excludeTag));
+    }
+
+    const where = conditions.join(' AND ');
+    const limit = Math.max(0, Math.trunc(options.limit));
+
+    const totalRow = db
+      .query(
+        `SELECT COUNT(*) as count
+         FROM memories m
+         JOIN spaces s ON s.id = m.space_id
+         WHERE ${where}`
+      )
+      .get(...params) as { count: number };
+
+    const rows = db
+      .query(
+        `SELECT m.id, s.name as space_name, m.space_id, m.name, m.tier, m.pinned,
+                m.access_count, m.created_at, m.updated_at, m.changed_at
+         FROM memories m
+         JOIN spaces s ON s.id = m.space_id
+         WHERE ${where}
+         ORDER BY m.pinned DESC, m.changed_at DESC, m.rowid DESC
+         LIMIT ?`
+      )
+      .all(...params, limit) as any[];
+
+    return {
+      total_count: totalRow.count,
+      memories: rows.map(r => ({
+        id: r.id,
+        space_id: r.space_id,
+        space_name: r.space_name,
+        name: r.name,
+        tier: r.tier as Tier,
+        pinned: r.pinned === 1,
+        tags: getTagsForMemory(db, r.id),
+        access_count: r.access_count,
+        created_at: r.created_at,
+        updated_at: r.updated_at,
+        changed_at: r.changed_at,
+      })),
+    };
+  }
+
+  function getTrendingMemories(
+    space: string,
+    tier: Tier,
+    limit: number
+  ): BoundedMemorySummaryResult {
+    return queryBoundedMemorySummaries({ space, tier, excludeTag: 'checkpoint', limit });
+  }
+
+  function getLivingReferences(space: string, limit: number): BoundedMemorySummaryResult {
+    return queryBoundedMemorySummaries({
+      space,
+      requiredTags: ['type:reference', 'status:living'],
+      excludeTag: 'checkpoint',
+      limit,
+    });
+  }
+
   function getSpaceGraph(
     space: string,
     opts?: { limit?: number; maxLimit?: number }
@@ -1215,6 +1352,8 @@ export function createSearchRepository(
     searchSemantic,
     queryMemories,
     queryMemoriesCount,
+    getTrendingMemories,
+    getLivingReferences,
     getSpaceGraph,
   };
 }

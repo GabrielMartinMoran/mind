@@ -13,6 +13,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 
 import { renderMemoryProtocol } from '../src/cli/memory-protocol';
+import { renderMindManagementSkill } from '../src/cli/mind-management-skill';
 import { buildOpenCodeAutomationPlugin, runSetup } from '../src/cli/setup';
 
 function stripJsoncComments(text: string): string {
@@ -74,10 +75,6 @@ function createFakeMindBin(dir: string): { binPath: string; logPath: string } {
 
 function readMindLog(logPath: string): string {
   return existsSync(logPath) ? readFileSync(logPath, 'utf-8') : '';
-}
-
-function countOccurrences(text: string, needle: string): number {
-  return text.split(needle).length - 1;
 }
 
 type GeneratedV1PluginHooks = {
@@ -228,8 +225,10 @@ describe('OpenCode setup integration', () => {
     const injectedText = readFileSync(injectedPath, 'utf-8');
     expect(injectedText).toBe(renderMemoryProtocol('opencode'));
     expect(injectedText).toContain('Mind Memory Protocol');
-    expect(injectedText).toContain('Post-Compaction');
+    expect(injectedText).toContain('mind-management');
     expect(injectedText).toContain('system_instructions');
+    expect(injectedText).not.toContain('## ORIENT');
+    expect(injectedText).not.toContain('Required First Actions');
   });
 
   test('is idempotent for repeated setup runs', async () => {
@@ -297,6 +296,32 @@ describe('OpenCode setup integration', () => {
     expect(existsSync(legacyPath)).toBe(false);
   });
 
+  test('installs the canonical skill and migrates an OpenCode shadow copy', async () => {
+    const shadowDir = join(tempHome, '.config', 'opencode', 'skills', 'mind-management');
+    mkdirSync(shadowDir, { recursive: true });
+    writeFileSync(
+      join(shadowDir, 'SKILL.md'),
+      [
+        '---',
+        'name: mind-management',
+        'description: Old mandatory Mind Management Protocol',
+        '---',
+        '',
+        '# Mind Management Protocol',
+        '',
+        'MANDATORY: read this skill before every task.',
+        '',
+      ].join('\n')
+    );
+
+    await runSetup('opencode');
+
+    const canonicalPath = join(tempHome, '.agents', 'skills', 'mind-management', 'SKILL.md');
+    expect(existsSync(canonicalPath)).toBe(true);
+    expect(readFileSync(canonicalPath, 'utf-8')).toBe(renderMindManagementSkill());
+    expect(existsSync(join(shadowDir, 'SKILL.md'))).toBe(false);
+  });
+
   test('writes OpenCode prudent automation plugin by default', async () => {
     await runSetup('opencode');
 
@@ -314,7 +339,7 @@ describe('OpenCode setup integration', () => {
     expect(pluginText).toContain('session.created');
     expect(pluginText).toContain('session.compacted');
     expect(pluginText).toContain('experimental.session.compacting');
-    expect(pluginText).toContain('checkpoint set');
+    expect(pluginText).not.toContain('checkpoint set');
     expect(pluginText).toContain('checkpoint recover');
     expect(pluginText).not.toContain('--history');
     expect(pluginText).toContain('--name <checkpoint-name>');
@@ -853,7 +878,7 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
   });
   const stateFilePath = (pluginDir: string) => join(pluginDir, '.mind-automation-state.json');
 
-  test('resolves one project space from the canonical project path and dedupes checkpoints', async () => {
+  test('does not create or overwrite a checkpoint at session start', async () => {
     const { binPath, logPath } = createFakeMindBin(tempHome);
     const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-canonical-'));
     const mod = await importGeneratedPluginIn(pluginDir, binPath);
@@ -879,16 +904,10 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
     const cleanup = await mod.default.setup(fake.ctx);
     try {
       await fake.processed;
-      await waitFor(
-        () => readMindLog(logPath).includes('checkpoint set projects/canonical-proj'),
-        'canonical checkpoint scaffold'
-      );
-
       const log = readMindLog(logPath);
-      expect(log).toContain('create projects/canonical-proj');
-      expect(log).toContain('checkpoint set projects/canonical-proj');
-      expect(log).not.toContain('projects/nested-dir');
-      expect(countOccurrences(log, 'checkpoint set')).toBe(1);
+      expect(log).not.toContain('checkpoint set');
+      expect(log).not.toContain('create projects/');
+      expect(log).toBe('');
       expect(existsSync(stateFilePath(pluginDir))).toBe(true);
     } finally {
       cleanup();
@@ -896,7 +915,7 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
     }
   });
 
-  test('refreshes the checkpoint on session.compaction.ended for a different session', async () => {
+  test('does not create a checkpoint on session.compaction.ended', async () => {
     const { binPath, logPath } = createFakeMindBin(tempHome);
     const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-compaction-event-'));
     const mod = await importGeneratedPluginIn(pluginDir, binPath);
@@ -920,14 +939,9 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
     const cleanup = await mod.default.setup(fake.ctx);
     try {
       await fake.processed;
-      await waitFor(
-        () => countOccurrences(readMindLog(logPath), 'checkpoint set') === 2,
-        'second checkpoint set after compaction.ended'
-      );
-
       const log = readMindLog(logPath);
-      expect(log).toContain('checkpoint set projects/canonical-proj');
-      expect(countOccurrences(log, 'checkpoint set')).toBe(2);
+      expect(log).not.toContain('checkpoint set');
+      expect(log).toBe('');
     } finally {
       cleanup();
       rmSync(pluginDir, { recursive: true, force: true });
@@ -993,11 +1007,9 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
       await compactionHook!({ sessionID: 'ses_compact', system });
       expect(system).toHaveLength(1);
 
-      await waitFor(
-        () => readMindLog(logPath).includes('checkpoint set projects/canonical-proj'),
-        'hook checkpoint set'
-      );
-      expect(readMindLog(logPath)).toContain('checkpoint set projects/canonical-proj');
+      const log = readMindLog(logPath);
+      expect(log).not.toContain('checkpoint set');
+      expect(log).toBe('');
     } finally {
       cleanup();
       rmSync(pluginDir, { recursive: true, force: true });
@@ -1088,9 +1100,10 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
       }, 'all state maps capped at 400 entries');
 
       const maps = readMaps();
-      // 401 pre-existing checkpoint keys plus one new key: the two oldest drop.
+      // The plugin no longer adds a checkpoint key, so 401 pre-existing keys
+      // are capped to the 400 newest and only the oldest drops.
       expect(maps.checkpoints['cp-0']).toBeUndefined();
-      expect(maps.checkpoints['cp-1']).toBeUndefined();
+      expect(maps.checkpoints['cp-1']).toBe(2);
       expect(maps.checkpoints['cp-400']).toBe(401);
       // Summaries and handled have 401 pre-existing keys: the oldest drops.
       expect(maps.summaries['sum-0']).toBeUndefined();
@@ -1107,14 +1120,17 @@ describe('OpenCode prudent automation plugin behavior (V2)', () => {
 describe('OpenCode prudent automation plugin behavior (V1)', () => {
   const stateFilePath = (pluginDir: string) => join(pluginDir, '.mind-automation-state.json');
 
-  test('resolves the V1 session identity from properties instead of the event id', async () => {
+  test('does not create a V1 checkpoint scaffold at session start', async () => {
     const { binPath, logPath } = createFakeMindBin(tempHome);
     const pluginDir = mkdtempSync(join(tmpdir(), 'mind-automation-v1-'));
     const projectDir = join(tempHome, 'testproj');
     mkdirSync(projectDir, { recursive: true });
     const mod = await importGeneratedPluginIn(pluginDir, binPath);
 
-    const hooks = await mod.MindAutomationPlugin({ directory: projectDir, worktree: projectDir });
+    const hooks = await mod.MindAutomationPlugin({
+      directory: projectDir,
+      worktree: projectDir,
+    });
     await hooks.event({
       event: {
         id: 'evt_x',
@@ -1123,20 +1139,15 @@ describe('OpenCode prudent automation plugin behavior (V1)', () => {
       },
     });
 
-    await waitFor(
-      () => readMindLog(logPath).includes('create projects/testproj'),
-      'V1 checkpoint scaffold'
-    );
-    expect(readMindLog(logPath)).toContain('create projects/testproj');
-
     // The V1 handler saves state synchronously in its finally block.
     const statePath = stateFilePath(pluginDir);
     await waitFor(() => existsSync(statePath), 'V1 plugin state file');
     const state = JSON.parse(readFileSync(statePath, 'utf-8')) as {
       checkpoints: Record<string, number>;
     };
-    const checkpointKeys = Object.keys(state.checkpoints);
-    expect(checkpointKeys).toContain('projects/testproj:ses_v1beh');
-    expect(checkpointKeys.some(key => key.includes('evt_x'))).toBe(false);
+    expect(Object.keys(state.checkpoints)).toHaveLength(0);
+    expect(state.checkpoints['projects/testproj:ses_v1beh']).toBeUndefined();
+    expect(state.checkpoints['projects/testproj:evt_x']).toBeUndefined();
+    expect(readMindLog(logPath)).toBe('');
   });
 });
