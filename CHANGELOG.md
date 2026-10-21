@@ -29,6 +29,7 @@ Example:
 
 ### Added
 
+- Added `CONTRIBUTING.md` and `docs/mind-philosophy.md` to document contribution standards and Mind's purpose and product principles, with entry points from the README, docs index, and `AGENTS.md`.
 - Added Pi Agent setup: MCP at `~/.pi/agent/mcp.json`, a managed brief activation block in `~/.pi/agent/AGENTS.md`, and the shared `~/.agents/skills/mind-management` skill. Mind installs no Pi plugin and marks Pi L3 unverified.
 - Added `docs/agent-integration-matrix.md` with documented MCP and skill paths, symlink strategy, `initialize.instructions` support, hooks, Mind strategy, and honest documented/implemented/validated/unverified status for every supported agent.
 - Added a separate skill-installation surface to setup diagnostics and `mind setup` output (`status`, path, and shared/symlink strategy), independent of the L1/L2/L3 badges.

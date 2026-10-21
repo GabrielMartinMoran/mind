@@ -1,12 +1,12 @@
 # AGENTS.md — Project guide for AI agents and maintainers
 
-This document describes the **mind** project: its architecture, behavior, technical choices, and how to use it. It is intended for AI agents and human maintainers. **Agents that modify this codebase must keep this file updated** when they change architecture, add commands, change config, or alter behavior (see [Keeping this document updated](#keeping-this-document-updated)).
+This document describes the **mind** project's architecture, behavior, technical choices, and usage. It is intended for AI agents and human maintainers. Read [Mind's purpose and philosophy](docs/mind-philosophy.md) to understand the product goal and principles, and [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow. Agents should read the philosophy page before proposing or implementing product behavior. **Agents that modify this codebase must keep this file updated** when they change architecture, add commands, change config, or alter behavior (see [Keeping this document updated](#keeping-this-document-updated)).
 
 ---
 
 ## 1. Project overview
 
-**mind** is a CLI tool for persistent long-term memory — tracking thoughts, ideas, tasks, and knowledge. Data is organized into named **spaces**, each containing **memories** with full-text search, tags, links, and a 3-tier CPU-cache-style access-frequency system.
+**mind** is a local, open-source persistent cognitive workspace for AI coding agents. It preserves useful project and work context—decisions, constraints, discoveries, and unfinished tasks—so agents can resume across sessions, tools, and context windows. Its purpose and guiding principles are documented in [Mind's philosophy](docs/mind-philosophy.md). Data is organized into named **spaces** containing **memories**, with full-text search, tags, links, checkpoints, session summaries, living references, and a 3-tier access-frequency system.
 
 - **Runtime:** [Bun](https://bun.sh/)
 - **Language:** TypeScript (strict mode, ESNext)
@@ -622,17 +622,19 @@ living pages explain it but do not replace it.
 
 ### Documentation locations
 
-| Content                       | Location                            |
-| ----------------------------- | ----------------------------------- |
-| Documentation index           | `docs/README.md`                    |
-| Living behavior and concepts  | `docs/*.md`                         |
-| Exceptional retained evidence | `docs/history/<feature>/*.md`       |
-| Release history               | `docs/release-notes/*.md`           |
-| User-facing install and usage | `README.md`                         |
-| Contributor and agent policy  | `AGENTS.md`                         |
-| Change log                    | `CHANGELOG.md`                      |
-| Benchmark methodology         | `benchmarks/agent-memory/README.md` |
-| Generated benchmark report    | `benchmarks/agent-memory/REPORT.md` |
+| Content                         | Location                            |
+| ------------------------------- | ----------------------------------- |
+| Documentation index             | `docs/README.md`                    |
+| Living behavior and concepts    | `docs/*.md`                         |
+| Exceptional retained evidence   | `docs/history/<feature>/*.md`       |
+| Release history                 | `docs/release-notes/*.md`           |
+| User-facing install and usage   | `README.md`                         |
+| Project purpose and principles  | `docs/mind-philosophy.md`           |
+| Contributor workflow            | `CONTRIBUTING.md`                   |
+| Agent architecture and guidance | `AGENTS.md`                         |
+| Change log                      | `CHANGELOG.md`                      |
+| Benchmark methodology           | `benchmarks/agent-memory/README.md` |
+| Generated benchmark report      | `benchmarks/agent-memory/REPORT.md` |
 
 ### Update before you create
 
