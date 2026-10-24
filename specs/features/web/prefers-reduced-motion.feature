@@ -1,62 +1,66 @@
-@delta-added
+@web @product/prefers-reduced-motion
 Feature: Reduced Motion Accessibility
 
-  Scenario: All animations disabled when prefers-reduced-motion is reduce
-    Given the user has prefers-reduced-motion: reduce set in OS
-    When the page loads and renders all components
-    Then NO animations should play (neon-pulse, glow-breathe, etc.)
-    And transitions should complete instantly (0ms or 0.01ms)
-    And motion should be eliminated entirely
+  Background:
+    Given the user has prefers-reduced-motion: reduce set in the OS
+    And the web application is loaded
 
-  Scenario: Memory panel shows instantly without slide animation
-    Given the user has reduced motion preference
-    When a memory is selected
-    Then the memory panel should appear immediately with no slide animation
-    And the panel should be fully visible from the first frame
+  Rule: No ambient motion
 
-  Scenario: Memory panel hides instantly without exit animation
-    Given the user has reduced motion preference and panel is open
-    When the user closes the panel
-    Then the panel should disappear immediately with no slide-out animation
+    @integration
+    Scenario: No pulse, glow or breathing animations
+      When the page renders
+      Then there are no ambient pulse, glow or breathing animations
 
-  Scenario: Modal appears instantly without scale animation
-    Given the user has reduced motion preference
-    When a modal is triggered
-    Then the modal should appear immediately at full scale
-    And no scale-in animation should play
+    @integration
+    Scenario: Node emphasis is static
+      When the neural map renders
+      Then node selection and highlighting are static
 
-  Scenario: Modal closes instantly without fade animation
-    Given the user has reduced motion preference and modal is open
-    When the user dismisses the modal
-    Then the modal should disappear immediately
-    And no fade-out animation should play
+  Rule: Overlays
 
-  Scenario: Graph nodes have no ambient pulse animation
-    Given the user has reduced motion preference
-    When the neural map renders
-    Then T1 nodes should NOT pulse or breathe
-    And all node glows should be static
+    @integration
+    Scenario: Memory panel appears instantly
+      When a memory is selected
+      Then the panel appears without animation
 
-  Scenario: Toggle indicator moves instantly without slide
-    Given the user has reduced motion preference
-    When the user switches between List and Map views
-    Then the indicator should snap immediately to the new position
-    And no sliding animation should occur
+    @integration
+    Scenario: Drawer appears instantly
+      When the mobile navigation opens
+      Then the drawer appears without animation
 
-  Scenario: Hover glow effects are reduced
-    Given the user has reduced motion preference
-    When hovering over interactive elements (buttons, tags, items)
-    Then glow effects should appear instantly without fade-in
-    And glow intensity should be reduced by 50% to avoid jarring visual effects
+    @integration
+    Scenario: Modal appears instantly
+      When a modal is triggered
+      Then the modal appears at full scale without animation
 
-  Scenario: Spinner animation stops
-    Given the user has reduced motion preference
-    When a spinner is displayed (graph loading, etc.)
-    Then the spinner should be static (not rotating)
-    And the spinner should show a static frame of its rotation
+    @integration
+    Scenario: Toast appears instantly
+      When a toast is shown
+      Then it appears without slide or fade
 
-  Scenario: Toast notifications appear without slide animation
-    Given the user has reduced motion preference
-    When a toast notification is triggered
-    Then the toast should appear immediately without slide-in
-    And the toast should disappear immediately without slide-out when dismissed
+  Rule: Loading states
+
+    @integration
+    Scenario: Skeleton is static
+      When a skeleton is displayed
+      Then it does not pulse or shimmer
+
+    @integration
+    Scenario: Spinner is static
+      When a spinner is displayed
+      Then it does not rotate
+
+  Rule: Transitions
+
+    @integration
+    Scenario: Hover and focus transitions are instant
+      When the user hovers or focuses an interactive element
+      Then state changes are immediate
+      And no transition is perceptible
+
+    @integration
+    Scenario: View toggle switches instantly
+      When the user switches between list and map
+      Then the state changes immediately
+      And no sliding indicator animation plays

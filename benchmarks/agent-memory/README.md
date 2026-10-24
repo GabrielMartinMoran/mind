@@ -119,14 +119,21 @@ checkout `mind` binary. Historical and `no-memory` environments fail if the
 skill or its activation appears. A single failure throws and the run is
 **rejected** (raw dumps saved as evidence).
 
-Two OpenCode 2.0.28 mechanics are handled explicitly: the `mcp list` check
-retries a bounded number of times because the managed background service loads
-MCP config asynchronously after boot (the first call can report "No MCP servers
-configured" while the server connects moments later), and the SDK host is handed
-the inline config directly (`config.content`) because — unlike the CLI — the
-in-process host does not read `OPENCODE_CONFIG_CONTENT` on its own. MCP tools are
-invoked through the code-mode `execute` tool, so the driver unwraps
-`state.metadata.toolCalls` / `state.input.code` to count real `mind.*` calls.
+Three OpenCode 2.0.28 mechanics are handled explicitly. The managed background
+service loads MCP config and registers filesystem skills asynchronously after
+boot, so the `mcp list` check retries a bounded number of times for every
+condition: the first call can report "No MCP servers configured" before the
+server registers. The `/api/skill` discovery check retries a bounded number of
+times only under `mind-current`, where an installed skill can be omitted on the
+first call; historical conditions and `no-memory` query it once and expect
+`mind-management` to be absent. The gate evaluates the skills allowlist and the
+skill-first check against the final `/api/skill` listing and saves that listing
+as evidence; under `mind-current`, a skill that never appears still fails
+closed. The SDK host is handed the inline config directly
+(`config.content`) because — unlike the CLI — the in-process host does not read
+`OPENCODE_CONFIG_CONTENT` on its own. MCP tools are invoked through the
+code-mode `execute` tool, so the driver unwraps `state.metadata.toolCalls` /
+`state.input.code` to count real `mind.*` calls.
 
 Credential env values are redacted at write time: worker `job.json` files (and the
 raw A2 result dump) never contain a provider key; the real value reaches the child

@@ -83,6 +83,22 @@ Feature: Real skill-first benchmark setup and CI on every branch
       And no user skill or foreign config is present
 
     @integration
+    Scenario: The isolation gate waits for asynchronous skill discovery
+      Given a mind-current environment with mind-management installed
+      And the OpenCode skill watcher has not registered the skill yet
+      When isolation verification checks the discovered skills
+      Then it retries the skill listing within a bounded window
+      And it passes only after the exact allowlisted skill surface appears
+      And it records the final skill listing as evidence before any prompt
+
+    @unit
+    Scenario: Skill discovery remains fail-closed after the retry budget
+      Given every discovered-skill response omits mind-management
+      When isolation verification exhausts its retry budget
+      Then verification fails with the missing skill identified
+      And no agent prompt starts
+
+    @integration
     Scenario: Historical environments reject the current skill surface
       Given a mind-v9, mind-v10, or no-memory environment
       When mind-management or its activation is present

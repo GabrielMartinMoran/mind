@@ -283,6 +283,9 @@ Every result includes a `confidence` bucket (`high`, `medium`, `low`) and a
 omits the semantic channel. If an embedding request fails, Mind skips semantic
 search for about five minutes instead of retrying on every query.
 
+In the web UI, search stays scoped to the open space. Clearing the query removes
+old results and restores the loaded memory list when its filters still match.
+
 Limits:
 
 - CLI `search` returns 25 results by default. Use `--limit` (maximum 500) and

@@ -16,6 +16,15 @@ Capability badges remain L1 MCP, L2 instruction injection, and L3
 hooks/session automation. Skill installation is a separate surface and is not a
 fourth badge.
 
+Attribution: every setup adapter also writes the canonical agent identity into
+the `mind` MCP entry as `MIND_AGENT` (`opencode`, `claude-code`, `codex`,
+`cursor`, `windsurf`, `gemini-cli`, `vscode`, `antigravity`, or `pi`). The MCP
+server records that value in `caller_info.agent` with `agentSource: "env"`. When
+the variable is absent, the server falls back to the MCP initialize
+`clientInfo.name`, normalized through the same alias map. The logs table shows
+the resulting agent; attribution is observability only and grants no
+authorization.
+
 Skill policy: only the exact `mind-management` skill in an explicit
 Mind-managed location is installed or updated. Same-name content in those
 locations is updateable (the ownership marker is provenance, not

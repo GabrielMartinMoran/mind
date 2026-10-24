@@ -12,7 +12,12 @@ export interface AgentConfigEntry {
   name: string;
   configPath: string;
   format: 'json' | 'toml';
-  build: (_mcpUrl: string, _mindPath: string) => string | Record<string, unknown>;
+  build: (
+    _mcpUrl: string,
+    _mindPath: string,
+    _identity: SupportedAgent,
+    _existingEnvironment?: Record<string, string>
+  ) => string | Record<string, unknown>;
   capabilities: CapabilityMap;
 }
 
@@ -20,35 +25,75 @@ function getHomeDir(): string {
   return process.env.HOME ?? homedir();
 }
 
+// Environment entries are string-only so both JSON and TOML carry the same
+// shape. MIND_AGENT is always first and wins over an inherited value.
+function withAgentIdentity(
+  identity: SupportedAgent,
+  existingEnvironment: Record<string, string>
+): Record<string, string> {
+  const environment: Record<string, string> = { MIND_AGENT: identity };
+  for (const key of Object.keys(existingEnvironment).sort()) {
+    if (key !== 'MIND_AGENT') {
+      environment[key] = existingEnvironment[key] as string;
+    }
+  }
+  return environment;
+}
+
 // JSON config builders for each agent
 // Note: build functions receive (_mcpUrl, mindPath) but ignore the first param
-function buildJsonMcpConfig(_mcpUrl: string, mindPath: string): Record<string, unknown> {
+function buildJsonMcpConfig(
+  _mcpUrl: string,
+  mindPath: string,
+  identity: SupportedAgent
+): Record<string, unknown> {
   return {
     mcpServers: {
       mind: {
         type: 'stdio',
         command: mindPath,
         args: ['mcp'],
-        env: {},
+        env: withAgentIdentity(identity, {}),
       },
     },
   };
 }
 
-function buildOpenCodeMcpConfig(_mcpUrl: string, mindPath: string): Record<string, unknown> {
+function buildOpenCodeMcpConfig(
+  _mcpUrl: string,
+  mindPath: string,
+  identity: SupportedAgent
+): Record<string, unknown> {
   return {
     mcp: {
       mind: {
         type: 'local',
         command: [mindPath, 'mcp'],
         enabled: true,
+        environment: withAgentIdentity(identity, {}),
       },
     },
   };
 }
 
-function buildTomlMcpConfig(_mcpUrl: string, mindPath: string): string {
-  return `\n[mcp_servers.mind]\ncommand = "${mindPath}"\nargs = ["mcp"]\n`;
+function formatTomlKey(key: string): string {
+  return /^[A-Za-z0-9_-]+$/.test(key) ? key : JSON.stringify(key);
+}
+
+function buildTomlMcpConfig(
+  _mcpUrl: string,
+  mindPath: string,
+  identity: SupportedAgent,
+  existingEnvironment: Record<string, string> = {}
+): string {
+  const environment = withAgentIdentity(identity, existingEnvironment);
+  const envEntries = Object.entries(environment)
+    .map(([key, value]) => `${formatTomlKey(key)} = ${JSON.stringify(value)}`)
+    .join(', ');
+
+  return `\n[mcp_servers.mind]\ncommand = ${JSON.stringify(
+    mindPath
+  )}\nargs = ["mcp"]\nenv = { ${envEntries} }\n`;
 }
 
 // Internal config entry with path components (not yet resolved)
@@ -65,7 +110,12 @@ interface AgentConfigInternal {
    */
   pathAlternatives?: string[][];
   format: 'json' | 'toml';
-  build: (_mcpUrl: string, _mindPath: string) => string | Record<string, unknown>;
+  build: (
+    _mcpUrl: string,
+    _mindPath: string,
+    _identity: SupportedAgent,
+    _existingEnvironment?: Record<string, string>
+  ) => string | Record<string, unknown>;
   capabilities: CapabilityMap;
 }
 

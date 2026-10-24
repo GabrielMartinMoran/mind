@@ -3,67 +3,130 @@ html {
 }
 
 :root {
-  /* ── Backgrounds ── */
-  --bg: #050510;
-  --bg2: #0a0a1a;
-  --bg3: #10102a;
-  --border: #1a1a3a;
+  /* ── Surfaces ── */
+  --bg-void: #070b16;
+  --surface-1: #0d1524;
+  --surface-2: #121d30;
+  --surface-3: #172338;
 
-  /* ── Neon Colors ── */
-  --neon-cyan: #00f0ff;
-  --neon-magenta: #ff00aa;
-  --neon-green: #00ff88;
-  --neon-blue: #0080ff;
-  --neon-purple: #aa00ff;
+  /* ── Lines ── */
+  --line: #26334a;
+  --line-strong: #5e759c;
 
   /* ── Text ── */
-  --text: #e0e8ff;
-  --muted: #6060a0;
+  --text-primary: #e8f0fc;
+  --text-secondary: #b8c4d6;
+  --text-quiet: #8b9bb4;
 
-  /* ── Tiers (mantener legibilidad) ── */
-  --tier1: #ff7b72;
-  --tier2: #e3b341;
-  --tier3: #79c0ff;
+  /* ── Accent ── */
+  --accent: #39e7f5;
+  --accent-ink: #04222a;
+
+  /* ── Tiers ── */
+  --tier-1: #ff8580;
+  --tier-2: #f2bd62;
+  --tier-3: #79c8ff;
 
   /* ── Semantic ── */
-  --accent: var(--neon-cyan);
-  --danger: #ff3366;
-  --success: var(--neon-green);
-  --warning: #d29922;
+  --success: #71e2ad;
+  --warning: #f2bd62;
+  --danger: #ff7b83;
 
-  /* ── Glow Tokens ── */
-  --glow-cyan-sm: 0 0 4px var(--neon-cyan), 0 0 8px rgba(0, 240, 255, 0.3);
-  --glow-cyan-md:
-    0 0 6px var(--neon-cyan), 0 0 16px rgba(0, 240, 255, 0.4), 0 0 32px rgba(0, 240, 255, 0.2);
-  --glow-cyan-lg:
-    0 0 8px var(--neon-cyan), 0 0 24px rgba(0, 240, 255, 0.5), 0 0 48px rgba(0, 240, 255, 0.25);
+  /* ── JSON viewer syntax ── */
+  --json-key: #79c8ff;
+  --json-string: #71e2ad;
+  --json-number: #f2bd62;
+  --json-boolean: #d9a6ff;
+  --json-null: #8b9bb4;
 
-  /* ── Glass ── */
-  --glass-bg: rgba(10, 10, 26, 0.7);
-  --glass-border: rgba(0, 240, 255, 0.15);
+  /* ── Typography ── */
+  --font-sans: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-size-12: 12px;
+  --font-size-13: 13px;
+  --font-size-14: 14px;
+  --font-size-16: 16px;
+  --font-size-20: 20px;
+  --font-size-26: 26px;
+  --font-size-34: 34px;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-body: 1.45;
+  --line-height-heading: 1.2;
+  --measure: 72ch;
 
-  /* ── Timing ── */
+  /* ── Spacing ── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ── Radii ── */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* ── Focus ── */
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+
+  /* ── Motion ── */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 300ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-  --dur-fast: 150ms;
-  --dur-normal: 250ms;
-  --dur-panel: 300ms;
+
+  /* ── Z-index ── */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-rail: 20;
+  --z-inspector: 30;
+  --z-overlay: 40;
+  --z-dialog: 50;
+  --z-toast: 60;
 
   /* ── Layout ── */
-  --sidebar-w: 260px;
-  --mem-panel: 480px;
+  --sidebar-w: 240px;
+  --mem-panel: 360px;
 
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--text);
-  background: var(--bg);
+  /* ── Legacy aliases (kept until views migrate) ── */
+  --bg: var(--bg-void);
+  --bg2: var(--surface-1);
+  --bg3: var(--surface-2);
+  --border: var(--line);
+  --glass-bg: var(--surface-2);
+  --neon-cyan: var(--accent);
+  --neon-blue: var(--tier-3);
+  --text: var(--text-primary);
+  --muted: var(--text-quiet);
+  --tier1: var(--tier-1);
+  --tier2: var(--tier-2);
+  --tier3: var(--tier-3);
+  --dur-fast: var(--motion-fast);
+  --dur-normal: var(--motion-base);
+  --dur-panel: var(--motion-slow);
+
+  font-family: var(--font-sans);
+  font-size: var(--font-size-14);
+  line-height: var(--line-height-body);
+  color: var(--text-primary);
+  background: var(--bg-void);
 }
 
-/* ── Reduced motion: override timing vars ── */
+/* ── Reduced motion: neutralize motion tokens ── */
 @media (prefers-reduced-motion: reduce) {
   :root {
-    --dur-fast: 0.01ms;
-    --dur-normal: 0.01ms;
-    --dur-panel: 0.01ms;
+    --motion-fast: 0.01ms;
+    --motion-base: 0.01ms;
+    --motion-slow: 0.01ms;
   }
 }
