@@ -16,6 +16,15 @@ Capability badges remain L1 MCP, L2 instruction injection, and L3
 hooks/session automation. Skill installation is a separate surface and is not a
 fourth badge.
 
+Attribution: every setup adapter also writes the canonical agent identity into
+the `mind` MCP entry as `MIND_AGENT` (`opencode`, `claude-code`, `codex`,
+`cursor`, `windsurf`, `gemini-cli`, `vscode`, `antigravity`, or `pi`). The MCP
+server records that value in `caller_info.agent` with `agentSource: "env"`. When
+the variable is absent, the server falls back to the MCP initialize
+`clientInfo.name`, normalized through the same alias map. The logs table shows
+the resulting agent; attribution is observability only and grants no
+authorization.
+
 Skill policy: only the exact `mind-management` skill in an explicit
 Mind-managed location is installed or updated. Same-name content in those
 locations is updateable (the ownership marker is provenance, not
@@ -80,12 +89,14 @@ installs the subproject from its frozen lockfile and runs the blocking
 high-severity audit, typecheck, unit and contract tests, and experiment tests.
 Neither job runs a paid stage.
 
-As of October 20, 2026, the root audit reports zero advisories. The benchmark
-audit passes at high severity with residual moderate (`sprintf-js`) and low
-(`@ai-sdk/provider-utils`) advisories that have no upstream fix. The subproject
-experiments are excluded from its typecheck because of long-standing pre-existing
-type errors; the root ESLint config still lints the experiments without type
-information.
+As of October 24, 2026, with Bun 1.3.14, the root audit reports no advisories at
+the high or default level. The benchmark high-severity audit passes, and its
+default audit keeps one low (`@ai-sdk/provider-utils`) advisory through the
+pinned `@opencode/sdk`, with no fix inside the current pin. See [benchmark
+security and residual advisories](../benchmarks/agent-memory/README.md#security-and-residual-advisories)
+for measured detail. The subproject experiments are excluded from its typecheck
+because of long-standing pre-existing type errors; the root ESLint config still
+lints the experiments without type information.
 
 ## Sources
 

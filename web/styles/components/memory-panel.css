@@ -1,0 +1,313 @@
+/* Memory panel: a native <dialog> side sheet. Tokens only; no glass or glow. */
+#memory-panel {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-end: 0;
+  inset-inline-start: auto;
+  width: min(480px, 100vw);
+  max-width: 100vw;
+  height: 100dvh;
+  max-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  display: none;
+  flex-direction: column;
+  overflow: hidden;
+  /* Neutralize the legacy off-canvas transform once the sheet is displayable. */
+  transform: none;
+  opacity: 1;
+  border: 0;
+  border-left: 1px solid var(--line-strong);
+  border-radius: 0;
+  background: var(--surface-1);
+  color: var(--text-primary);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
+  transition: transform var(--motion-base) var(--ease-standard);
+}
+
+#memory-panel[open] {
+  display: flex;
+}
+
+/* Light scrim: the selected node and its incident edges stay visible behind
+   the sheet. The panel surface itself stays fully opaque. */
+#memory-panel::backdrop {
+  background: rgb(3 6 12 / 28%);
+}
+
+#memory-panel :focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+#memory-panel .panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+#memory-panel .panel-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+#mem-title {
+  flex: 1;
+  margin: 0;
+  font-size: var(--font-size-16);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
+  overflow-wrap: anywhere;
+}
+
+#memory-panel .panel-subheader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+#memory-panel .memory-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+#memory-panel .panel-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+#memory-panel .tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  margin-top: 0;
+}
+
+#memory-panel .tag {
+  transition: none;
+}
+
+#memory-panel .tag:hover {
+  box-shadow: none;
+  border-color: var(--line-strong);
+  color: var(--text-primary);
+}
+
+#memory-panel .tag-add:hover {
+  box-shadow: none;
+}
+
+/* Tag actions are buttons; keep the chip compact and the icon aligned. */
+#memory-panel .tag,
+#memory-panel .tag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+#memory-panel .tag .icon,
+#memory-panel .tag-add .icon {
+  width: 12px;
+  height: 12px;
+  margin-right: 0;
+}
+
+/* Inline tag entry shared by the memory panel and the space header. */
+.tag-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 100%;
+  margin-top: var(--space-1);
+}
+
+.tag-input {
+  flex: 1;
+  min-width: 0;
+  padding: var(--space-1) var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-13);
+}
+
+.mem-pinned,
+.mem-changed {
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+}
+
+.mem-pinned {
+  color: var(--tier-2);
+  font-weight: var(--font-weight-semibold);
+}
+
+#mem-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  border-top: 1px solid var(--line);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  font-size: var(--font-size-13);
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+
+/* Pretty JSON: long keys and strings wrap inside the panel instead of
+   scrolling sideways. `pre-wrap` preserves the two-space indentation. */
+#mem-content .json-viewer {
+  margin: 0;
+  padding: var(--space-3);
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-void);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-12);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+  tab-size: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#mem-content .json-key {
+  color: var(--json-key);
+}
+
+#mem-content .json-string {
+  color: var(--json-string);
+}
+
+#mem-content .json-number {
+  color: var(--json-number);
+}
+
+#mem-content .json-boolean {
+  color: var(--json-boolean);
+}
+
+#mem-content .json-null {
+  color: var(--json-null);
+}
+
+#mem-content .json-punct {
+  color: var(--text-secondary);
+}
+
+#mem-edit-area {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--line);
+}
+
+#mem-edit-input {
+  flex: 1;
+  min-height: 200px;
+  width: 100%;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: 0;
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-13);
+  line-height: 1.6;
+  resize: vertical;
+}
+
+#mem-edit-input:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: calc(var(--focus-ring-offset) * -1);
+}
+
+#memory-panel .edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.mem-state {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.mem-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
+}
+
+.mem-skeleton-line {
+  height: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-3);
+}
+
+.mem-skeleton-title {
+  height: 20px;
+  width: 60%;
+}
+
+.mem-skeleton-short {
+  width: 40%;
+}
+
+.mem-error-message {
+  margin: 0 0 var(--space-3);
+  color: var(--text-primary);
+}
+
+@media (max-width: 600px) {
+  #memory-panel {
+    inset-inline-start: 0;
+    width: 100vw;
+    border-left: 0;
+  }
+
+  #memory-panel .panel-header {
+    flex-direction: column;
+  }
+
+  #memory-panel .panel-subheader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #memory-panel {
+    transition: none;
+  }
+}

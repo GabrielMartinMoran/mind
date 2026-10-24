@@ -283,6 +283,9 @@ Every result includes a `confidence` bucket (`high`, `medium`, `low`) and a
 omits the semantic channel. If an embedding request fails, Mind skips semantic
 search for about five minutes instead of retrying on every query.
 
+In the web UI, search stays scoped to the open space. Clearing the query removes
+old results and restores the loaded memory list when its filters still match.
+
 Limits:
 
 - CLI `search` returns 25 results by default. Use `--limit` (maximum 500) and
@@ -717,10 +720,12 @@ root project does not install `@opencode/sdk`; the benchmark declares it.
 
 CI runs the root and benchmark free suites from their frozen `bun.lock` files
 and pins Bun 1.3.14. Both jobs run `bun audit --audit-level=high` as a blocking
-gate with no suppression. The root audit currently reports zero advisories; the
-benchmark audit passes at high severity with documented moderate and low
-residuals. See the [documentation index](docs/README.md) for current status and
-the [exceptional historical evidence](docs/README.md#exceptional-historical-evidence)
+gate with no suppression. The root audit reports no advisories; the benchmark
+audit passes at high severity and keeps one documented low residual
+(`@ai-sdk/provider-utils`); measured details are in the [benchmark security
+section](benchmarks/agent-memory/README.md#security-and-residual-advisories).
+See the [documentation index](docs/README.md) for current status and the
+[exceptional historical evidence](docs/README.md#exceptional-historical-evidence)
 it lists.
 
 ## Maintainers: Releases

@@ -222,6 +222,7 @@ describe('OpenCode setup integration', () => {
     expect(parsed.mcp.mind.type).toBe('local');
     expect(parsed.mcp.mind.command).toEqual([expectedMindPath, 'mcp']);
     expect(parsed.mcp.mind.enabled).toBe(true);
+    expect(parsed.mcp.mind.environment).toEqual({ MIND_AGENT: 'opencode' });
 
     expect(Array.isArray(parsed.instructions)).toBe(true);
     expect(parsed.instructions).toContain('AGENTS.md');

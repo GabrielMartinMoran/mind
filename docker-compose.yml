@@ -4,10 +4,10 @@ services:
       context: .
       dockerfile: web/Dockerfile
     ports:
-      - '3000:3000'
+      - '3000:30303'
     environment:
       - MIND_DATA_DIR=/data
-      - PORT=3000
+      - MIND_PORT=30303
     volumes:
       - ${BRAIN_DATA_DIR:-./data}:/data
     restart: unless-stopped

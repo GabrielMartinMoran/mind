@@ -20,6 +20,7 @@ import type {
 } from '../types';
 
 import type { ScoredSearchResult } from './repositories/search-repository';
+import type { SearchConfidence } from './shared/search-fusion';
 
 export interface LinkedMemorySummary {
   id: string;
@@ -60,6 +61,28 @@ export interface SearchPagination {
   limit?: number;
   /** Zero-based offset into the ranked results. */
   offset?: number;
+}
+
+/**
+ * Options for the unified relevance search. Extends the domain filters with
+ * pipeline switches (semantic channel) and post-fusion filtering so every
+ * surface can share one pipeline without duplicating ranking logic.
+ */
+export interface SearchOptions extends SearchFilter, SearchPagination {
+  /** Restrict results to one confidence bucket; applied after fusion. */
+  confidence?: SearchConfidence;
+  /**
+   * `false` skips the semantic/embedding channel for this query while keeping
+   * every lexical method. Omit (or `true`) to keep the server default, which
+   * runs the semantic channel when RAG is enabled.
+   */
+  semantic?: boolean;
+}
+
+/** One page of fused results plus the total after filters, before pagination. */
+export interface SearchPageResult {
+  results: ScoredSearchResult[];
+  total: number;
 }
 
 export interface MindStore {
@@ -130,6 +153,8 @@ export interface MindStore {
     spaces: { tag: string; count: number }[];
     memories: { tag: string; count: number }[];
   };
+  /** Distinct sorted memory tags belonging to one space, across all tiers. */
+  listMemoryTags(spaceName: string): string[];
 
   // Tiers
   /**
@@ -155,7 +180,14 @@ export interface MindStore {
   // Unified multi-channel pipeline (D1). Returns fused score, confidence and
   // provenance per result. Optional pagination applies after ranking; when
   // omitted the full ordered set is returned (the eval harness relies on this).
-  search(query: string, filter?: SearchFilter & SearchPagination): Promise<ScoredSearchResult[]>;
+  search(query: string, filter?: SearchOptions): Promise<ScoredSearchResult[]>;
+  /**
+   * Same unified pipeline as {@link search}, but also reports the total number
+   * of admitted results after filters (confidence included) and before
+   * pagination, so HTTP surfaces can emit accurate pagination headers without
+   * re-running the pipeline. The MCP/CLI shapes are unaffected.
+   */
+  searchPage(query: string, filter?: SearchOptions): Promise<SearchPageResult>;
 
   // Search with fallback chain: FTS5 → LIKE → embeddings; returns results + search_method
   searchFallback(
@@ -171,6 +203,7 @@ export interface MindStore {
     space?: string;
     tag?: string;
     tier?: number;
+    tiers?: Tier[];
     from?: string;
     to?: string;
   }): Promise<number>;

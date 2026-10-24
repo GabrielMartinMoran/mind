@@ -1,0 +1,352 @@
+/* ── Neural map: accessible graph view ─────────────────────────────────────── */
+
+.graph-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  min-height: 0;
+}
+
+/* Dragging the map pans it; it must never select node or label text. Keep the
+   accessible memory table outside these selectors so its text stays copyable. */
+.graph-canvas-wrap,
+.graph-svg,
+.graph-status-bar,
+.graph-toolbar,
+.graph-node,
+.graph-node-dot,
+.graph-node-degree,
+.graph-label,
+.graph-edge,
+.tier-ring {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.graph-status-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* The body owns the remaining graph area and scrolls when the table is open. */
+.graph-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.graph-match-count {
+  margin: 0;
+  margin-left: auto;
+  color: var(--text-quiet);
+  font-size: var(--font-size-13);
+}
+
+/* Command row: quiet token surfaces, no filled icon-button kit. */
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  padding: var(--space-2) 0;
+}
+
+.graph-truncation {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+
+.graph-truncation p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-13);
+}
+
+.graph-canvas-wrap {
+  position: relative;
+  flex: 1 1 0;
+  width: 100%;
+  min-height: 360px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  overflow: hidden;
+}
+
+.graph-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tier-ring {
+  stroke-width: 1;
+  stroke-opacity: 0.25;
+}
+
+.tier-ring-1 {
+  stroke: var(--tier-1);
+}
+
+.tier-ring-2 {
+  stroke: var(--tier-2);
+}
+
+.tier-ring-3 {
+  stroke: var(--tier-3);
+}
+
+.graph-edge {
+  stroke: var(--line-strong);
+  stroke-opacity: 0.4;
+  stroke-width: 1;
+}
+
+.graph-edge.is-dimmed {
+  stroke-opacity: 0.12;
+}
+
+/* Dense maps render only a bounded set of meaningful edges; keep them quiet. */
+.graph-edge.is-dense {
+  stroke-opacity: 0.22;
+}
+
+.graph-edge.is-dense.is-dimmed {
+  stroke-opacity: 0.08;
+}
+
+/* Selection: incident edges pop, unrelated edges recede. */
+.graph-edge.is-incident {
+  stroke: var(--accent);
+  stroke-opacity: 1;
+  stroke-width: 2.5;
+}
+
+.graph-edge.is-muted {
+  stroke-opacity: 0.1;
+}
+
+.graph-node {
+  cursor: pointer;
+}
+
+.graph-node-dot {
+  stroke: var(--bg-void);
+  stroke-width: 1.5;
+}
+
+.graph-node.tier-1 .graph-node-dot {
+  fill: var(--tier-1);
+}
+
+.graph-node.tier-2 .graph-node-dot {
+  fill: var(--tier-2);
+}
+
+.graph-node.tier-3 .graph-node-dot {
+  fill: var(--tier-3);
+}
+
+.graph-node.is-match .graph-node-dot {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.graph-node.is-dimmed {
+  opacity: 0.28;
+}
+
+.graph-node.is-neighbor .graph-node-dot {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.graph-node.is-selected .graph-node-dot {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.graph-node:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.graph-node:focus-visible .graph-node-dot {
+  stroke: var(--accent);
+  stroke-width: 3;
+}
+
+.graph-node-degree {
+  fill: var(--bg-void);
+  font-family: var(--font-sans);
+  font-weight: var(--font-weight-semibold);
+  pointer-events: none;
+}
+
+.graph-label {
+  fill: var(--text-primary);
+  font-family: var(--font-sans);
+  font-weight: var(--font-weight-medium);
+  /* Paint the dark halo first so text stays legible over dense edges. */
+  paint-order: stroke fill;
+  stroke: var(--bg-void);
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.graph-label.is-dimmed {
+  fill: var(--text-secondary);
+}
+
+/* ── Accessible memory list ─────────────────────────────────────────────────── */
+
+.graph-list-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.graph-table-details {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.graph-table-details > summary {
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.graph-table-details > summary:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.graph-list-heading {
+  margin: 0;
+  font-size: var(--font-size-16);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.graph-memory-list {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-13);
+}
+
+.graph-memory-list th,
+.graph-memory-list td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+
+.graph-memory-list th {
+  color: var(--text-quiet);
+  font-weight: var(--font-weight-medium);
+}
+
+.graph-memory-list td {
+  color: var(--text-secondary);
+}
+
+.graph-memory-link {
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.graph-memory-link:hover {
+  text-decoration: underline;
+}
+
+.graph-memory-link:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* ── Async states ───────────────────────────────────────────────────────────── */
+
+.graph-skeleton {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(48px, 1fr));
+  gap: var(--space-3);
+  min-height: 240px;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+}
+
+.graph-skeleton-ring {
+  grid-column: 1 / -1;
+  height: 160px;
+  border-radius: var(--radius-md);
+}
+
+.graph-skeleton-node {
+  height: 48px;
+  border-radius: var(--radius-pill);
+}
+
+.graph-empty,
+.graph-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+.graph-error {
+  border-color: var(--danger);
+}
+
+.graph-error p,
+.graph-empty p {
+  margin: 0;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────────── */
+
+@media (max-width: 860px) {
+  .graph-canvas-wrap {
+    min-height: 320px;
+  }
+}
+
+@media (max-width: 600px) {
+  .graph-match-count {
+    margin-left: 0;
+  }
+
+  .graph-canvas-wrap {
+    min-height: 280px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .graph-node,
+  .graph-edge {
+    transition: none;
+  }
+}

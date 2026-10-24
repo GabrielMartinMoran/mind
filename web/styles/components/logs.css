@@ -1,0 +1,504 @@
+/* Logs: filters, live controls, accessible table, details, pagination and async states. */
+
+/* The page fills the main content column. The header and filter chrome stay
+   fixed while the table owns the remaining height and scrolls internally, so a
+   long page never gets clipped by #main-content's overflow. */
+#logs-page {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#logs-page > .logs-page-header {
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  justify-content: space-between;
+}
+
+/* Keep the destructive action on the title row, pinned to the right edge. */
+#logs-page .panel-actions {
+  margin-left: auto;
+}
+
+#logs-view {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.logs-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: var(--space-3) var(--space-4) var(--space-6);
+}
+
+/* ── Filters ─────────────────────────────────────────────────────────────── */
+.logs-filters {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.logs-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.logs-filter {
+  min-width: 0;
+}
+
+.logs-filter-control {
+  width: 100%;
+  min-width: 0;
+}
+
+.logs-filter-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+/* ── Live mode ───────────────────────────────────────────────────────────── */
+.logs-live-bar {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
+
+.logs-live-toggle {
+  color: var(--text-secondary);
+  font-size: var(--font-size-13);
+}
+
+.logs-live-state {
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Region and status ───────────────────────────────────────────────────── */
+.logs-region {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The body must be a flex column with a bounded height. Otherwise the table
+   wrapper's `flex: 1` has no effect, the block grows to the full row count and
+   the page clips instead of the table scrolling internally. */
+.logs-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.logs-status {
+  margin: 0;
+  flex-shrink: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.logs-cap-notice {
+  margin: 0;
+  flex-shrink: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+}
+
+/* ── Table ───────────────────────────────────────────────────────────────── */
+.logs-table-wrap {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  max-height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.logs-table {
+  width: 100%;
+  min-width: 800px;
+  border-collapse: collapse;
+  font-size: var(--font-size-13);
+}
+
+.logs-table th,
+.logs-table td {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.logs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-base);
+  background: var(--surface-2);
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.logs-row:last-child td {
+  border-bottom: none;
+}
+
+.logs-row:hover td {
+  background: var(--surface-2);
+}
+
+.logs-time {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.logs-source,
+.logs-level {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.logs-source {
+  color: var(--text-secondary);
+}
+
+.logs-source-cli {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+.logs-source-mcp {
+  border-color: var(--tier-3);
+  color: var(--tier-3);
+}
+
+.logs-source-api {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.logs-source-unknown {
+  border-color: var(--line-strong);
+  color: var(--text-quiet);
+}
+
+.logs-agent-cell {
+  white-space: nowrap;
+}
+
+.logs-agent {
+  display: inline-block;
+  max-width: 16ch;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-medium);
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.logs-agent-none {
+  color: var(--text-quiet);
+  font-weight: var(--font-weight-normal);
+}
+
+.logs-level-info {
+  border-color: var(--line-strong);
+  color: var(--text-secondary);
+}
+
+.logs-level-warn {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.logs-level-error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.logs-level-unknown {
+  border-color: var(--line-strong);
+  color: var(--text-quiet);
+}
+
+.logs-operation {
+  color: var(--text-primary);
+  font-weight: var(--font-weight-medium);
+  overflow-wrap: anywhere;
+}
+
+.logs-duration {
+  color: var(--text-quiet);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-12);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.logs-summary {
+  color: var(--text-secondary);
+  max-width: 40ch;
+  overflow-wrap: anywhere;
+}
+
+.logs-cell-actions {
+  text-align: right;
+}
+
+.logs-details-toggle {
+  white-space: nowrap;
+}
+
+/* ── Expanded details ────────────────────────────────────────────────────── */
+.logs-details-row td {
+  background: var(--surface-2);
+}
+
+.logs-details {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--space-3);
+  margin: 0;
+}
+
+.logs-detail {
+  min-width: 0;
+}
+
+.logs-detail-label {
+  margin: 0 0 var(--space-1);
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-medium);
+}
+
+.logs-detail-value {
+  margin: 0;
+  min-width: 0;
+}
+
+.logs-detail-pre {
+  margin: 0;
+  max-height: 240px;
+  padding: var(--space-2);
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-12);
+  line-height: var(--line-height-body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ── Pagination ──────────────────────────────────────────────────────────── */
+.logs-pagination {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.logs-page-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.logs-page-button[aria-current='page'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Loading, empty and error states ────────────────────────────────────── */
+.logs-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.logs-skeleton {
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+}
+
+.logs-skeleton-line {
+  height: 12px;
+  margin: 0;
+}
+
+.logs-empty,
+.logs-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-6) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  color: var(--text-secondary);
+}
+
+.logs-empty-message,
+.logs-error-message {
+  margin: 0;
+  max-width: var(--measure);
+}
+
+.logs-error {
+  border-left: 3px solid var(--danger);
+}
+
+/* ── Focus and motion ────────────────────────────────────────────────────── */
+.logs-view button:focus-visible,
+.logs-view input:focus-visible,
+.logs-view select:focus-visible,
+.logs-view .logs-table-wrap:focus-visible,
+.logs-view .logs-detail-pre:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.logs-row,
+.logs-details-toggle {
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logs-row,
+  .logs-details-toggle {
+    transition: none;
+  }
+}
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+@media (max-width: 599px) {
+  /* Stacked single-column filters need more vertical room than a fixed-height
+     viewport region can give. Rather than clipping, let the logs page scroll
+     and reserve a usable, internally scrollable table height. Without this the
+     wrapper collapsed to 0–21px at 320×700/900 and rows were unreachable. */
+  #logs-page {
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  #logs-view {
+    flex: 0 0 auto;
+    flex-direction: column;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .logs-view {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .logs-region {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .logs-body {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: visible;
+  }
+
+  .logs-table-wrap {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 180px;
+    max-height: 60vh;
+    overflow: auto;
+  }
+}
+
+@media (min-width: 600px) {
+  .logs-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 860px) {
+  .logs-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .logs-details {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

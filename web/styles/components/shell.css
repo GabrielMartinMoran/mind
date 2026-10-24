@@ -1,0 +1,631 @@
+/* Application shell surfaces and structural helpers. */
+.icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+}
+
+.icon-sm {
+  width: 14px;
+  height: 14px;
+  margin-right: var(--space-1);
+  vertical-align: middle;
+}
+
+.brand-logo {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.skip-link {
+  position: absolute;
+  top: -100%;
+  left: var(--space-3);
+  z-index: var(--z-toast);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+}
+
+.skip-link:focus-visible {
+  top: var(--space-3);
+}
+
+.surface {
+  background: var(--surface-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.surface-raised {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+}
+
+.surface-selected {
+  background: var(--surface-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-md);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-1);
+}
+
+.panel-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.panel-footer {
+  flex-shrink: 0;
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+/* ── Space detail header rhythm ──────────────────────────────────────────── */
+#space-detail > .panel-header {
+  gap: var(--space-3);
+  /* The #space-detail gutter already supplies the horizontal inset, so the
+     header adds only vertical rhythm instead of doubling the padding. */
+  padding: var(--space-4) 0;
+}
+
+.space-meta {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+/* In-space search. The form is the positioning context and the clear control
+   sits inside the input at its right edge, so the form stays one row tall.
+   The compact basis leaves room for the tag, tier, confidence, embeddings and
+   Clear filters controls on the same row at 1280px (the search-view row is
+   1008px wide; a 300px basis pushes Clear filters onto a second line, so 280px
+   keeps the approved one-row contract while staying under the 320px ceiling). */
+.space-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 0 1 280px;
+  width: auto;
+  min-width: 0;
+}
+
+.space-search input[type='text'] {
+  padding-right: 44px;
+}
+
+.space-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  transform: translateY(-50%);
+}
+
+/* ── Shared space filter bar ─────────────────────────────────────────────── */
+/* One row at desktop widths: search, tag, tier chips, confidence, embeddings,
+   only-matches, and Clear filters share a centered line and wrap without
+   horizontal overflow when the viewport narrows. */
+.space-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.space-filter-primary {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 100%;
+}
+
+.filter-field .filter-control {
+  width: 100%;
+  min-width: 0;
+}
+
+.filter-tag {
+  flex: 0 1 160px;
+}
+
+.space-clear-filters {
+  flex: none;
+  align-self: center;
+  height: 32px;
+  min-height: 32px;
+  margin-left: auto;
+}
+
+.tier-chips {
+  display: inline-flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.tier-chip {
+  --tier-chip-color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-1);
+  color: var(--tier-chip-color);
+  font: inherit;
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-semibold);
+  cursor: pointer;
+}
+
+.tier-chip.tier-1 {
+  --tier-chip-color: var(--tier-1);
+}
+
+.tier-chip.tier-2 {
+  --tier-chip-color: var(--tier-2);
+}
+
+.tier-chip.tier-3 {
+  --tier-chip-color: var(--tier-3);
+}
+
+.tier-chip[aria-pressed='true'] {
+  background: var(--surface-3);
+  box-shadow: inset 0 0 0 1px var(--tier-chip-color);
+}
+
+.tier-chip:not([aria-pressed='true']) {
+  color: var(--text-quiet);
+  opacity: 0.7;
+}
+
+.tier-chip:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.filter-confidence {
+  flex: 0 1 150px;
+}
+
+/* Embeddings is a single inline checkbox row; the help text stays in the
+   accessibility tree but does not add a second visual line. */
+.filter-semantic {
+  flex: 0 1 auto;
+  flex-direction: row;
+  align-items: center;
+}
+
+.filter-only-matches {
+  flex: none;
+  align-self: center;
+}
+
+@media (max-width: 700px) {
+  .space-filter-primary .space-search {
+    flex: 1 1 100%;
+  }
+
+  .filter-tag,
+  .filter-confidence {
+    flex: 1 1 160px;
+  }
+
+  .space-clear-filters {
+    margin-left: 0;
+  }
+}
+
+/* At phone widths a 160 px tag field plus the 140 px tier chips no longer fit
+   on one 288 px row, so both wrap on their own line and leave too little height
+   for results. Pairing the tag select with the chips and the confidence select
+   with the embeddings toggle removes two rows and keeps at least 120 px for the
+   scrolling body at 320x700. Every control stays visible and tappable; the
+   desktop row is unchanged. */
+@media (max-width: 480px) {
+  .filter-tag {
+    flex: 1 1 120px;
+  }
+
+  .filter-confidence {
+    flex: 1 1 150px;
+  }
+}
+
+/* Identity row: the space name owns the line; New memory sits at its edge. */
+.space-identity {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.space-identity #space-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.space-identity-action {
+  flex: none;
+}
+
+#space-title {
+  font-size: var(--font-size-26);
+  line-height: var(--line-height-heading);
+  overflow-wrap: anywhere;
+}
+
+#space-desc {
+  font-size: var(--font-size-13);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+.space-meta .tag-row {
+  margin-top: 0;
+}
+
+/* Space tag chips are real buttons: align the remove icon with the tag text. */
+.space-meta .tag,
+.space-meta .tag-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.space-meta .tag .icon,
+.space-meta .tag-add .icon {
+  width: 12px;
+  height: 12px;
+  margin-right: 0;
+}
+
+#space-detail .panel-actions {
+  width: 100%;
+  gap: var(--space-2);
+}
+
+/* Destructive action lives apart, at the far right of the controls row. */
+#space-detail #btn-delete-space {
+  margin-left: auto;
+}
+
+@media (max-width: 600px) {
+  #space-detail > .panel-header {
+    padding: var(--space-3) 0;
+  }
+
+  /* Icon-only New memory keeps its accessible name from the hidden label. */
+  .space-identity-action {
+    width: 36px;
+    min-width: 36px;
+    padding: 0;
+  }
+
+  .space-identity-action .btn-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+.scroll-region {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.divider {
+  height: 1px;
+  border: 0;
+  background: var(--line);
+}
+
+.region {
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* ── Home atlas ──────────────────────────────────────────────────────────── */
+.empty-state.home-atlas {
+  display: block;
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-8) var(--space-4);
+  color: var(--text-secondary);
+  text-align: left;
+}
+
+.home-atlas-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: var(--measure);
+}
+
+.home-atlas-title {
+  font-size: var(--font-size-34);
+  font-weight: var(--font-weight-bold);
+}
+
+.home-atlas-deck {
+  max-width: 60ch;
+  color: var(--text-secondary);
+  font-size: var(--font-size-16);
+  line-height: var(--line-height-body);
+}
+
+/* All spaces search stays compact so it never competes with the heading. It
+   reuses the in-space search shape: the clear control sits inside the field. */
+.home-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  max-width: 420px;
+  margin-top: var(--space-4);
+}
+
+.home-search input[type='text'] {
+  width: 100%;
+  padding-right: 44px;
+}
+
+.home-search input[type='text']:focus-visible {
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.home-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  z-index: 1;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  transform: translateY(-50%);
+}
+
+.home-search-clear[hidden] {
+  display: none;
+}
+
+.home-search-status {
+  margin-top: var(--space-2);
+  color: var(--text-quiet);
+  font-size: var(--font-size-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.home-search-status[hidden] {
+  display: none;
+}
+
+.home-no-results {
+  max-width: 60ch;
+  margin-top: var(--space-4);
+  color: var(--text-secondary);
+  font-size: var(--font-size-14);
+  line-height: var(--line-height-body);
+}
+
+.home-no-results[hidden] {
+  display: none;
+}
+
+.home-atlas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.home-atlas-grid[hidden] {
+  display: none;
+}
+
+/* Wide desktops: the 1280px one-row and 320px search contracts stay intact, so
+   the extra room goes into a wider search basis, calmer primary-row gaps, and a
+   four-column grid that spans the available width instead of adding narrow
+   columns. Everything below 1360px keeps the adaptive auto-fit grid. */
+@media (min-width: 1360px) {
+  .space-search {
+    flex: 0 1 340px;
+  }
+
+  .space-filter-primary {
+    gap: var(--space-3);
+  }
+
+  .home-atlas-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.home-atlas-item {
+  display: flex;
+  min-width: 0;
+}
+
+.home-atlas-item > .space-card {
+  width: 100%;
+}
+
+.home-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  max-width: 46ch;
+  margin-top: var(--space-4);
+  padding: var(--space-4);
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.home-empty[hidden] {
+  display: none;
+}
+
+.home-empty-message {
+  color: var(--text-secondary);
+  font-size: var(--font-size-14);
+}
+
+/* ── Status panel ────────────────────────────────────────────────────────── */
+#status-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  flex-shrink: 0;
+  padding: var(--space-3);
+  border-top: 1px solid var(--line);
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+}
+
+.status-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1);
+}
+
+.status-label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+#status-spaces {
+  color: var(--text-secondary);
+  font-size: var(--font-size-13);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Three compact, non-wrapping pills distributed across the 240px rail. */
+.status-tiers {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-width: 0;
+  gap: 0;
+  margin-top: var(--space-1);
+}
+
+.status-tier-pill {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 3px;
+  padding: 4px 3px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.status-tier-pill .tier-icon {
+  width: 10px;
+  height: 10px;
+}
+
+.status-tier-pill.t1,
+.status-tier-pill.t2,
+.status-tier-pill.t3 {
+  border-color: var(--line-strong);
+  color: var(--text-secondary);
+}
+
+.status-tier-pill.t1 .status-tier-label {
+  color: var(--tier-1);
+}
+
+.status-tier-pill.t2 .status-tier-label {
+  color: var(--tier-2);
+}
+
+.status-tier-pill.t3 .status-tier-label {
+  color: var(--tier-3);
+}
+
+.status-tier-label {
+  font-weight: var(--font-weight-semibold);
+}
+
+.status-tier-value {
+  color: var(--text-secondary);
+}
