@@ -36,6 +36,15 @@ function names(memories: MemorySummary[]): string[] {
   return memories.map(memory => memory.name).sort();
 }
 
+function thrownMessage(run: () => unknown): string | undefined {
+  try {
+    run();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  return undefined;
+}
+
 function checkpointFilter(memories: MemorySummary[], from?: string, to?: string): MemorySummary[] {
   return applyCheckpointFilters(memories, undefined, undefined, from, to);
 }
@@ -94,18 +103,6 @@ describe('date-range filters treat zone-less timestamps as UTC', () => {
       'at-bound',
     ]);
   });
-
-  test('checkpoint_query and memory_query return identical results for the same bounds', () => {
-    for (const [from, to] of [
-      ['2026-10-24', '2026-10-24'],
-      ['2026-10-24', undefined],
-      [undefined, '2026-10-24 12:00:00'],
-    ] as const) {
-      expect(names(checkpointFilter(dayFixtures, from, to))).toEqual(
-        names(memoryQueryFilter(dayFixtures, from, to))
-      );
-    }
-  });
 });
 
 describe('bound spellings resolve to the same UTC instant on every surface', () => {
@@ -142,12 +139,39 @@ describe('bound spellings resolve to the same UTC instant on every surface', () 
       expect(names(memoryQueryFilter(boundFixtures, undefined, to))).toEqual([...expected]);
     });
   }
+});
 
-  test('the checkpoint and memory_query filters agree on every bound spelling', () => {
-    for (const { to } of cases) {
-      expect(names(checkpointFilter(boundFixtures, undefined, to))).toEqual(
-        names(memoryQueryFilter(boundFixtures, undefined, to))
-      );
+describe('invalid date bounds throw the same error on every path', () => {
+  const fixtures = [summary('one', '2026-10-24 12:00:00')];
+
+  const invalidBounds = [
+    { label: 'from', from: 'not-a-date', to: undefined },
+    { label: 'to', from: undefined, to: 'not-a-date' },
+  ] as const;
+
+  for (const { label, from, to } of invalidBounds) {
+    test(`an invalid ${label} bound throws on every in-memory filter`, () => {
+      expect(() => filterByDateRange(fixtures, from, to)).toThrow('Invalid date value: not-a-date');
+      expect(() => checkpointFilter(fixtures, from, to)).toThrow('Invalid date value: not-a-date');
+      expect(() => memoryQueryFilter(fixtures, from, to)).toThrow('Invalid date value: not-a-date');
+    });
+  }
+
+  test('the store query and MCP filter throw the same message', () => {
+    const testStore = createTestStore();
+    try {
+      testStore.createSpace('projects/test', 'A test space', ['test']);
+
+      for (const { from, to } of invalidBounds) {
+        expect(
+          thrownMessage(() => testStore.queryMemories({ space: 'projects/test', from, to }))
+        ).toBe('Invalid date value: not-a-date');
+        expect(thrownMessage(() => filterByDateRange(fixtures, from, to))).toBe(
+          'Invalid date value: not-a-date'
+        );
+      }
+    } finally {
+      testStore.cleanup();
     }
   });
 });
