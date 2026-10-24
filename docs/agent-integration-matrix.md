@@ -89,12 +89,14 @@ installs the subproject from its frozen lockfile and runs the blocking
 high-severity audit, typecheck, unit and contract tests, and experiment tests.
 Neither job runs a paid stage.
 
-As of October 20, 2026, the root audit reports zero advisories. The benchmark
-audit passes at high severity with residual moderate (`sprintf-js`) and low
-(`@ai-sdk/provider-utils`) advisories that have no upstream fix. The subproject
-experiments are excluded from its typecheck because of long-standing pre-existing
-type errors; the root ESLint config still lints the experiments without type
-information.
+As of October 24, 2026, with Bun 1.3.14, the root audit reports no advisories at
+the high or default level. The benchmark high-severity audit passes, and its
+default audit keeps one low (`@ai-sdk/provider-utils`) advisory through the
+pinned `@opencode/sdk`, with no fix inside the current pin. See [benchmark
+security and residual advisories](../benchmarks/agent-memory/README.md#security-and-residual-advisories)
+for measured detail. The subproject experiments are excluded from its typecheck
+because of long-standing pre-existing type errors; the root ESLint config still
+lints the experiments without type information.
 
 ## Sources
 

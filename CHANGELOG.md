@@ -118,7 +118,7 @@ Example:
 - Changed skill installation to an exact-name policy: only `mind-management` in a managed path is installed or updated, with or without the ownership marker (the marker is provenance, not authorization); other skills are never touched, and content-signature heuristics were removed. Updates replace `SKILL.md` atomically without skill backups, preserve extras, and handle foreign/broken symlinks and `ENOTDIR` paths safely.
 - Changed `checkpoint_done` to complete atomically: summary, inbound/outbound link copies with labels and directions, and checkpoint deletion commit in one synchronous SQLite transaction; any failure rolls back, and a retry cannot duplicate the summary.
 - Changed CI to use `bun run format:check`, `bun run typecheck`, Bun 1.3.14, and frozen root and benchmark installs. Both the root and benchmark jobs now run `bun audit --audit-level=high` as a blocking security gate after installation.
-- Changed dependency security posture: bumped `@modelcontextprotocol/sdk` from 1.27.1 to 1.32.1 and added root overrides for patched express/hono/fast-uri/ip-address/path-to-regexp/qs/body-parser/proxy-addr/js-yaml/@humanfs/node/brace-expansion. The root `bun audit` is now clean (0 advisories). Added benchmark overrides `@modelcontextprotocol/client`/`@modelcontextprotocol/core` 2.3.1 and `@parcel/watcher` 2.6.0 while keeping `@opencode/sdk` 2.0.28; the benchmark high audit passes with residual moderate `sprintf-js` and low `@ai-sdk/provider-utils`. Pinned `@types/bun` 1.2.10 and `prettier` 3.8.1 to avoid unrelated toolchain regressions.
+- Changed dependency security posture: bumped `@modelcontextprotocol/sdk` from 1.27.1 to 1.32.1 and added root overrides for patched express/hono/fast-uri/ip-address/path-to-regexp/qs/body-parser/proxy-addr/js-yaml/@humanfs/node/brace-expansion. The root `bun audit` is now clean (0 advisories). Added benchmark overrides `@modelcontextprotocol/client`/`@modelcontextprotocol/core` 2.3.1 and `@parcel/watcher` 2.6.0 while keeping `@opencode/sdk` 2.0.28; the benchmark high audit passes with one residual low `@ai-sdk/provider-utils` advisory. Pinned `@types/bun` 1.2.10 and `prettier` 3.8.1 to avoid unrelated toolchain regressions.
 - Changed the root to Bun-only: `bun.lock` is the only lockfile and the release script no longer reads, writes, or aligns npm-lock versions.
 - Changed OpenCode skill-first status: free discovery/config/handshake is validated on 2.0.28; paid B11 and live model behavior remain unverified.
 - Changed benchmark B11 to verify skill-before-Mind ordering per session instead of in aggregate, accept both `skill` tool calls and `type: 'skill'` messages, reject `system_instructions` after the skill, and fail explicitly when per-session evidence is missing. The paid run is still not executed.
@@ -136,6 +136,7 @@ Example:
 - Changed the web **Delete space** action to pair the local `trash-2` icon with its visible label while staying an outlined destructive trigger.
 - Changed the wide web layout: at 1360 px and wider the in-space search uses a 340 px basis with 12 px primary filter gaps, and All spaces uses four equal columns across the available width; below 1360 px the search keeps a 280 px basis with 8 px gaps and the card grid keeps its adaptive auto-fit layout. The 1280 px one-row filter contract and the ≤320 px search width still hold.
 - Changed the web Neural Map so a plain primary click on a **Memory List** row opens the memory panel and selects/highlights the matching node in place without refetching the graph; modifier-click and middle-click stay native anchors.
+- Changed the agent-memory benchmark dependency graph so its single flat `zod` override resolves every consumer to zod 4.6.7, including `gitlab-ai-provider`, which declares zod 3. The free unit, contract, and experiment suites and the no-paid smoke path passed; no live GitLab provider call was exercised.
 
 ### Fixed
 
@@ -168,6 +169,7 @@ Example:
 - Fixed skill updates writing through a foreign symlink, reporting a broken symlink as installed, raising `ENOTDIR` on a non-directory managed path, and relying on historical content signatures to recognize old copies.
 - Fixed `checkpoint_done` partial states: a link or delete failure no longer loses a relation, leaves both summary and checkpoint, or duplicates the summary on retry.
 - Fixed CI format checking so it detects drift instead of rewriting files, and removed the `npm audit || true` step that hid real advisories.
+- Fixed two high-severity advisories in the dependency graphs without changing runtime surfaces: raised the root `body-parser` override from 2.3.0 to 2.4.0 (GHSA-27r3-jxmh-p828) and added a flat top-level `zod` override, 4.6.7, to the agent-memory benchmark (GHSA-mrhx-c7xc-m3w5). Both graphs now pass `bun audit --audit-level=high` on Bun 1.3.14; the benchmark's default audit still reports one low `@ai-sdk/provider-utils` advisory through the pinned `@opencode/sdk@2.0.28`.
 
 ### Removed
 

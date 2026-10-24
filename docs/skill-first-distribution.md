@@ -253,12 +253,15 @@ contract tests, and experiment tests. Neither job runs a paid stage. The root
 uses `bun.lock` only; `package-lock.json` is not part of the project.
 
 Both jobs run `bun audit --audit-level=high` as a blocking gate with no
-suppression. As of October 20, 2026, the root audit reports zero advisories. The
-benchmark audit passes at high severity with residual moderate (`sprintf-js`)
-and low (`@ai-sdk/provider-utils`) advisories that have no upstream fix. CI
-triggers on every push (including branches with `/`), every pull request, and
-manual dispatch; hosted run evidence for a feature commit is recorded in its
-`.pas/` feature report. Do not claim a green run until that run is observed.
+suppression. As of October 24, 2026, with Bun 1.3.14, the root audit reports no
+advisories at the high or default level. The benchmark high-severity audit
+passes, and its default audit keeps one low (`@ai-sdk/provider-utils`) advisory
+through the pinned `@opencode/sdk`, with no fix inside the current pin. See
+[benchmark security and residual advisories](../benchmarks/agent-memory/README.md#security-and-residual-advisories)
+for measured detail. CI triggers on every push (including branches with `/`),
+every pull request, and manual dispatch; hosted run evidence for a feature
+commit is recorded in its `.pas/` feature report. Do not claim a green run until
+that run is observed.
 
 ## Limitations and unverified behavior
 
@@ -277,8 +280,8 @@ behavior.
 - A hosted CI run is required for merge evidence. Workflow triggers cover every
   branch and pull request, but local suites and workflow assertions do not
   establish a hosted pass; observe and record the run before claiming green.
-  Both audits pass locally, and the benchmark keeps documented moderate and low
-  residual advisories.
+  Both audits pass locally, and the benchmark keeps one documented low
+  residual advisory.
 - No paid benchmark stage, real user home, or live database is used by the
   documented validation. B11 asserts per-session ordering through the shared
   current-only setup, but the paid run remains unexecuted.
