@@ -1,0 +1,175 @@
+/* Feedback: toasts, empty states, loading, alerts. */
+/* #toast-container matches the element created in app.js and, because this
+   file is imported after components.css, wins over the legacy rule there. */
+#toast-container {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100vw - var(--space-8)));
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-primary);
+  font-size: var(--font-size-13);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 40%);
+  pointer-events: auto;
+  animation: toast-slide-in var(--motion-base) var(--ease-standard);
+}
+
+.toast.toast-success {
+  border-left-color: var(--success);
+}
+
+.toast.toast-error {
+  border-left-color: var(--danger);
+}
+
+.toast.toast-warning {
+  border-left-color: var(--warning);
+}
+
+.toast.toast-fade-out {
+  animation: toast-fade-out var(--motion-fast) ease-in forwards;
+}
+
+.toast-message {
+  flex: 1;
+  min-width: 0;
+  word-break: break-word;
+}
+
+.toast-icon {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.toast-icon-success {
+  color: var(--success);
+}
+
+.toast-icon-error {
+  color: var(--danger);
+}
+
+.toast-icon-warning {
+  color: var(--warning);
+}
+
+.toast-dismiss {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-sm);
+  color: var(--text-quiet);
+}
+
+.toast-dismiss:hover {
+  background: var(--surface-3);
+  color: var(--text-primary);
+}
+
+.empty-state {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  color: var(--text-quiet);
+  text-align: center;
+}
+
+.empty-state-message {
+  max-width: 42ch;
+  color: var(--text-secondary);
+  font-size: var(--font-size-14);
+  line-height: var(--line-height-body);
+}
+
+.empty-state-cta {
+  margin-top: var(--space-1);
+}
+
+.alert {
+  display: flex;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-13);
+}
+
+.alert-error {
+  border-left-color: var(--danger);
+  color: var(--text-primary);
+}
+
+.alert-warning {
+  border-left-color: var(--warning);
+}
+
+.alert-success {
+  border-left-color: var(--success);
+}
+
+/* Skeleton geometry matches final content to avoid layout shift. */
+.skeleton {
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-line {
+  height: 12px;
+  margin-bottom: var(--space-2);
+}
+
+.skeleton-line:last-child {
+  width: 60%;
+  margin-bottom: 0;
+}
+
+.skeleton-block {
+  height: 96px;
+}
+
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spinner-rotate 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+.loading-region {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  color: var(--text-quiet);
+  font-size: var(--font-size-13);
+}

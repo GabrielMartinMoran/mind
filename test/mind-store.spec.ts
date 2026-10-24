@@ -53,6 +53,64 @@ describe('MindStore — Spaces', () => {
     expect(projects[0]!.name).toBe('proj-a');
   });
 
+  test('should include per-tier counts in space summaries', async () => {
+    store = createTestStore();
+    store.createSpace('mixed', 'Mixed tiers', ['test']);
+    await store.addMemory('mixed', 'hot', 'hot content', { tier: 1, tags: ['test'] });
+    await store.addMemory('mixed', 'warm-a', 'warm content', { tier: 2, tags: ['test'] });
+    await store.addMemory('mixed', 'warm-b', 'more warm content', { tier: 2, tags: ['test'] });
+
+    const [summary] = store.listSpaces();
+
+    expect(summary!.memory_count).toBe(3);
+    expect(summary!.tier_counts).toEqual({ t1: 1, t2: 2, t3: 0 });
+    expect(summary!.tier_counts.t1 + summary!.tier_counts.t2 + summary!.tier_counts.t3).toBe(
+      summary!.memory_count
+    );
+  });
+
+  test('should default per-tier counts to zero for an empty space', () => {
+    store = createTestStore();
+    store.createSpace('empty', 'Empty space', ['test']);
+
+    const [summary] = store.listSpaces();
+
+    expect(summary!.memory_count).toBe(0);
+    expect(summary!.tier_counts).toEqual({ t1: 0, t2: 0, t3: 0 });
+  });
+
+  test('tag filter should keep whole-space tier counts', async () => {
+    store = createTestStore();
+    store.createSpace('proj-a', 'Project A', ['project']);
+    await store.addMemory('proj-a', 'hot', 'hot content', {
+      tier: 1,
+      tags: ['unrelated'],
+    });
+    await store.addMemory('proj-a', 'cold', 'cold content', {
+      tier: 3,
+      tags: ['other'],
+    });
+
+    const [projects] = store.listSpaces({ tag: 'project' });
+
+    expect(projects!.name).toBe('proj-a');
+    expect(projects!.memory_count).toBe(2);
+    expect(projects!.tier_counts).toEqual({ t1: 1, t2: 0, t3: 1 });
+  });
+
+  test('hidden spaces should be excluded by default and counted when included', async () => {
+    store = createTestStore();
+    store.createSpace('visible', 'Visible', ['test']);
+    store.createSpace('hidden', 'Hidden', ['test']);
+    store.updateSpace('hidden', { hidden: true });
+
+    expect(store.listSpaces().map(space => space.name)).toEqual(['visible']);
+
+    const hidden = store.listSpaces({ includeHidden: true }).find(space => space.name === 'hidden');
+    expect(hidden!.memory_count).toBe(0);
+    expect(hidden!.tier_counts).toEqual({ t1: 0, t2: 0, t3: 0 });
+  });
+
   test('should delete a space and all its memories', async () => {
     store = createTestStore();
     store.createSpace('test', 'Test', ['test']);
@@ -97,6 +155,28 @@ describe('MindStore — Spaces', () => {
     space = store.getSpace('test');
     expect(space!.tags).not.toContain('active');
     expect(space!.tags).toContain('project');
+  });
+});
+
+describe('MindStore — Space Memory Tags', () => {
+  test('should list distinct sorted memory tags scoped to one space across all tiers', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['space-only']);
+    store.createSpace('other', 'Other', ['test']);
+    await store.addMemory('proj', 'hot', 'content', { tier: 1, tags: ['zeta', 'alpha'] });
+    await store.addMemory('proj', 'warm', 'content', { tier: 2, tags: ['Beta', 'alpha'] });
+    await store.addMemory('proj', 'cold', 'content', { tier: 3, tags: ['gamma'] });
+    await store.addMemory('other', 'elsewhere', 'content', { tags: ['other-tag'] });
+
+    expect(store.listMemoryTags('proj')).toEqual(['alpha', 'beta', 'gamma', 'zeta']);
+  });
+
+  test('should return an empty list for empty spaces and unknown spaces', () => {
+    store = createTestStore();
+    store.createSpace('empty', 'Empty', ['space-only']);
+
+    expect(store.listMemoryTags('empty')).toEqual([]);
+    expect(store.listMemoryTags('missing')).toEqual([]);
   });
 });
 
@@ -928,6 +1008,60 @@ describe('MindStore — Query', () => {
     const results = store.queryMemories({ from: tomorrow });
 
     expect(results.length).toBe(0);
+  });
+});
+
+describe('MindStore — Multi-tier filters', () => {
+  async function seedTiers(): Promise<void> {
+    store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'hot', 'shared hot', { tier: 1, tags: ['test'] });
+    await store.addMemory('test', 'warm', 'shared warm', { tier: 2, tags: ['test'] });
+    await store.addMemory('test', 'cold', 'shared cold', { tier: 3, tags: ['test'] });
+  }
+
+  test('queryMemories accepts a tier list with IN semantics', async () => {
+    await seedTiers();
+
+    const results = store.queryMemories({ space: 'test', tiers: [1, 3] });
+
+    expect(results.map(row => row.name).sort()).toEqual(['cold', 'hot']);
+  });
+
+  test('queryMemories single tier matches the list form', async () => {
+    await seedTiers();
+
+    const single = store.queryMemories({ space: 'test', tier: 2 });
+    const listed = store.queryMemories({ space: 'test', tiers: [2] });
+
+    expect(single.map(row => row.name)).toEqual(['warm']);
+    expect(listed.map(row => row.name)).toEqual(['warm']);
+  });
+
+  test('queryMemoriesCount respects the tier list', async () => {
+    await seedTiers();
+
+    expect(await store.queryMemoriesCount({ space: 'test', tiers: [1, 3] })).toBe(2);
+    expect(await store.queryMemoriesCount({ space: 'test', tier: 2 })).toBe(1);
+  });
+
+  test('searchPage restricts results to the tier list', async () => {
+    await seedTiers();
+
+    const page = await store.searchPage('shared', { space: 'test', tiers: [1, 3] });
+
+    expect(page.total).toBe(2);
+    expect(page.results.map(result => result.name).sort()).toEqual(['cold', 'hot']);
+  });
+
+  test('searchPage single tier keeps the existing behavior', async () => {
+    await seedTiers();
+
+    const single = await store.searchPage('shared', { space: 'test', tier: 2 });
+    const listed = await store.searchPage('shared', { space: 'test', tiers: [2] });
+
+    expect(single.results.map(result => result.name)).toEqual(['warm']);
+    expect(listed.results.map(result => result.name)).toEqual(['warm']);
   });
 });
 

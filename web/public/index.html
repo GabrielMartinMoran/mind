@@ -3,416 +3,681 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0f1117" />
+    <meta name="theme-color" content="#070b16" />
     <title>Mind</title>
     <link rel="icon" type="image/svg+xml" href="/assets/logo.svg" />
     <link rel="stylesheet" href="/styles/main.css" />
   </head>
   <body>
-    <!-- Sidebar overlay for mobile -->
-    <div id="sidebar-overlay" class="overlay-hidden"></div>
+    <a class="skip-link" href="#main-content">Skip to content</a>
+
+    <!-- Sidebar overlay for mobile drawer -->
+    <div id="sidebar-overlay" class="overlay-hidden" hidden aria-hidden="true"></div>
+
     <div id="app">
-      <!-- Sidebar -->
-      <aside id="sidebar">
-        <header class="sidebar-header">
-          <button
-            id="hamburger-btn"
-            class="btn btn-sm btn-ghost"
-            aria-label="Open menu"
-            aria-expanded="false"
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <path
-                d="M3 5h12M3 9h12M3 13h12"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
-            </svg>
-          </button>
-          <span class="logo"><img src="/assets/logo.svg" class="logo-img" alt="Mind" /> Mind</span>
+      <header class="app-topbar">
+        <button
+          id="hamburger-btn"
+          class="btn btn-sm btn-ghost drawer-trigger"
+          type="button"
+          aria-label="Open spaces navigation"
+          aria-expanded="false"
+          aria-controls="sidebar"
+          data-shell-ready="false"
+        >
+          <svg class="icon" aria-hidden="true" focusable="false">
+            <use href="/assets/icons.svg#icon-menu"></use>
+          </svg>
+        </button>
+
+        <a class="brand" id="brand-link" href="/" aria-label="Mind home">
+          <img src="/assets/logo.svg" class="brand-logo" alt="" />
+          <span>Mind</span>
+        </a>
+
+        <div class="topbar-actions">
           <button
             id="btn-new-space"
-            class="btn btn-sm btn-primary"
+            class="btn btn-sm btn-quiet topbar-action"
+            type="button"
             title="New space"
             aria-label="Create new space"
+            data-shell-action="new-space"
           >
-            +
-          </button>
-        </header>
-        <div class="search-bar">
-          <input
-            id="global-search"
-            type="search"
-            placeholder="Search memories…"
-            autocomplete="off"
-          />
-        </div>
-        <ul id="space-list"></ul>
-        <label class="sidebar-toggle" title="Show hidden spaces (checkpoints, sessions)">
-          <input type="checkbox" id="toggle-hidden-spaces" /> Show hidden
-        </label>
-        <div id="status-panel">
-          <div class="status-row">
-            <span class="status-label">Storage</span>
-            <span id="status-spaces">—</span>
-          </div>
-          <div class="status-tiers" id="status-tiers"></div>
-          <a href="/logs" id="nav-logs" class="nav-link">
-            <svg
-              style="
-                display: inline-flex;
-                width: 14px;
-                height: 14px;
-                vertical-align: middle;
-                margin-right: 6px;
-              "
-              viewBox="0 0 16 16"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <rect
-                x="2"
-                y="2"
-                width="12"
-                height="12"
-                rx="2"
-                stroke="currentColor"
-                stroke-width="1.5"
-              />
-              <path
-                d="M5 6h6M5 8h6M5 10h4"
-                stroke="currentColor"
-                stroke-width="1.5"
-                stroke-linecap="round"
-              />
+            <svg class="icon" aria-hidden="true" focusable="false">
+              <use href="/assets/icons.svg#icon-folder-plus"></use>
             </svg>
-            Logs
+            <span class="btn-label">New space</span>
+          </button>
+          <a
+            href="/logs"
+            id="logs-link"
+            class="btn btn-sm btn-secondary topbar-action"
+            aria-label="Logs"
+          >
+            <svg class="icon" aria-hidden="true" focusable="false">
+              <use href="/assets/icons.svg#icon-file-text"></use>
+            </svg>
+            <span class="btn-label">Logs</span>
           </a>
         </div>
-      </aside>
+      </header>
 
-      <!-- Main panel -->
-      <main id="main">
-        <div id="empty-state" class="empty-state">
-          <p>Select a space or create one.</p>
-        </div>
-
-        <!-- Search results -->
-        <div id="search-results" class="hidden">
-          <header class="panel-header">
-            <h2 id="search-heading">Search results</h2>
-            <button class="btn btn-sm btn-ghost" id="btn-close-search">
-              <svg
-                style="
-                  display: inline-flex;
-                  width: 14px;
-                  height: 14px;
-                  vertical-align: middle;
-                  margin-right: 4px;
-                "
-                viewBox="0 0 16 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <path
-                  d="M4 4l8 8M12 4l-8 8"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                />
-              </svg>
-              Close
-            </button>
-          </header>
-          <ul id="search-list" class="memory-list"></ul>
-        </div>
-
-        <!-- Logs page -->
-        <div id="logs-page" class="hidden">
-          <header class="panel-header">
-            <h2>
-              <svg
-                style="
-                  display: inline-flex;
-                  width: 16px;
-                  height: 16px;
-                  vertical-align: middle;
-                  margin-right: 6px;
-                "
-                viewBox="0 0 16 16"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                aria-hidden="true"
-              >
-                <rect
-                  x="2"
-                  y="2"
-                  width="12"
-                  height="12"
-                  rx="2"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                />
-                <path
-                  d="M5 6h6M5 8h6M5 10h4"
-                  stroke="currentColor"
-                  stroke-width="1.5"
-                  stroke-linecap="round"
-                />
-              </svg>
-              Operation Logs
+      <div class="app-shell">
+        <aside id="sidebar" class="space-rail" aria-label="Space navigation">
+          <div class="space-rail-header">
+            <h2 class="space-rail-title">
+              Spaces
+              <span class="space-rail-count" id="space-count"></span>
             </h2>
-            <div class="logs-controls">
-              <label class="logs-filter">
-                <input type="checkbox" id="log-source-cli" value="cli" checked /> CLI
-              </label>
-              <label class="logs-filter">
-                <input type="checkbox" id="log-source-mcp" value="mcp" checked /> MCP
-              </label>
-              <label class="logs-filter">
-                <input type="checkbox" id="log-source-api" value="api" checked /> API
+            <button
+              id="sidebar-close"
+              class="btn btn-sm btn-ghost sidebar-close"
+              type="button"
+              aria-label="Close spaces navigation"
+              data-shell-ready="false"
+            >
+              <svg class="icon" aria-hidden="true" focusable="false">
+                <use href="/assets/icons.svg#icon-x"></use>
+              </svg>
+            </button>
+          </div>
+
+          <nav aria-label="Spaces">
+            <a id="all-spaces-link" class="nav-item all-spaces-link" href="/">
+              <svg class="icon icon-sm" aria-hidden="true" focusable="false">
+                <use href="/assets/icons.svg#icon-layout-grid"></use>
+              </svg>
+              <span class="nav-item-name">All spaces</span>
+            </a>
+            <ul id="space-list" class="nav-list"></ul>
+          </nav>
+
+          <label class="sidebar-toggle" title="Show hidden spaces (checkpoints, sessions)">
+            <input type="checkbox" id="toggle-hidden-spaces" /> Show hidden
+          </label>
+
+          <div id="status-panel">
+            <div class="status-row">
+              <span class="status-label">Storage</span>
+              <span id="status-spaces">—</span>
+            </div>
+            <div class="status-tiers" id="status-tiers"></div>
+          </div>
+        </aside>
+
+        <main id="main-content" class="app-main" tabindex="-1">
+          <div id="empty-state" class="empty-state home-atlas">
+            <header class="home-atlas-header">
+              <h1 class="home-atlas-title">All spaces</h1>
+              <p class="home-atlas-deck">
+                Find a space by name, description or tag, then open it to explore its memories.
+              </p>
+            </header>
+            <form id="home-search-form" class="home-search" role="search">
+              <label class="visually-hidden" id="home-search-label" for="home-search">
+                Search spaces
               </label>
               <input
+                id="home-search"
                 type="text"
-                id="log-search"
-                class="log-search-input"
-                placeholder="Search logs..."
+                placeholder="Search spaces by name, description or tag"
+                autocomplete="off"
+                aria-labelledby="home-search-label"
               />
-              <select id="log-order" class="log-order-select">
-                <option value="desc">Newest first</option>
-                <option value="asc">Oldest first</option>
-              </select>
-              <label class="logs-live-toggle">
-                <input type="checkbox" id="log-live" checked /> Live
-              </label>
-              <label class="logs-follow-toggle">
-                <input type="checkbox" id="log-follow" checked /> Follow
-              </label>
-              <button id="btn-refresh-logs" class="btn btn-sm btn-ghost">Refresh</button>
-              <button id="btn-clear-logs" class="btn btn-sm btn-danger">Clear All</button>
-            </div>
-          </header>
-          <div id="logs-connection-status" class="logs-connection-status hidden">● Live</div>
-          <ul id="logs-list" class="logs-list"></ul>
-          <div id="logs-pagination" class="logs-pagination">
-            <span id="logs-count"></span>
-            <button id="btn-load-more-logs" class="btn btn-sm btn-ghost">Load More</button>
-          </div>
-        </div>
-
-        <!-- Space detail -->
-        <div id="space-detail" class="hidden">
-          <header class="panel-header">
-            <div class="space-meta">
-              <h2 id="space-title" class="editable" title="Click to rename"></h2>
-              <p id="space-desc" class="editable muted" title="Click to edit description"></p>
-              <div id="space-tags-row" class="tag-row"></div>
-            </div>
-            <div class="panel-actions">
-              <button id="btn-view-list" class="btn btn-sm btn-ghost is-active" aria-pressed="true">
-                List
-              </button>
-              <button id="btn-view-map" class="btn btn-sm btn-ghost" aria-pressed="false">
-                Neural Map
-              </button>
-              <button id="btn-add-memory" class="btn btn-sm btn-primary">+ Memory</button>
-              <button id="btn-delete-space" class="btn btn-sm btn-danger">Delete space</button>
-            </div>
-          </header>
-
-          <!-- Tier containers -->
-          <div id="tiers">
-            <section class="tier-section" data-tier="1">
-              <h3 class="tier-heading tier-1">T1 — Hot</h3>
-              <ul class="memory-list" data-tier="1"></ul>
-            </section>
-            <section class="tier-section" data-tier="2">
-              <h3 class="tier-heading tier-2">T2 — Warm</h3>
-              <ul class="memory-list" data-tier="2"></ul>
-            </section>
-            <section class="tier-section" data-tier="3">
-              <h3 class="tier-heading tier-3">T3 — Cold</h3>
-              <ul class="memory-list" data-tier="3"></ul>
-            </section>
-          </div>
-
-          <div id="graph-view" class="hidden">
-            <div class="graph-toolbar">
-              <button id="btn-graph-zoom-in" class="btn btn-sm btn-ghost" aria-label="Zoom in">
-                +
-              </button>
-              <button id="btn-graph-zoom-out" class="btn btn-sm btn-ghost" aria-label="Zoom out">
-                −
-              </button>
-              <button id="btn-graph-reset" class="btn btn-sm btn-ghost">Reset View</button>
-              <span id="graph-meta" class="muted"></span>
-            </div>
-            <div id="graph-canvas-wrap">
-              <svg
-                id="graph-svg"
-                viewBox="0 0 1000 1000"
-                role="img"
-                aria-label="Neural map graph"
-              ></svg>
-            </div>
-          </div>
-        </div>
-
-        <!-- Memory detail panel -->
-        <div id="memory-panel" class="hidden">
-          <header class="panel-header">
-            <div class="panel-title-row">
-              <button id="btn-mem-close" class="btn btn-sm btn-ghost btn-back" aria-label="Go back">
-                <svg
-                  style="display: inline-flex; width: 16px; height: 16px"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M10 3L5 8l5 5"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </button>
-              <h3 id="mem-title"></h3>
               <button
-                id="btn-mem-close-inline"
-                class="btn btn-sm btn-ghost"
-                aria-label="Close memory details"
-                style="display: none"
+                id="btn-clear-home-search"
+                class="btn btn-sm btn-ghost home-search-clear"
+                type="button"
+                aria-label="Clear space search"
+                hidden
               >
-                <svg
-                  style="display: inline-flex; width: 16px; height: 16px"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  xmlns="http://www.w3.org/2000/svg"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M4 4l8 8M12 4l-8 8"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                  />
+                <svg class="icon icon-sm" aria-hidden="true" focusable="false">
+                  <use href="/assets/icons.svg#icon-x"></use>
                 </svg>
               </button>
+            </form>
+            <p
+              id="home-search-status"
+              class="home-search-status"
+              role="status"
+              aria-live="polite"
+            ></p>
+            <ul id="home-spaces" class="home-atlas-grid"></ul>
+            <p id="home-no-results" class="home-no-results" hidden></p>
+            <div id="home-empty" class="home-empty" hidden>
+              <p class="home-empty-message">No spaces yet. Create one to start the atlas.</p>
+              <button id="home-create-space" class="btn btn-primary" type="button">
+                <svg class="icon" aria-hidden="true" focusable="false">
+                  <use href="/assets/icons.svg#icon-folder-plus"></use>
+                </svg>
+                Create a space
+              </button>
             </div>
-            <div class="panel-subheader">
-              <div class="memory-meta">
-                <span id="mem-tier-badge" class="tier-badge"></span>
-                <div id="mem-tags-row" class="tag-row"></div>
+          </div>
+
+          <div id="logs-page" class="hidden">
+            <header class="panel-header logs-page-header">
+              <h1 id="logs-heading">
+                <svg class="icon icon-sm" aria-hidden="true" focusable="false">
+                  <use href="/assets/icons.svg#icon-file-text"></use>
+                </svg>
+                Operation Logs
+              </h1>
+              <div class="panel-actions">
+                <button id="btn-clear-logs" class="btn btn-sm btn-danger-outline" type="button">
+                  <svg class="icon" aria-hidden="true" focusable="false">
+                    <use href="/assets/icons.svg#icon-trash-2"></use>
+                  </svg>
+                  Clear logs
+                </button>
+              </div>
+            </header>
+            <div id="logs-view"></div>
+          </div>
+
+          <div id="space-detail" class="hidden">
+            <header class="panel-header">
+              <div class="space-meta">
+                <div class="space-identity">
+                  <h1 id="space-title" class="editable" title="Click to rename"></h1>
+                  <button
+                    id="btn-add-memory"
+                    class="btn btn-sm btn-quiet space-identity-action"
+                    type="button"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-file-plus"></use>
+                    </svg>
+                    <span class="btn-label">New memory</span>
+                  </button>
+                </div>
+                <p id="space-desc" class="editable muted" title="Click to edit description"></p>
+                <div id="space-tags-row" class="tag-row"></div>
+                <div id="space-tag-input-row" class="tag-input-row hidden">
+                  <label class="visually-hidden" for="space-tag-input">Tag name</label>
+                  <input
+                    id="space-tag-input"
+                    class="tag-input"
+                    type="text"
+                    autocomplete="off"
+                    placeholder="tag-name"
+                  />
+                  <button id="btn-space-tag-confirm" class="btn btn-sm btn-primary" type="button">
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-check"></use>
+                    </svg>
+                    Add
+                  </button>
+                </div>
               </div>
               <div class="panel-actions">
-                <button id="btn-mem-promote" class="btn btn-sm btn-ghost" title="Promote tier">
-                  ↑ Promote
-                </button>
-                <button id="btn-mem-demote" class="btn btn-sm btn-ghost" title="Demote tier">
-                  ↓ Demote
-                </button>
-                <button id="btn-mem-pin" class="btn btn-sm btn-ghost" title="Pin/Unpin">
-                  <span class="pin-button-icon">
-                    <svg
-                      class="icon-pin"
-                      viewBox="0 0 16 16"
-                      fill="none"
-                      xmlns="http://www.w3.org/2000/svg"
-                      aria-hidden="true"
-                    >
-                      <rect
-                        x="4"
-                        y="2"
-                        width="8"
-                        height="6"
-                        rx="1.5"
-                        stroke="currentColor"
-                        stroke-width="1.4"
-                      />
-                      <path
-                        d="M8 8v5"
-                        stroke="currentColor"
-                        stroke-width="1.4"
-                        stroke-linecap="round"
-                      />
+                <div class="view-toggle" role="group" aria-label="Space view">
+                  <button
+                    id="btn-view-list"
+                    class="btn btn-sm btn-ghost view-toggle-btn is-active"
+                    type="button"
+                    data-view="list"
+                    aria-pressed="true"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-list"></use>
                     </svg>
-                  </span>
+                    <span class="btn-label">List</span>
+                  </button>
+                  <button
+                    id="btn-view-map"
+                    class="btn btn-sm btn-ghost view-toggle-btn"
+                    type="button"
+                    data-view="map"
+                    aria-pressed="false"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-network"></use>
+                    </svg>
+                    <span class="btn-label">Neural Map</span>
+                  </button>
+                </div>
+                <button id="btn-delete-space" class="btn btn-sm btn-danger-outline" type="button">
+                  Delete space
                 </button>
-                <button id="btn-mem-edit" class="btn btn-sm btn-secondary">Edit</button>
-                <button id="btn-mem-delete" class="btn btn-sm btn-danger">Delete</button>
+              </div>
+
+              <div id="space-filter-bar" class="space-filter-bar" role="group" aria-label="Filters">
+                <div class="space-filter-primary">
+                  <form id="space-search-form" class="space-search" role="search">
+                    <label class="visually-hidden" id="space-search-label" for="space-search">
+                      Search in this space
+                    </label>
+                    <input
+                      id="space-search"
+                      type="text"
+                      placeholder="Search memories"
+                      autocomplete="off"
+                      aria-labelledby="space-search-label"
+                    />
+                    <button
+                      id="btn-clear-space-search"
+                      class="btn btn-sm btn-ghost space-search-clear"
+                      type="button"
+                      aria-label="Clear search"
+                    >
+                      <svg class="icon icon-sm" aria-hidden="true" focusable="false">
+                        <use href="/assets/icons.svg#icon-x"></use>
+                      </svg>
+                    </button>
+                  </form>
+
+                  <div class="filter-field filter-tag">
+                    <label class="form-label visually-hidden" for="space-filter-tag"
+                      >Filter by tag</label
+                    >
+                    <select id="space-filter-tag" class="select filter-control">
+                      <option value="">All tags</option>
+                    </select>
+                  </div>
+
+                  <div class="tier-chips" role="group" aria-label="Tier filters">
+                    <button
+                      id="space-tier-1"
+                      class="tier-chip tier-1"
+                      type="button"
+                      data-tier="1"
+                      aria-pressed="true"
+                      aria-label="T1 — Hot"
+                    >
+                      T1
+                    </button>
+                    <button
+                      id="space-tier-2"
+                      class="tier-chip tier-2"
+                      type="button"
+                      data-tier="2"
+                      aria-pressed="true"
+                      aria-label="T2 — Warm"
+                    >
+                      T2
+                    </button>
+                    <button
+                      id="space-tier-3"
+                      class="tier-chip tier-3"
+                      type="button"
+                      data-tier="3"
+                      aria-pressed="true"
+                      aria-label="T3 — Cold"
+                    >
+                      T3
+                    </button>
+                  </div>
+
+                  <div
+                    id="space-filter-confidence-field"
+                    class="filter-field filter-confidence"
+                    hidden
+                  >
+                    <label class="form-label visually-hidden" for="space-filter-confidence">
+                      Confidence
+                    </label>
+                    <select id="space-filter-confidence" class="select filter-control">
+                      <option value="">All confidence</option>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </div>
+
+                  <div id="space-filter-semantic-field" class="filter-field filter-semantic" hidden>
+                    <label
+                      class="checkbox"
+                      for="space-filter-semantic"
+                      title="Off by default. Uses the server embedding index when enabled."
+                    >
+                      <input
+                        id="space-filter-semantic"
+                        type="checkbox"
+                        aria-describedby="space-filter-semantic-help"
+                      />
+                      Use embeddings
+                    </label>
+                    <p id="space-filter-semantic-help" class="form-hint visually-hidden">
+                      Off by default. Uses the server embedding index when enabled.
+                    </p>
+                  </div>
+
+                  <label
+                    id="space-filter-only-matches-field"
+                    class="checkbox filter-only-matches"
+                    hidden
+                  >
+                    <input id="space-filter-only-matches" type="checkbox" />
+                    Only matches
+                  </label>
+
+                  <button
+                    id="space-clear-filters"
+                    class="btn btn-sm btn-ghost space-clear-filters"
+                    type="button"
+                    disabled
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-filter-x"></use>
+                    </svg>
+                    Clear filters
+                  </button>
+                </div>
+              </div>
+            </header>
+
+            <div id="space-search-view" class="hidden"></div>
+
+            <div id="list-view"></div>
+
+            <div id="graph-view" class="hidden"></div>
+          </div>
+
+          <dialog id="memory-panel" role="dialog" aria-modal="true" aria-labelledby="mem-title">
+            <header class="panel-header">
+              <div class="panel-title-row">
+                <button
+                  id="btn-mem-close"
+                  class="btn btn-sm btn-ghost btn-back"
+                  type="button"
+                  aria-label="Go back"
+                  data-action="close"
+                >
+                  <svg class="icon" aria-hidden="true" focusable="false">
+                    <use href="/assets/icons.svg#icon-arrow-left"></use>
+                  </svg>
+                </button>
+                <h2 id="mem-title" tabindex="-1"></h2>
+                <button
+                  id="btn-mem-close-inline"
+                  class="btn btn-sm btn-ghost"
+                  type="button"
+                  aria-label="Close memory details"
+                  data-action="close"
+                >
+                  <svg class="icon" aria-hidden="true" focusable="false">
+                    <use href="/assets/icons.svg#icon-x"></use>
+                  </svg>
+                </button>
+              </div>
+              <div class="panel-subheader">
+                <div class="memory-meta">
+                  <span id="mem-tier-badge" class="tier-badge"></span>
+                  <span id="mem-pinned" class="mem-pinned hidden">Pinned</span>
+                  <span id="mem-changed" class="mem-changed hidden"></span>
+                  <div id="mem-tags-row" class="tag-row"></div>
+                  <div id="mem-tag-input-row" class="tag-input-row hidden">
+                    <label class="visually-hidden" for="mem-tag-input">Tag name</label>
+                    <input
+                      id="mem-tag-input"
+                      class="tag-input"
+                      type="text"
+                      autocomplete="off"
+                      placeholder="tag-name"
+                    />
+                    <button
+                      id="btn-mem-tag-confirm"
+                      class="btn btn-sm btn-primary"
+                      type="button"
+                      data-action="add-tag-confirm"
+                    >
+                      <svg class="icon" aria-hidden="true" focusable="false">
+                        <use href="/assets/icons.svg#icon-check"></use>
+                      </svg>
+                      Add
+                    </button>
+                  </div>
+                </div>
+                <div class="panel-actions">
+                  <button
+                    id="btn-mem-promote"
+                    class="btn btn-sm btn-ghost"
+                    type="button"
+                    title="Promote tier"
+                    data-action="promote"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-arrow-up"></use>
+                    </svg>
+                    <span class="btn-label">Promote</span>
+                  </button>
+                  <button
+                    id="btn-mem-demote"
+                    class="btn btn-sm btn-ghost"
+                    type="button"
+                    title="Demote tier"
+                    data-action="demote"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-arrow-down"></use>
+                    </svg>
+                    <span class="btn-label">Demote</span>
+                  </button>
+                  <button
+                    id="btn-mem-pin"
+                    class="btn btn-sm btn-ghost"
+                    type="button"
+                    title="Pin/Unpin"
+                    aria-pressed="false"
+                    data-action="pin"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-pin"></use>
+                    </svg>
+                    <span class="pin-label">Pin</span>
+                  </button>
+                  <button
+                    id="btn-mem-edit"
+                    class="btn btn-sm btn-secondary"
+                    type="button"
+                    data-action="edit"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-pencil"></use>
+                    </svg>
+                    <span class="btn-label">Edit</span>
+                  </button>
+                  <button
+                    id="btn-mem-delete"
+                    class="btn btn-sm btn-danger"
+                    type="button"
+                    data-action="delete"
+                  >
+                    <svg class="icon" aria-hidden="true" focusable="false">
+                      <use href="/assets/icons.svg#icon-trash-2"></use>
+                    </svg>
+                    <span class="btn-label">Delete</span>
+                  </button>
+                </div>
+              </div>
+            </header>
+            <div id="mem-state" class="mem-state hidden" role="status" aria-live="polite"></div>
+            <div id="mem-content" class="mem-content"></div>
+            <div id="mem-edit-area" class="hidden">
+              <label class="visually-hidden" for="mem-edit-input">Memory content</label>
+              <textarea id="mem-edit-input" rows="12"></textarea>
+              <div class="edit-actions">
+                <button id="btn-mem-save" class="btn btn-primary" type="button" data-action="save">
+                  <svg class="icon" aria-hidden="true" focusable="false">
+                    <use href="/assets/icons.svg#icon-check"></use>
+                  </svg>
+                  <span class="btn-label">Save</span>
+                </button>
+                <button
+                  id="btn-mem-cancel-edit"
+                  class="btn btn-ghost"
+                  type="button"
+                  data-action="cancel-edit"
+                >
+                  <svg class="icon" aria-hidden="true" focusable="false">
+                    <use href="/assets/icons.svg#icon-x"></use>
+                  </svg>
+                  <span class="btn-label">Cancel</span>
+                </button>
               </div>
             </div>
-          </header>
-          <div id="mem-content" class="mem-content"></div>
-          <div id="mem-edit-area" class="hidden">
-            <textarea id="mem-edit-input" rows="12"></textarea>
-            <div class="edit-actions">
-              <button id="btn-mem-save" class="btn btn-primary">Save</button>
-              <button id="btn-mem-cancel-edit" class="btn btn-ghost">Cancel</button>
-            </div>
-          </div>
-        </div>
-      </main>
-    </div>
-
-    <!-- Modal: new space -->
-    <div id="modal-new-space" class="modal-backdrop hidden">
-      <div class="modal">
-        <h2>New space</h2>
-        <label>Name<input id="new-space-name" type="text" placeholder="my-space" /></label>
-        <label
-          >Description<input id="new-space-desc" type="text" placeholder="Short description"
-        /></label>
-        <label
-          >Tags (comma-separated)<input id="new-space-tags" type="text" placeholder="project, work"
-        /></label>
-        <div class="modal-actions">
-          <button id="modal-space-cancel" class="btn btn-ghost">Cancel</button>
-          <button id="modal-space-create" class="btn btn-primary">Create</button>
-        </div>
+          </dialog>
+        </main>
       </div>
     </div>
 
-    <!-- Modal: new memory -->
-    <div id="modal-new-memory" class="modal-backdrop hidden">
-      <div class="modal">
-        <h2>New memory</h2>
-        <label>Name<input id="new-mem-name" type="text" placeholder="memory-name" /></label>
-        <label
-          >Tags (comma-separated)<input id="new-mem-tags" type="text" placeholder="backend, auth"
-        /></label>
-        <label
-          >Tier
-          <select id="new-mem-tier">
+    <dialog
+      id="modal-new-space"
+      class="modal-dialog"
+      aria-labelledby="new-space-title"
+      aria-modal="true"
+    >
+      <div class="dialog-header">
+        <h2 id="new-space-title" class="dialog-title">New space</h2>
+      </div>
+      <div class="dialog-body" data-modal-form>
+        <p class="form-error" data-modal-error role="alert" hidden></p>
+        <div class="form-field">
+          <label class="form-label" for="new-space-name">Name</label>
+          <input
+            id="new-space-name"
+            name="name"
+            type="text"
+            placeholder="my-space"
+            autocomplete="off"
+            autofocus
+          />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="new-space-desc">Description</label>
+          <input
+            id="new-space-desc"
+            name="description"
+            type="text"
+            placeholder="Short description"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="new-space-tags">Tags (comma-separated)</label>
+          <input
+            id="new-space-tags"
+            name="tags"
+            type="text"
+            placeholder="project, work"
+            autocomplete="off"
+          />
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button id="modal-space-cancel" class="btn btn-ghost" type="button" data-modal-close>
+          <svg class="icon" aria-hidden="true" focusable="false">
+            <use href="/assets/icons.svg#icon-x"></use>
+          </svg>
+          Cancel
+        </button>
+        <button id="modal-space-create" class="btn btn-primary" type="button">
+          <svg class="icon" aria-hidden="true" focusable="false">
+            <use href="/assets/icons.svg#icon-check"></use>
+          </svg>
+          Create
+        </button>
+      </div>
+    </dialog>
+
+    <dialog
+      id="modal-new-memory"
+      class="modal-dialog"
+      aria-labelledby="new-mem-title"
+      aria-modal="true"
+    >
+      <div class="dialog-header">
+        <h2 id="new-mem-title" class="dialog-title">New memory</h2>
+      </div>
+      <div class="dialog-body" data-modal-form>
+        <p class="form-error" data-modal-error role="alert" hidden></p>
+        <div class="form-field">
+          <label class="form-label" for="new-mem-name">Name</label>
+          <input
+            id="new-mem-name"
+            name="name"
+            type="text"
+            placeholder="memory-name"
+            autocomplete="off"
+            autofocus
+          />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="new-mem-tags">Tags (comma-separated)</label>
+          <input
+            id="new-mem-tags"
+            name="tags"
+            type="text"
+            placeholder="backend, auth"
+            autocomplete="off"
+          />
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="new-mem-tier">Tier</label>
+          <select id="new-mem-tier" name="tier">
             <option value="1">T1 — Hot</option>
             <option value="2" selected>T2 — Warm</option>
             <option value="3">T3 — Cold</option>
           </select>
-        </label>
-        <label
-          >Content<textarea id="new-mem-content" rows="8" placeholder="Memory content…"></textarea>
-        </label>
-        <div class="modal-actions">
-          <button id="modal-mem-cancel" class="btn btn-ghost">Cancel</button>
-          <button id="modal-mem-create" class="btn btn-primary">Add</button>
+        </div>
+        <div class="form-field">
+          <label class="form-label" for="new-mem-content">Content</label>
+          <textarea
+            id="new-mem-content"
+            name="content"
+            rows="8"
+            placeholder="Memory content…"
+          ></textarea>
         </div>
       </div>
-    </div>
+      <div class="dialog-actions">
+        <button id="modal-mem-cancel" class="btn btn-ghost" type="button" data-modal-close>
+          <svg class="icon" aria-hidden="true" focusable="false">
+            <use href="/assets/icons.svg#icon-x"></use>
+          </svg>
+          Cancel
+        </button>
+        <button id="modal-mem-create" class="btn btn-primary" type="button">
+          <svg class="icon" aria-hidden="true" focusable="false">
+            <use href="/assets/icons.svg#icon-check"></use>
+          </svg>
+          Add
+        </button>
+      </div>
+    </dialog>
 
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <dialog
+      id="modal-delete"
+      class="modal-dialog"
+      aria-labelledby="modal-delete-title"
+      aria-modal="true"
+    >
+      <div class="dialog-header">
+        <h2 id="modal-delete-title" class="dialog-title">Delete</h2>
+      </div>
+      <div class="dialog-body" data-modal-form>
+        <p class="form-error" data-modal-error role="alert" hidden></p>
+        <p id="modal-delete-message" class="dialog-message"></p>
+      </div>
+      <div class="dialog-actions">
+        <button id="modal-delete-cancel" class="btn btn-ghost" type="button" data-modal-close>
+          <svg class="icon" aria-hidden="true" focusable="false">
+            <use href="/assets/icons.svg#icon-x"></use>
+          </svg>
+          Cancel
+        </button>
+        <button id="modal-delete-confirm" class="btn btn-danger" type="button">
+          <svg class="icon" aria-hidden="true" focusable="false">
+            <use href="/assets/icons.svg#icon-trash-2"></use>
+          </svg>
+          Delete
+        </button>
+      </div>
+    </dialog>
+
+    <script src="/assets/vendor/marked.min.js"></script>
     <script type="module" src="/src/app.js"></script>
   </body>
 </html>

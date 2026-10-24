@@ -12,6 +12,7 @@ export interface TagRepository {
     spaces: { tag: string; count: number }[];
     memories: { tag: string; count: number }[];
   };
+  listMemoryTags(spaceName: string): string[];
 }
 
 export function createTagRepository(db: Database): TagRepository {
@@ -60,10 +61,25 @@ export function createTagRepository(db: Database): TagRepository {
     return { spaces: spaceTags, memories: memoryTags };
   }
 
+  function listMemoryTags(spaceName: string): string[] {
+    const rows = db
+      .query(
+        `SELECT DISTINCT mt.tag
+         FROM spaces s
+         JOIN memories m ON m.space_id = s.id
+         JOIN memory_tags mt ON mt.memory_id = m.id
+         WHERE s.name = ?
+         ORDER BY mt.tag`
+      )
+      .all(spaceName) as { tag: string }[];
+    return rows.map(row => row.tag);
+  }
+
   return {
     addMemoryTag,
     removeMemoryTag,
     setMemoryTags,
     listAllTags,
+    listMemoryTags,
   };
 }

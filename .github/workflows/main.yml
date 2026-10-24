@@ -25,7 +25,7 @@ jobs:
       - name: Audit dependencies (high)
         run: bun audit --audit-level=high
 
-      - name: Type check
+      - name: Type check (root + web)
         run: bun run typecheck
 
       - name: Check formatting (prettier)

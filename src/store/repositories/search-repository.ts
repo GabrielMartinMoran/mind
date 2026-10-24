@@ -289,26 +289,30 @@ function coverageFloor(tokenCount: number): number {
 export interface SearchRepository {
   searchMemories(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[]; semantic?: boolean }
   ): Promise<ScoredSearchResult[]>;
   searchFallback(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): Promise<{ results: SearchResult[]; search_method: string }>;
   searchFts5(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): Promise<SearchResult[]>;
-  searchLike(query: string, filter?: { space?: string; tag?: string; tier?: Tier }): SearchResult[];
+  searchLike(
+    query: string,
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
+  ): SearchResult[];
   searchSemantic(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): Promise<SearchResult[]>;
   queryMemories(filter?: MemoryQueryFilter): MemorySummary[];
   queryMemoriesCount(filter: {
     space?: string;
     tag?: string;
     tier?: number;
+    tiers?: Tier[];
     from?: string;
     to?: string;
   }): Promise<number>;
@@ -362,6 +366,27 @@ interface SearchRow extends RankedRow {
   changed_at: string;
 }
 
+/** A tier restriction: a non-empty `tiers` list wins over the single `tier`. */
+type TierCriteria = { tier?: Tier; tiers?: Tier[] };
+
+/**
+ * Build a SQL fragment restricting a column to the selected tiers. Single-tier
+ * and multi-tier filters share one `IN (?, ...)` form so behavior is identical.
+ */
+function tierClause(
+  filter: TierCriteria | undefined,
+  column = 'm.tier'
+): { sql: string; params: Tier[] } {
+  const tiers =
+    filter?.tiers && filter.tiers.length > 0
+      ? filter.tiers
+      : filter?.tier !== undefined
+        ? [filter.tier]
+        : [];
+  if (tiers.length === 0) return { sql: '', params: [] };
+  return { sql: ` AND ${column} IN (${tiers.map(() => '?').join(',')})`, params: tiers };
+}
+
 function getTagsForMemory(db: Database, memoryId: string): string[] {
   const rows = db.query('SELECT tag FROM memory_tags WHERE memory_id = ?').all(memoryId) as {
     tag: string;
@@ -399,7 +424,7 @@ export function createSearchRepository(
   /** Run one FTS5 MATCH expression and return its rows (rank-ordered). */
   function runMatchQuery(
     match: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): SearchRow[] {
     let sql = `
             SELECT m.id, s.name as space_name, m.name, m.content, m.tier, m.pinned,
@@ -415,10 +440,9 @@ export function createSearchRepository(
       sql += ' AND s.name = ?';
       params.push(filter.space);
     }
-    if (filter?.tier) {
-      sql += ' AND m.tier = ?';
-      params.push(filter.tier);
-    }
+    const tierFilter = tierClause(filter);
+    sql += tierFilter.sql;
+    params.push(...tierFilter.params);
 
     sql += ' ORDER BY fts.rank';
 
@@ -436,7 +460,7 @@ export function createSearchRepository(
   /** Run one trigram-compiled MATCH expression and return its rows (rank-ordered). */
   function runTrigramMatch(
     match: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): SearchRow[] {
     let sql = `
             SELECT m.id, s.name as space_name, m.name, m.content, m.tier, m.pinned,
@@ -452,10 +476,9 @@ export function createSearchRepository(
       sql += ' AND s.name = ?';
       params.push(filter.space);
     }
-    if (filter?.tier) {
-      sql += ' AND m.tier = ?';
-      params.push(filter.tier);
-    }
+    const tierFilter = tierClause(filter);
+    sql += tierFilter.sql;
+    params.push(...tierFilter.params);
 
     sql += ' ORDER BY tri.rank';
 
@@ -547,7 +570,7 @@ export function createSearchRepository(
    */
   function runLikeTokens(
     tokens: string[],
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): SearchRow[] {
     const clauses = tokens.map(() => '(m.name LIKE ? OR m.content LIKE ?)').join(' OR ');
     let sql = `
@@ -563,10 +586,9 @@ export function createSearchRepository(
       sql += ' AND s.name = ?';
       params.push(filter.space);
     }
-    if (filter?.tier) {
-      sql += ' AND m.tier = ?';
-      params.push(filter.tier);
-    }
+    const tierFilter = tierClause(filter);
+    sql += tierFilter.sql;
+    params.push(...tierFilter.params);
 
     sql += ' ORDER BY m.changed_at DESC, m.rowid DESC';
 
@@ -600,10 +622,9 @@ export function createSearchRepository(
       sql += ' AND s.name = ?';
       params.push(filter.space);
     }
-    if (filter?.tier) {
-      sql += ' AND m.tier = ?';
-      params.push(filter.tier);
-    }
+    const tierFilter = tierClause(filter);
+    sql += tierFilter.sql;
+    params.push(...tierFilter.params);
 
     let rows = db.query(sql).all(...params) as Omit<SearchRow, 'rank'>[];
     if (filter?.tag) {
@@ -645,7 +666,7 @@ export function createSearchRepository(
 
   async function searchMemories(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[]; semantic?: boolean }
   ): Promise<ScoredSearchResult[]> {
     const ast = parseQuery(query);
     if (isEmptyQuery(ast)) return [];
@@ -809,11 +830,13 @@ export function createSearchRepository(
       }
     }
 
-    // Semantic — RAG only; skipped when the breaker is open after a failure.
-    // These ids feed `rowsById` (for fusion) but never the lexical view, so the
-    // admission ladder and `token_set` cannot be influenced by them.
+    // Semantic — RAG only; skipped when the breaker is open after a failure, or
+    // when the caller explicitly opts out with `semantic: false` (web default
+    // once the embeddings toggle is off). These ids feed `rowsById` (for
+    // fusion) but never the lexical view, so the admission ladder and
+    // `token_set` cannot be influenced by them.
     let semanticScores = new Map<string, number>();
-    if (isRagEnabled() && !isSemanticBreakerOpen()) {
+    if (filter?.semantic !== false && isRagEnabled() && !isSemanticBreakerOpen()) {
       const channelStart = diagnostics ? performance.now() : 0;
       try {
         const candidateRows = querySemanticCandidateRows(filter);
@@ -938,7 +961,7 @@ export function createSearchRepository(
 
   async function searchFallback(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): Promise<{ results: SearchResult[]; search_method: string }> {
     // Step 1: Try FTS5
     let ftsResults = await searchFts5(query, filter);
@@ -965,7 +988,7 @@ export function createSearchRepository(
 
   async function searchFts5(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): Promise<SearchResult[]> {
     const ast = parseQuery(query);
     if (isEmptyQuery(ast)) return [];
@@ -978,7 +1001,7 @@ export function createSearchRepository(
 
   function searchLike(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): SearchResult[] {
     // Simple LIKE-based search as fallback when FTS5 returns nothing
     const likePattern = `%${query}%`;
@@ -996,10 +1019,9 @@ export function createSearchRepository(
       sql += ' AND s.name = ?';
       params.push(filter.space);
     }
-    if (filter?.tier) {
-      sql += ' AND m.tier = ?';
-      params.push(filter.tier);
-    }
+    const tierFilter = tierClause(filter);
+    sql += tierFilter.sql;
+    params.push(...tierFilter.params);
 
     sql += ' ORDER BY m.changed_at DESC, m.rowid DESC';
 
@@ -1016,7 +1038,7 @@ export function createSearchRepository(
 
   async function searchSemantic(
     query: string,
-    filter?: { space?: string; tag?: string; tier?: Tier }
+    filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[] }
   ): Promise<SearchResult[]> {
     if (!isRagEnabled()) return [];
 
@@ -1029,10 +1051,9 @@ export function createSearchRepository(
       candSql += ' AND s.name = ?';
       candParams.push(filter.space);
     }
-    if (filter?.tier) {
-      candSql += ' AND tier = ?';
-      candParams.push(filter.tier);
-    }
+    const tierFilter = tierClause(filter);
+    candSql += tierFilter.sql;
+    candParams.push(...tierFilter.params);
     let candidates = db.query(candSql).all(...candParams) as SearchRow[];
     if (filter?.tag) {
       const normalizedTag = normalizeTag(filter.tag);
@@ -1065,7 +1086,10 @@ export function createSearchRepository(
       whereParams.push(filter.space);
     }
 
-    if (filter?.tier !== undefined) {
+    if (filter?.tiers && filter.tiers.length > 0) {
+      conditions.push(`m.tier IN (${filter.tiers.map(() => '?').join(',')})`);
+      whereParams.push(...filter.tiers);
+    } else if (filter?.tier !== undefined) {
       conditions.push('m.tier = ?');
       whereParams.push(filter.tier);
     }
@@ -1109,6 +1133,7 @@ export function createSearchRepository(
     space?: string;
     tag?: string;
     tier?: number;
+    tiers?: Tier[];
     from?: string;
     to?: string;
   }): Promise<number> {
@@ -1127,7 +1152,10 @@ export function createSearchRepository(
       whereParams.push(filter.space);
     }
 
-    if (filter?.tier !== undefined) {
+    if (filter?.tiers && filter.tiers.length > 0) {
+      conditions.push(`m.tier IN (${filter.tiers.map(() => '?').join(',')})`);
+      whereParams.push(...filter.tiers);
+    } else if (filter?.tier !== undefined) {
       conditions.push('m.tier = ?');
       whereParams.push(filter.tier);
     }

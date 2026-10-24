@@ -21,6 +21,12 @@ frozen and is not current truth. The maintenance policy is in
 - [Search benchmark methodology](search-benchmarks.md) — explains how to
   measure search quality, latency, and index size, and how to reproduce it.
 
+## Web
+
+- [Web UI](web-ui.md) — maps the browser app: module layers, URL contract,
+  unified search, graph filtering, accessibility, design tokens, testing, and
+  known debt.
+
 ## Agents and setup
 
 - [Skill-first distribution](skill-first-distribution.md) — explains the

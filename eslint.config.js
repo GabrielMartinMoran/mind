@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default [
   // Ignore the config file itself
   {
-    ignores: ['eslint.config.js'],
+    ignores: ['eslint.config.js', 'web/assets/vendor/'],
   },
 
   // Config for TypeScript files in src/ and test/ (with full TypeScript project support)

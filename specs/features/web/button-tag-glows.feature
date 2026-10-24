@@ -1,62 +1,53 @@
-@delta-added
-Feature: Button and Tag Cyberpunk Glow
+@web @product/button-tag-emphasis
+Feature: Button and Tag Emphasis
 
-  Scenario: Primary button has gradient and cyan glow
-    Given a primary button is rendered (btn-primary)
-    When the button is in default state
-    Then the button should have a cyan background gradient
-    And the gradient should go from var(--neon-cyan) to var(--neon-blue)
-    And the button should have box-shadow glow of 0 0 8px rgba(0,240,255,0.4)
-    And the glow should intensify on hover
+  Buttons and tags use the refined surface/accent system.
 
-  Scenario: Primary button glow intensifies on hover
-    Given a primary button is in default state
-    When the user hovers over the button
-    Then the glow should intensify from 0.4 to 0.7 opacity
-    And the glow spread should increase by 4px
-    And the transition should take 150ms
+  @integration
+  Scenario: Primary button is readable
+    Given a primary button renders
+    Then it uses the accent background with accent-ink text
+    And the text contrast is at least 4.5:1
 
-  Scenario: Primary button glow animates on click
-    Given a primary button is hovered
-    When the user clicks the button
-    Then the glow should flash bright white for 100ms
-    And then return to hover state glow level
+  @integration
+  Scenario: Secondary button uses a boundary
+    Given a secondary button renders
+    Then its boundary uses the strong line token
+    And no glow or gradient is applied
 
-  Scenario: Ghost button has glow border on hover
-    Given a ghost button is in default state (btn-ghost)
-    When the user hovers over the ghost button
-    Then the button border should gain a cyan glow
-    And the glow should be 0 0 4px var(--neon-cyan), 0 0 8px rgba(0,240,255,0.3)
-    And the button text should brighten to full white
+  @integration
+  Scenario: Tag chip is readable
+    Given a tag chip renders
+    Then it shows text with an accessible contrast
+    And it does not rely on glow to show state
 
-  Scenario: Ghost button active state has glow
-    Given a ghost button is currently active (is-active class)
-    When the button renders
-    Then the button should have a persistent cyan glow border
-    And the glow should be at 50% intensity
+  @integration
+  Scenario: Removable tags expose a named remove action
+    Given a removable space or memory tag renders
+    Then the tag text remains visible
+    And its remove control is a button with a descriptive accessible name
+    And the remove icon is hidden from assistive technology
 
-  Scenario: Tag has subtle glow on hover
-    Given a tag element is displayed
-    When the user hovers over the tag
-    Then the tag should have a subtle cyan glow
-    And the glow should be 0 0 3px var(--neon-cyan), 0 0 6px rgba(0,240,255,0.2)
-    And the transition should take 100ms
+  @integration
+  Scenario: Focus ring is visible
+    Given a button or tag has keyboard focus
+    Then a 2px accent focus ring is visible
+    And the focus indicator is not removed
 
-  Scenario: Tag glow color matches tier when inside memory item
-    Given a tag is displayed within a memory item
-    When the user hovers over the tag
-    Then the tag glow should match the current tier color instead of cyan
-    And the glow should be at 50% of the tier glow intensity
+  @integration
+  Scenario: Disabled state is clear
+    Given a button is disabled
+    Then it has a disabled attribute
+    And it does not look interactive
 
-  Scenario: Add tag button has dashed glow on hover
-    Given a tag-add button is displayed
-    When the user hovers over the button
-    Then the dashed border should glow cyan
-    And the glow should be 0 0 4px var(--neon-cyan), 0 0 8px rgba(0,240,255,0.3)
-    And the icon should brighten
+  @integration
+  Scenario: Logs is visible beside the quieter New space action
+    Given the top bar is rendered
+    Then Logs has a visible secondary surface and icon
+    And New space is a quieter outlined action
 
-  Scenario: Danger button has red glow
-    Given a danger button is rendered (btn-danger)
-    When the button is in default state
-    Then the button should have a red glow
-    And the glow should be 0 0 6px var(--danger), 0 0 12px rgba(255,51,102,0.4)
+  @integration
+  Scenario: Destructive triggers do not compete with primary actions
+    Given a space header and delete dialog render
+    Then Delete space is outlined in the danger color
+    And only the final delete confirmation uses a filled danger surface
