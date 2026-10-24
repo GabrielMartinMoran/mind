@@ -25,6 +25,7 @@ import {
   type PrepareUnit,
   type ScenariosRunResult,
 } from '../src/benchmarkB/runner';
+import type { SearchProvenanceResult } from '../src/benchmarkB/runner';
 import type {
   BChildResult,
   BSessionOutcome,
@@ -110,7 +111,6 @@ import {
   type DriverEvidence,
   type DriverToolCall,
 } from '../src/opencode/driver';
-import type { SearchProvenanceResult } from '../src/benchmarkB/runner';
 import { createFakeSessionDriver, type FakeSessionScript } from '../src/testing/fakes';
 
 const HARNESS_ROOT = join(import.meta.dir, '..');

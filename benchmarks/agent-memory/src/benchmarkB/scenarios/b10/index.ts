@@ -18,8 +18,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { inspectAllMemories, inspectEmbeddingCoverage } from '../../../mind/inspect';
-import { sessionSearchProvenance } from '../../runner';
 import { duplicateMemoryNames } from '../../duplicates';
+import { sessionSearchProvenance } from '../../runner';
 import type {
   Scenario,
   ScenarioAssertionContext,
