@@ -7,7 +7,7 @@ validation. Access date for the official links: October 20, 2026.
 ## Reading the matrix
 
 - **Documented** means the client publishes the path or shape Mind uses.
-- **Implemented** means `mind setup <agent>` writes or installs it.
+- **Implemented** means `mind setup` or `mind setup <agent>` writes or installs it.
 - **Validated** means a live client run confirmed the behavior. Mind validates
   only what it can run without a paid subscription or a real user home.
 - **Unverified** means the integration exists but was not live-tested.

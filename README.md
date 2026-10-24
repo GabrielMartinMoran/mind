@@ -1,48 +1,48 @@
 # 🧠 Mind
 
-_**Stop losing context across sessions, tools, and time. Give your AI workflow a memory that lasts.**_
+![Mind banner: connected memory nodes](./assets/image/mind-banner.png)
 
-Mind is a local memory layer for AI workflows: a persistent memory system for
-durable context such as decisions, bug fixes, patterns, checkpoints, and
-session summaries that would otherwise disappear across sessions and tools.
+**Your coding agent forgets. Mind remembers.**
 
-It supports recovery after compaction through checkpoint and session
-continuity behavior, while giving humans a way to visualize, inspect, and
-modify that memory through the CLI and web UI.
+Mind is local, persistent memory for AI coding agents. Keep project decisions,
+bug fixes, and working context available across sessions, compaction, and
+tools.
 
-**Why Mind works above the fold:**
+**Local-first · Open source · MCP**
 
-- **Local persistent store.** One SQLite-backed memory system you control.
-- **Built for agent workflows.** Use it through the CLI, MCP server, HTTP API,
-  and web UI.
-- **Resumption tools included.** Checkpoints and session summaries help recover
-  context and continue work.
-- **Optional file sync.** Experimental autosync can mirror project spaces into
-  versioned `.mind/` files.
-- **Search when you need it.** Full-text search is built in, and semantic
-  search is available as an optional add-on.
+### Get started
 
-Get started with [Installation](#installation) or jump straight to the
-[Quick start](#quick-start).
+Install Mind and configure all supported agent integrations in one pass:
 
-![Mind Preview](./assets/video/web-preview.gif)
+```bash
+curl -fsSL https://raw.githubusercontent.com/GabrielMartinMoran/mind/main/scripts/install.sh | bash
+mind setup
+```
 
-## Why try Mind?
+[Installation](#installation) ·
+[Supported agents](docs/agent-integration-matrix.md) ·
+[How Mind works](docs/cognitive-memory-lifecycle.md) ·
+[Project philosophy](docs/mind-philosophy.md)
 
-Mind helps you keep durable context organized, retrievable, and usable as work
-moves across tools, sessions, and compaction boundaries.
+## See Mind in action
 
-- **Structured memory you can revisit.** Organize information into spaces,
-  tags, directional links, tiers, pins, checkpoints, and session summaries.
-- **A lifecycle, not a dump.** Capture durable knowledge, relate it, maintain
-  current truth, supersede what changed, and hand off work across sessions.
-- **Recovery built into the workflow.** Restore context after compaction,
-  resume work from checkpoints, and keep important state visible over time.
-- **Shared interfaces, one memory layer.** Use the CLI, MCP server, HTTP API,
-  and web app against the same local source of truth.
-- **Per-space visibility with Neural Map.** Each space includes a read-only
-  graph view so you can understand how memories connect without claiming a
-  global knowledge graph.
+![Mind web app preview](./assets/video/web-preview.gif)
+
+The preview shows Mind's web app for inspecting and maintaining saved memories.
+
+## Why Mind?
+
+- **Keep project knowledge available.** Save decisions, fixes, patterns,
+  checkpoints, and session summaries in one local SQLite store.
+- **Use the same memory across tools.** Access it through the CLI, MCP server,
+  HTTP API, and web app.
+- **Recover working context.** Checkpoints and session summaries help agents
+  resume work across sessions and after compaction.
+- **Keep memory organized.** Spaces, tags, tiers, and links help you maintain
+  current knowledge over time; the per-space Neural Map makes those
+  relationships visible.
+- **Choose how to search.** Full-text search works out of the box; optional
+  semantic search can be enabled with OpenAI or OpenRouter embeddings.
 
 ## What is Mind?
 
@@ -84,9 +84,10 @@ mind help
 ```
 
 The installer creates a launcher that runs the installed `src/mind.ts` entry
-point. It doesn't configure every supported agent automatically. To refresh
-existing mind-managed agent integrations after installation, run
-`mind setup refresh`.
+point. It doesn't configure agent integrations automatically. Run `mind setup`
+to configure Mind for all supported agents, or `mind setup <agent>` to configure
+one agent. Use `mind setup refresh` to reapply setup only to integrations that
+Mind already detects.
 
 ### Requirements
 
@@ -125,11 +126,15 @@ mind serve start
 ### Agent setup
 
 Mind supports multiple agent integrations, but they are not all equally mature.
-Run `mind setup` without an agent name to see the current capability matrix,
-then configure the specific agent you want.
+Run `mind setup` to configure all supported agents, or add an agent name to
+configure just that agent. Use `mind setup compatibility` to inspect the
+capability matrix before setup. Setup configures Mind's integration files; it
+doesn't install the agent applications themselves and may create settings for
+agents that aren't installed locally.
 
 ```bash
-mind setup              # show capability matrix first
+mind setup              # configure all supported agents
+mind setup compatibility
 mind setup claude-code
 mind setup opencode
 mind setup cursor
@@ -143,10 +148,12 @@ mind setup refresh      # refresh detected mind-managed integrations
 ```
 
 `mind setup refresh` is conservative by default. It refreshes only detected
-integrations, where detection means mind finds an existing mind-owned signal,
+integrations, where detection means Mind finds an existing Mind-owned signal,
 such as an MCP config, managed activation pointer block, hook/plugin/script, or
 installed mind-management skill. Use `--dry-run` to preview changes, `--all` to
-refresh all supported agents, or `--agent <name>` to target one agent.
+refresh all supported agents, or `--agent <name>` to target one agent. The
+`--all` option remains available for existing scripts; `mind setup` is the
+shorter command for configuring every supported agent.
 
 ### Skill-first protocol
 
@@ -532,7 +539,7 @@ Use the commands in [Installation](#installation) to run setup. This section
 explains how to read the capability matrix and what each integration actually
 configures.
 
-`mind setup` (without agent) now prints a capability matrix per integration using a 3-level model:
+`mind setup compatibility` prints a capability matrix per integration using a 3-level model:
 
 - **L1**: MCP transport wiring
 - **L2**: instruction/protocol injection

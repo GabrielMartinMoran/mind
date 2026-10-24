@@ -1,6 +1,7 @@
 import type { MindStore } from '../../../store/mind-store';
 import { toCompatSearchMethod } from '../../../store/shared';
 import type { Tier } from '../../../types';
+import { filterByDateRange } from '../../helpers/date-filter';
 import { presentMemoryResponse } from '../../helpers/memory-response';
 import { buildYamlContent } from '../../helpers/yaml-response';
 import { MemoryQuerySchema } from '../../schemas/memories/query-memories';
@@ -13,25 +14,12 @@ interface MemoryQueryPayload {
   search_method?: string;
 }
 
-function applyDateFilters<T extends { changed_at: string }>(
+export function applyDateFilters<T extends { changed_at: string }>(
   results: T[],
   from?: string,
   to?: string
 ): T[] {
-  let filtered = results;
-
-  if (from) {
-    const fromDate = new Date(from);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) >= fromDate);
-  }
-
-  if (to) {
-    const toDate = new Date(to);
-    toDate.setHours(23, 59, 59, 999);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) <= toDate);
-  }
-
-  return filtered;
+  return filterByDateRange(results, from, to);
 }
 
 function buildMemoryQueryResponse(

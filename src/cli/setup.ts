@@ -1120,6 +1120,52 @@ export async function runSetup(
   printCapabilityDiagnostics(cfg.capabilities, getAgentSkillDeclaration(agent));
 }
 
+export interface SetupAllFailure {
+  agent: SupportedAgent;
+  message: string;
+}
+
+export interface SetupAllResult {
+  configured: SupportedAgent[];
+  failed: SetupAllFailure[];
+}
+
+export async function runSetupAll(
+  agents: SupportedAgent[] = getSupportedAgents() as SupportedAgent[],
+  setup: (agent: SupportedAgent) => Promise<void> = runSetup
+): Promise<SetupAllResult> {
+  const configured: SupportedAgent[] = [];
+  const failed: SetupAllFailure[] = [];
+
+  for (const agent of agents) {
+    try {
+      await setup(agent);
+      configured.push(agent);
+    } catch (error) {
+      // One failing agent (for example a malformed user config) must not
+      // abort the remaining agents. Every failure is reported below.
+      failed.push({
+        agent,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (failed.length === 0) {
+    console.log(`✅ Setup complete for all ${configured.length} supported agents.`);
+  } else {
+    for (const { agent, message } of failed) {
+      console.log(`❌ ${agent}: ${message}`);
+    }
+    console.log(
+      `❌ Setup failed for ${failed.length} of ${agents.length} supported agents. ` +
+        `${configured.length} configured.`
+    );
+  }
+
+  return { configured, failed };
+}
+
 export interface SetupRefreshOptions {
   mode?: 'detected' | 'all';
   agent?: SupportedAgent;
@@ -1303,7 +1349,7 @@ function formatAgentRow(
 }
 
 export function listAgents(): void {
-  console.log('🧠 Available Agents\n');
+  console.log('🧠 Agent Compatibility\n');
 
   for (const { agent, name, capabilities, skill } of getAgentCapabilityMatrix()) {
     console.log(formatAgentRow(agent, name, capabilities, skill));

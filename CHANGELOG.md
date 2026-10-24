@@ -27,6 +27,10 @@ Example:
 
 ## [Unreleased]
 
+### Changed
+
+- Changed bare `mind setup` to configure all supported agent integrations; moved the compatibility matrix to `mind setup compatibility` and kept `mind setup refresh` for detected integrations. A failing agent no longer aborts the run: its error is reported and the remaining agents still run, and the success summary is printed only when every agent succeeds.
+
 ### Added
 
 - Added `CONTRIBUTING.md` and `docs/mind-philosophy.md` to document contribution standards and Mind's purpose and product principles, with entry points from the README, docs index, and `AGENTS.md`.
@@ -140,6 +144,8 @@ Example:
 
 ### Fixed
 
+- Fixed invalid `from`/`to` date bounds failing differently by path: every date-filtering surface now throws `Invalid date value: <raw>` instead of the MCP in-memory filters silently returning no rows, so store queries, `checkpoint_query`, and `memory_query` (with or without `search`) report the same error.
+- Fixed `checkpoint_query` and `memory_query` date-range filtering on hosts with non-UTC local timezones. Zone-less `changed_at` values are parsed as UTC, and every `from`/`to` bound resolves through one shared parser to the same whole-second UTC instant as `changed_at`, which is stored at second precision: a date-only bound covers the full UTC day (`from` at 00:00:00, `to` at 23:59:59), a time-bearing bound is honored at that instant instead of being widened (zone-less values such as `2026-10-24T12:00:00` are read as UTC, explicit offsets such as `2026-10-24 12:00:00+02:00` are converted to UTC, and fractional seconds floor to the whole second, so `12:00:00.500` resolves to `12:00:00`), and `from`/`to` are symmetric. The store SQL path and the MCP filter use the same parser and the same whole-second resolution, so the same bounds select the same rows on both paths whatever the host timezone. This is a deliberate semantic alignment: date-only bounds are UTC dates, not host-local days.
 - Fixed the agent-memory benchmark isolation gate rejecting valid `mind-current` environments during a cold start. `verifyIsolation` now polls `/api/skill` a bounded number of times until the exact allowlisted surface appears, evaluates the skills allowlist and skill-first checks against that final listing, and saves it as evidence; a skill that never appears still fails closed with its id.
 - Fixed clearing an in-space query so stale search results are removed without another search request and a matching memory list is reused.
 - Fixed long in-space search result lists being clipped by the fixed-height space view: results now scroll inside their own region while the space header, shared filter bar, and result status stay visible, with no page scroll. At phone widths the tag select pairs with the tier chips and confidence pairs with embeddings, so the results body keeps at least 120 px at 320x700 instead of collapsing to 111 px.
