@@ -38,7 +38,7 @@ jobs:
         run: bun test test/ web/test
 
   benchmark-agent-memory:
-    name: Benchmark (agent-memory)
+    name: Benchmark tests (agent-memory)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     defaults:
