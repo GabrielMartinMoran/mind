@@ -119,14 +119,21 @@ checkout `mind` binary. Historical and `no-memory` environments fail if the
 skill or its activation appears. A single failure throws and the run is
 **rejected** (raw dumps saved as evidence).
 
-Two OpenCode 2.0.28 mechanics are handled explicitly: the `mcp list` check
-retries a bounded number of times because the managed background service loads
-MCP config asynchronously after boot (the first call can report "No MCP servers
-configured" while the server connects moments later), and the SDK host is handed
-the inline config directly (`config.content`) because — unlike the CLI — the
-in-process host does not read `OPENCODE_CONFIG_CONTENT` on its own. MCP tools are
-invoked through the code-mode `execute` tool, so the driver unwraps
-`state.metadata.toolCalls` / `state.input.code` to count real `mind.*` calls.
+Three OpenCode 2.0.28 mechanics are handled explicitly. The managed background
+service loads MCP config and registers filesystem skills asynchronously after
+boot, so the `mcp list` check retries a bounded number of times for every
+condition: the first call can report "No MCP servers configured" before the
+server registers. The `/api/skill` discovery check retries a bounded number of
+times only under `mind-current`, where an installed skill can be omitted on the
+first call; historical conditions and `no-memory` query it once and expect
+`mind-management` to be absent. The gate evaluates the skills allowlist and the
+skill-first check against the final `/api/skill` listing and saves that listing
+as evidence; under `mind-current`, a skill that never appears still fails
+closed. The SDK host is handed the inline config directly
+(`config.content`) because — unlike the CLI — the in-process host does not read
+`OPENCODE_CONFIG_CONTENT` on its own. MCP tools are invoked through the
+code-mode `execute` tool, so the driver unwraps `state.metadata.toolCalls` /
+`state.input.code` to count real `mind.*` calls.
 
 Credential env values are redacted at write time: worker `job.json` files (and the
 raw A2 result dump) never contain a provider key; the real value reaches the child
@@ -618,21 +625,31 @@ Both the root project and this subproject use frozen installs and a blocking
 high-severity audit in CI (`.github/workflows/main.yml`). Neither gate is
 suppressed with `|| true` or `continue-on-error`.
 
-Measured on 2026-10-21 with Bun 1.3.14:
+Measured on 2026-10-24 with Bun 1.3.14:
 
-- Root: `bun audit --audit-level=high` exits 0 with “No vulnerabilities found”.
+- Root: `bun audit --audit-level=high` exits 0 with “No vulnerabilities found”,
+  and the default `bun audit` reports the same clean graph.
 - Benchmark: `bun audit --audit-level=high` exits 0, so no critical or high
-  advisory remains. The full `bun audit` still reports two lower-severity
-  transitive advisories through the pinned `@opencode/sdk@2.0.28`:
-  - `sprintf-js <=1.1.3` (moderate, GHSA-hp3w-g68c-fv3c), path
-    `@opencode/sdk › @opencode/core › gray-matter › js-yaml › argparse › sprintf-js`;
+  advisory remains. The default `bun audit` still reports one low transitive
+  advisory through the pinned `@opencode/sdk@2.0.28`:
   - `@ai-sdk/provider-utils >=4.0.0-beta.10 <4.0.33` (low,
     GHSA-866g-f22w-33x8), path
     `@opencode/sdk › @opencode/core › @ai-sdk/vercel › @ai-sdk/openai-compatible › @ai-sdk/provider-utils`.
 
-The fix requires changing the pinned SDK or its transitive graph, which is out of
-scope for the benchmark. The high gate passes, but the dependency graph is **not**
-vulnerability-free; do not describe it as clean beyond the critical/high gate.
+The high advisory is cleared by a flat top-level `zod` override, `4.6.7`, in
+this subproject's `package.json` (GHSA-mrhx-c7xc-m3w5, which affected zod
+before 4.6.6). The override is declared once at the top level rather than per
+parent: the subproject uses `lockfileVersion` 1, so a single entry applies to
+every consumer and no per-parent `zod` copies remain in `bun.lock`. One
+consequence is that `gitlab-ai-provider`, which declares zod 3, also resolves to
+zod 4.6.7. The free unit, contract, and experiment suites and the no-paid smoke
+path passed with that resolution; no live GitLab provider call was exercised, so
+GitLab provider behavior under zod 4 remains unverified.
+
+The remaining low advisory requires changing the pinned SDK or its transitive
+graph, which is out of scope for the benchmark. The high gate passes, but the
+dependency graph is **not** vulnerability-free; do not describe it as clean
+beyond the critical/high gate.
 
 ## Cleanup
 

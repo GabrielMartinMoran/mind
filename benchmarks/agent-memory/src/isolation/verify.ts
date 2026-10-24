@@ -70,12 +70,16 @@ export interface VerifyIsolationInput {
   readonly allowedPluginPrefix?: string;
   readonly allowedAgents?: readonly string[];
   readonly allowedCommands?: readonly string[];
-  /** Injectable sleep for the `mcp list` warm-up retry (tests pass a no-op). */
+  /** Injectable sleep for the warm-up retries (tests pass a no-op). */
   readonly sleep?: (ms: number) => Promise<void>;
   /** Bounded number of `mcp list` attempts before the check fails closed. */
   readonly mcpListAttempts?: number;
   /** Delay between `mcp list` attempts (ms). */
   readonly mcpListRetryMs?: number;
+  /** Bounded number of `/api/skill` attempts before the check fails closed. */
+  readonly skillListAttempts?: number;
+  /** Delay between `/api/skill` attempts (ms). */
+  readonly skillListRetryMs?: number;
 }
 
 /**
@@ -87,6 +91,16 @@ export interface VerifyIsolationInput {
  */
 const MCP_LIST_ATTEMPTS = 12;
 const MCP_LIST_RETRY_MS = 750;
+
+/**
+ * OpenCode registers filesystem skills asynchronously after the managed service
+ * boots, so the first `/api/skill` call can omit an installed skill. Poll a
+ * bounded number of times: a skill that never appears still fails closed with
+ * the missing id, and the final listing is the snapshot saved as evidence and
+ * checked.
+ */
+const SKILL_LIST_ATTEMPTS = 12;
+const SKILL_LIST_RETRY_MS = 750;
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise(resolve => {
@@ -182,8 +196,20 @@ export async function verifyIsolation(input: VerifyIsolationInput): Promise<Isol
   const agents = await run('api-agent', ['api', 'get', '/api/agent']);
   checks.push(checkAllowlisted('agents', agents, input.allowedAgents ?? []));
 
-  const skills = await run('api-skill', ['api', 'get', '/api/skill']);
   const skillFirst = engineForCondition(input.condition) === 'current';
+  const skillAttempts = input.skillListAttempts ?? SKILL_LIST_ATTEMPTS;
+  const skillRetryMs = input.skillListRetryMs ?? SKILL_LIST_RETRY_MS;
+  let skills = await run('api-skill', ['api', 'get', '/api/skill']);
+  for (
+    let attempt = 1;
+    skillFirst &&
+    attempt < skillAttempts &&
+    inspectSkillSurface(skills, SKILL_FIRST_SKILLS).missing.length > 0;
+    attempt++
+  ) {
+    await sleep(skillRetryMs);
+    skills = await run('api-skill', ['api', 'get', '/api/skill']);
+  }
   checks.push(checkAllowlisted('skills', skills, skillFirst ? SKILL_FIRST_SKILLS : BUILTIN_SKILLS));
 
   const commands = await run('api-command', ['api', 'get', '/api/command']);
@@ -432,6 +458,25 @@ function checkEmptyList(name: string, dump: RawDump, allowed: readonly string[])
   return { name, ok: false, detail: `unexpected entries: ${ids.join(', ')}` };
 }
 
+interface SkillSurface {
+  readonly expected: readonly string[];
+  readonly discovered: readonly string[];
+  readonly missing: readonly string[];
+  readonly extra: readonly string[];
+}
+
+/** Exact allowlist comparison for a `/api/skill` snapshot. */
+function inspectSkillSurface(dump: RawDump, allowed: readonly string[]): SkillSurface {
+  const expected = [...allowed].sort();
+  const discovered = [...new Set(parseApiList(dump.stdout).map(idOf))].sort();
+  return {
+    expected,
+    discovered,
+    missing: expected.filter(id => !discovered.includes(id)),
+    extra: discovered.filter(id => !expected.includes(id)),
+  };
+}
+
 function checkAllowlisted(name: string, dump: RawDump, allowed: readonly string[]): IsolationCheck {
   const items = parseApiList(dump.stdout);
   const ids = items.map(idOf);
@@ -625,18 +670,17 @@ function checkSkillFirst(input: SkillFirstCheckInput): IsolationCheck {
     };
   }
 
-  const expected = [...SKILL_FIRST_SKILLS].sort();
-  const discovered = [...new Set(parseApiList(input.skills.stdout).map(idOf))].sort();
-  const missing = expected.filter(id => !discovered.includes(id));
-  const extra = discovered.filter(id => !expected.includes(id));
-  if (missing.length > 0 || extra.length > 0) {
+  const surface = inspectSkillSurface(input.skills, SKILL_FIRST_SKILLS);
+  if (surface.missing.length > 0 || surface.extra.length > 0) {
     const problems: string[] = [];
-    if (missing.length > 0) problems.push(`missing [${missing.join(', ')}]`);
-    if (extra.length > 0) problems.push(`unexpected [${extra.join(', ')}]`);
+    if (surface.missing.length > 0) problems.push(`missing [${surface.missing.join(', ')}]`);
+    if (surface.extra.length > 0) problems.push(`unexpected [${surface.extra.join(', ')}]`);
     return {
       name,
       ok: false,
-      detail: `discovered skills must be exactly [${expected.join(', ')}]; ${problems.join('; ')}`,
+      detail:
+        `discovered skills must be exactly [${surface.expected.join(', ')}]; ` +
+        problems.join('; '),
     };
   }
 

@@ -64,32 +64,32 @@ export function createSpaceRepository(db: Database, fts: FtsHelper): SpaceReposi
   }
 
   function listSpaces(filter?: { tag?: string; includeHidden?: boolean }): SpaceSummary[] {
-    let sql: string;
-    let params: any[];
-
     const includeHidden = filter?.includeHidden ?? false;
+    const tagJoin = filter?.tag
+      ? 'JOIN space_tags st ON st.space_name = s.name AND st.tag = ?'
+      : '';
+    const params = filter?.tag ? [normalizeTag(filter.tag)] : [];
 
-    if (filter?.tag) {
-      const normalizedFilter = normalizeTag(filter.tag);
-      sql = `
+    const sql = `
                 SELECT s.id, s.name, s.description, s.hidden,
-                       (SELECT COUNT(*) FROM memories m WHERE m.space_id = s.id) AS memory_count
+                       COALESCE(counts.memory_count, 0) AS memory_count,
+                       COALESCE(counts.t1_count, 0) AS t1_count,
+                       COALESCE(counts.t2_count, 0) AS t2_count,
+                       COALESCE(counts.t3_count, 0) AS t3_count
                 FROM spaces s
-                JOIN space_tags st ON st.space_name = s.name AND st.tag = ?
+                ${tagJoin}
+                LEFT JOIN (
+                    SELECT space_id,
+                           COUNT(*) AS memory_count,
+                           SUM(CASE WHEN tier = 1 THEN 1 ELSE 0 END) AS t1_count,
+                           SUM(CASE WHEN tier = 2 THEN 1 ELSE 0 END) AS t2_count,
+                           SUM(CASE WHEN tier = 3 THEN 1 ELSE 0 END) AS t3_count
+                    FROM memories
+                    GROUP BY space_id
+                ) counts ON counts.space_id = s.id
                 ${includeHidden ? '' : 'WHERE s.hidden = 0'}
                 ORDER BY s.name
             `;
-      params = [normalizedFilter];
-    } else {
-      sql = `
-                SELECT s.id, s.name, s.description, s.hidden,
-                       (SELECT COUNT(*) FROM memories m WHERE m.space_id = s.id) AS memory_count
-                FROM spaces s
-                ${includeHidden ? '' : 'WHERE s.hidden = 0'}
-                ORDER BY s.name
-            `;
-      params = [];
-    }
 
     const rows = db.query(sql).all(...params) as any[];
     return rows.map(r => ({
@@ -98,6 +98,11 @@ export function createSpaceRepository(db: Database, fts: FtsHelper): SpaceReposi
       hidden: r.hidden === 1,
       tags: getTagsForSpace(r.name),
       memory_count: r.memory_count,
+      tier_counts: {
+        t1: r.t1_count,
+        t2: r.t2_count,
+        t3: r.t3_count,
+      },
     }));
   }
 

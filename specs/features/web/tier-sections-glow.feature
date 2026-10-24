@@ -1,47 +1,23 @@
-@delta-added
-Feature: Tier Sections Cyberpunk Glow
+@web @product/tier-emphasis
+Feature: Tier Section Emphasis
 
-  Scenario: T1 tier heading has red glow underline
-    Given the tier sections are displayed in list view
-    When the T1 heading renders
-    Then the heading should have a red glowing underline
-    And the glow should be 0 0 4px var(--tier1), 0 0 8px rgba(255,123,114,0.5)
-    And the underline should pulse subtly with a 3s animation
+  Tier sections use color plus text, not ambient glow.
 
-  Scenario: T2 tier heading has gold glow underline
-    Given the tier sections are displayed in list view
-    When the T2 heading renders
-    Then the heading should have a gold glowing underline
-    And the glow should be 0 0 4px var(--tier2), 0 0 8px rgba(227,179,65,0.5)
+  @integration
+  Scenario: Tier sections show labels
+    Given memories in T1, T2 and T3
+    When the list renders
+    Then each section shows T1, T2 or T3 text
+    And the tier color is paired with the text
 
-  Scenario: T3 tier heading has blue glow underline
-    Given the tier sections are displayed in list view
-    When the T3 heading renders
-    Then the heading should have a blue glowing underline
-    And the glow should be 0 0 4px var(--tier3), 0 0 8px rgba(121,192,255,0.5)
+  @integration
+  Scenario: Active tier section uses a quiet accent
+    Given a tier section is active
+    Then it shows an accent edge or label emphasis
+    And no pulse animation plays
 
-  Scenario: Memory item glows on hover
-    Given a memory item is displayed in a tier list
-    When the user hovers over the memory item
-    Then the item should gain a cyan border glow
-    And the glow should be 0 0 4px var(--neon-cyan), 0 0 8px rgba(0,240,255,0.25)
-    And the transition should take 150ms
-
-  Scenario: Active memory item has persistent glow
-    Given a memory is currently selected
-    When the memory list item renders
-    Then the active item should have a persistent glow border
-    And the glow should be cyan at 60% opacity
-    And the glow should pulse subtly
-
-  Scenario: Memory item tags glow on hover
-    Given a memory item has tags displayed
-    When the user hovers over the memory item
-    Then each tag should have a subtle glow matching the current tier color
-    And the tag glow should fade in over 100ms
-
-  Scenario: Empty tier section has dimmed text
-    Given a tier section has no memories
-    When the empty tier message renders
-    Then the text should be dimmed (muted color)
-    And should not have any glow effects
+  @integration
+  Scenario: Tier badge is readable
+    Given a tier badge renders
+    Then it has text and a border
+    And its contrast meets the design-system thresholds

@@ -1,5 +1,22 @@
+/* HTML `hidden` must win over author display rules such as `.filter-field`. */
+[hidden] {
+  display: none !important;
+}
+
 .hidden {
   display: none !important;
+}
+
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .editable {
@@ -16,6 +33,46 @@
   font-size: 13px;
 }
 
+.text-secondary {
+  color: var(--text-secondary);
+}
+
+.text-quiet {
+  color: var(--text-quiet);
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-12);
+}
+
+.measure {
+  max-width: var(--measure);
+}
+
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.full-width {
+  width: 100%;
+}
+
 /* ── Reduced motion (global) ────────────────────────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -24,5 +81,6 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

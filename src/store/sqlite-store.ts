@@ -11,7 +11,7 @@ import { withAutoExport } from '../sync/auto-export-store';
 import type { StatusResult, Tier } from '../types';
 
 import { openDatabaseWithSafeMigrations } from './migration-safety';
-import type { MindStore } from './mind-store';
+import type { MindStore, SearchOptions, SearchPageResult } from './mind-store';
 import {
   createLinkRepository,
   createLogRepository,
@@ -248,6 +248,22 @@ export function createSqliteStore(dbPath: string): MindStore {
     db.close();
   }
 
+  /**
+   * Run the unified pipeline once, apply the post-fusion confidence filter and
+   * pagination, and report the total admitted count before slicing. Keeping
+   * this in one place preserves ranking order and lets every surface share it.
+   */
+  async function searchPage(query: string, filter?: SearchOptions): Promise<SearchPageResult> {
+    const ranked = await searchRepo.searchMemories(query, filter);
+    const filtered = filter?.confidence
+      ? ranked.filter(result => result.confidence === filter.confidence)
+      : ranked;
+    return {
+      results: paginateSearchResults(filtered, filter?.limit, filter?.offset),
+      total: filtered.length,
+    };
+  }
+
   const store: MindStore = {
     // Spaces
     createSpace: (name, description, tags) => spaceRepo.createSpace(name, description, tags),
@@ -280,6 +296,7 @@ export function createSqliteStore(dbPath: string): MindStore {
     removeMemoryTag: (id, tag) => tagRepo.removeMemoryTag(id, tag),
     setMemoryTags: (id, tags) => tagRepo.setMemoryTags(id, tags),
     listAllTags: () => tagRepo.listAllTags(),
+    listMemoryTags: spaceName => tagRepo.listMemoryTags(spaceName),
 
     // Tiers
     promote: id => memoryRepo.promote(id),
@@ -293,10 +310,8 @@ export function createSqliteStore(dbPath: string): MindStore {
     getLinks: memoryId => linkRepo.getLinks(memoryId),
 
     // Search (delegated to SearchRepository)
-    search: (query, filter) =>
-      searchRepo
-        .searchMemories(query, filter)
-        .then(results => paginateSearchResults(results, filter?.limit, filter?.offset)),
+    search: (query, filter) => searchPage(query, filter).then(page => page.results),
+    searchPage,
     searchFallback: (query, filter) => searchRepo.searchFallback(query, filter),
     queryMemories: filter => searchRepo.queryMemories(filter),
     queryMemoriesCount: filter => searchRepo.queryMemoriesCount(filter),

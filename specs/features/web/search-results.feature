@@ -1,56 +1,72 @@
 @web @product/search-results
 Feature: Search Results
 
-  Search results display with grouping and navigation.
+  In-space search results display with ranking context and navigation.
 
   Background:
     Given the web application is loaded
-    And search results are available
+    And a space "projects/test" is open
 
-  Rule: Result grouping
+  Rule: Result layout
 
-    Scenario: Results are grouped by space
-      When searching for "test"
-      Then results from the same space are grouped together
-      And each group shows the space name
+    @integration
+    Scenario: Results are a single flat list
+      When searching for "test" in the space
+      Then results are shown in one list
+      And no global space grouping is shown
+      And the space context remains visible
 
-    Scenario: Multiple space groups shown
-      Given results exist in "projects/mind" and "projects/other"
-      When searching
-      Then separate groups are shown for each space
-
-  Rule: Result display
-
-    Scenario: Result shows memory name and space
-      Given a search result for "my-memory" in "projects/test"
+    @integration
+    Scenario: Result shows memory name and tier
+      Given a search result for "my-memory" in tier 2
       When the result displays
       Then it shows the memory name "my-memory"
-      And it shows the space "projects/test"
+      And a T2 badge is shown
 
-    Scenario: Result shows tier badge
-      Given a search result for a T2 memory
-      When the result displays
-      Then a T2 badge is shown
-
+    @integration
     Scenario: Result shows content preview
       Given a search result with matching content
       When the result displays
       Then a content preview is shown with matched terms
 
+    @integration
     Scenario: Highlight matched terms in preview
       When displaying search results
       Then matched terms are highlighted
-      And the highlight uses cyan glow
+      And the highlight is implemented without injecting unescaped HTML
+
+    @integration
+    Scenario: Result shows confidence and methods
+      Given a search result with confidence "high" and methods "trigram, token_set"
+      When the result displays
+      Then a "High confidence" label is shown
+      And the methods are shown as human-readable labels
+
+    @integration
+    Scenario: Result shows score as query-relative
+      Given a search result with score 0.82
+      When the result displays
+      Then the score is shown as query-relative
+      And the copy does not imply cross-query calibration
 
   Rule: Navigation
 
-    Scenario: Click navigates to space and memory
-      Given a search result for "my-memory" in "projects/test"
+    @integration
+    Scenario: Click navigates to the memory and keeps the query
+      Given a search result for "my-memory"
       When clicking the result
-      Then navigation goes to the space
-      And the memory panel opens
+      Then the memory panel opens
+      And the URL keeps the space query
 
-    Scenario: Search while in space searches within space
-      Given viewing space "projects/test"
-      When searching for "term"
-      Then results are filtered to that space
+    @integration
+    Scenario: Middle click opens the memory URL
+      Given a search result card
+      When the user middle-clicks the card
+      Then the browser opens the memory URL
+
+    @integration
+    Scenario: Clear search returns to the list
+      Given a search is active
+      When the user clears the query
+      Then the memory list is shown
+      And the search results view is hidden

@@ -94,6 +94,27 @@ function getMindScriptPath(): string {
   return 'mind';
 }
 
+/**
+ * Builds the `claude mcp add` argv. The `--env` flag follows the server name
+ * so the variadic environment list is terminated by the `--` separator.
+ */
+export function buildClaudeMcpAddArgs(mindPath: string): string[] {
+  return [
+    'mcp',
+    'add',
+    '--transport',
+    'stdio',
+    '--scope',
+    'user',
+    'mind',
+    '--env',
+    'MIND_AGENT=claude-code',
+    '--',
+    mindPath,
+    'mcp',
+  ];
+}
+
 export function tryClaudeMcpAdd(mindPath: string): { ok: boolean; reason?: string } {
   // Check if claude CLI is available
   try {
@@ -107,11 +128,11 @@ export function tryClaudeMcpAdd(mindPath: string): { ok: boolean; reason?: strin
 
   // Try claude mcp add
   try {
-    const result = spawnSync(
-      'claude',
-      ['mcp', 'add', '--transport', 'stdio', '--scope', 'user', 'mind', '--', mindPath, 'mcp'],
-      { encoding: 'utf-8', shell: false, stdio: 'pipe' }
-    );
+    const result = spawnSync('claude', buildClaudeMcpAddArgs(mindPath), {
+      encoding: 'utf-8',
+      shell: false,
+      stdio: 'pipe',
+    });
 
     if (result.status === 0) {
       return { ok: true };
@@ -214,6 +235,31 @@ function jsonFileHasMindMcp(filePath: string): boolean {
   const mcpServers = config.mcpServers as Record<string, unknown> | undefined;
 
   return Boolean(mcp?.mind || mcpServers?.mind);
+}
+
+/**
+ * Extracts the existing string environment entries from the Codex
+ * `[mcp_servers.mind]` stanza (inline table or `[mcp_servers.mind.env]`
+ * subtable, both normalized by the parser). Non-string scalars are stringified
+ * because environment values are strings in the emitted TOML.
+ */
+function readCodexEnvironment(config: Record<string, unknown>): Record<string, string> {
+  const mcpServers = config.mcp_servers as Record<string, unknown> | undefined;
+  const mind = mcpServers?.mind as Record<string, unknown> | undefined;
+  const env = mind?.env;
+  if (!env || typeof env !== 'object' || Array.isArray(env)) {
+    return {};
+  }
+
+  const environment: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === 'string') {
+      environment[key] = value;
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      environment[key] = String(value);
+    }
+  }
+  return environment;
 }
 
 function tomlFileHasMindMcp(filePath: string): boolean {
@@ -961,7 +1007,7 @@ export async function runSetup(
     try {
       merged = deepMerge(
         isJsonc ? readJsonc(readPath) : readJson(readPath),
-        cfg.build(mcpUrl, mindPath) as Record<string, unknown>
+        cfg.build(mcpUrl, mindPath, agent) as Record<string, unknown>
       );
     } catch (err) {
       if (err instanceof MalformedConfigError) {
@@ -1016,27 +1062,42 @@ export async function runSetup(
     // and comments. If no mind stanza exists, the snippet is appended.
     // Malformed existing TOML throws MalformedConfigError and the file
     // is left byte-for-byte unchanged.
-    readTomlOrThrow(cfg.configPath);
+    const parsedConfig = readTomlOrThrow(cfg.configPath);
 
     const current = readText(cfg.configPath);
-    const snippet = cfg.build(mcpUrl, mindPath) as string;
-    const bounds = findTomlTableStanzaBounds(current, 'mcp_servers.mind');
+    const snippet = cfg.build(
+      mcpUrl,
+      mindPath,
+      agent,
+      readCodexEnvironment(parsedConfig)
+    ) as string;
+
+    // A `[mcp_servers.mind.env]` subtable is a valid table form for the same
+    // environment. Fold it into the inline `env` table so replacing the main
+    // stanza cannot leave a duplicate definition behind.
+    const envBounds = findTomlTableStanzaBounds(current, 'mcp_servers.mind.env');
+    const base =
+      envBounds === null
+        ? current
+        : current.slice(0, envBounds.start) + current.slice(envBounds.end);
+
+    const bounds = findTomlTableStanzaBounds(base, 'mcp_servers.mind');
 
     let nextText: string;
     if (bounds === null) {
-      nextText = current.length === 0 ? snippet.replace(/^\n+/, '') : `${current}${snippet}`;
+      nextText = base.length === 0 ? snippet.replace(/^\n+/, '') : `${base}${snippet}`;
     } else {
       // The snippet carries a leading separator (`\n`) for the append
       // path. When we slice the existing text, the separator lives
       // BEFORE `bounds.start` and is therefore NOT part of the slice.
-      // Normalize both sides by stripping leading whitespace before we
-      // decide whether a rewrite would change anything.
-      const existingStanza = current.slice(bounds.start, bounds.end);
-      const normalize = (s: string): string => s.replace(/^\s+/, '');
+      // Normalize both sides by stripping leading/trailing whitespace before
+      // we decide whether a rewrite would change anything.
+      const existingStanza = base.slice(bounds.start, bounds.end);
+      const normalize = (s: string): string => s.replace(/^\s+/, '').replace(/\s+$/, '');
       nextText =
         normalize(existingStanza) === normalize(snippet)
-          ? current
-          : current.slice(0, bounds.start) + snippet + current.slice(bounds.end);
+          ? base
+          : base.slice(0, bounds.start) + snippet + base.slice(bounds.end);
     }
 
     if (nextText !== current) {

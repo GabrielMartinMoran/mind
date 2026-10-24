@@ -6,10 +6,12 @@ import { memoryRoutes } from './routes/memories';
 import { searchRoutes } from './routes/search';
 import { spaceRoutes } from './routes/spaces';
 import { statusRoutes } from './routes/status';
+import { tagRoutes } from './routes/tags';
 import type { RouteContext, RouteDefinition } from './routes/types';
 
 const ALL_ROUTES: RouteDefinition[] = [
   ...spaceRoutes,
+  ...tagRoutes,
   ...memoryRoutes,
   ...searchRoutes,
   ...statusRoutes,

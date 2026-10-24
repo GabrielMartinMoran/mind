@@ -10,12 +10,19 @@ export interface Space {
   updated_at: string;
 }
 
+export interface SpaceTierCounts {
+  t1: number;
+  t2: number;
+  t3: number;
+}
+
 export interface SpaceSummary {
   name: string;
   description: string;
   tags: string[];
   hidden: boolean;
   memory_count: number;
+  tier_counts: SpaceTierCounts;
 }
 
 export interface Memory {
@@ -89,6 +96,8 @@ export interface SearchFilter {
   space?: string;
   tag?: string;
   tier?: Tier;
+  /** Inclusive multi-tier restriction. Takes precedence over `tier` when non-empty. */
+  tiers?: Tier[];
 }
 
 export interface SearchResult {
@@ -110,6 +119,8 @@ export interface MemoryQueryFilter {
   space?: string;
   tag?: string;
   tier?: Tier;
+  /** Inclusive multi-tier restriction. Takes precedence over `tier` when non-empty. */
+  tiers?: Tier[];
   from?: string;
   to?: string;
   limit?: number;

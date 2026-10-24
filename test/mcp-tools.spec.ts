@@ -741,6 +741,8 @@ describe('MCP Spaces Tools', () => {
     const res = await tools.space_list.handler({});
 
     expect(res.spaces.length).toBe(2);
+    expect(res.spaces[0]!.tier_counts).toEqual({ t1: 0, t2: 0, t3: 0 });
+    expect(res.spaces[0]!.memory_count).toBe(0);
   });
 
   test('space_get should return space details', async () => {

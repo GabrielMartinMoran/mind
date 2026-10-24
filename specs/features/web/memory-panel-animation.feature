@@ -1,41 +1,31 @@
-@delta-added
-Feature: Memory Panel Slide Animation
+@web @product/memory-panel-motion
+Feature: Memory Panel Motion
 
-  Scenario: Memory panel slides in from right when memory selected
-    Given a memory exists in the current space
-    When the user clicks on a memory item
-    Then the memory panel should slide in from the right edge
-    And the animation should take 300ms with ease-out-expo timing
-    And the panel should start fully transparent and off-screen right
-    And the panel should end fully visible at its resting position
+  The memory panel is a modal dialog with a short state transition and reduced-motion support.
 
-  Scenario: Memory panel slides out to right when closed
-    Given the memory panel is open and visible
-    When the user clicks the close button or presses Escape
-    Then the memory panel should slide out toward the right edge
-    And the exit animation should take 250ms (faster than enter)
-    And the panel should fade out simultaneously during slide
+  @integration
+  Scenario: Panel opens as a dialog
+    When a memory is selected
+    Then the panel opens with showModal
+    And focus moves inside
+    And the transition uses the base motion token
 
-  Scenario: Memory panel has neon cyan glow border on left edge
-    Given the memory panel is visible
-    Then the left border of the panel should have a vertical cyan glow line
-    And the glow should be 0 0 8px var(--neon-cyan), 0 0 16px rgba(0,240,255,0.3)
-    And the glow should pulse subtly every 4 seconds
+  @integration
+  Scenario: Panel closes and returns focus
+    Given the memory panel is open
+    When the user closes it
+    Then it closes
+    And focus returns to the card that opened it
 
-  Scenario: Memory panel content fades in after panel enters
-    Given the memory panel is animating in
-    When the panel has traveled 50% of the animation distance
-    Then the inner content (title, tier badge, content) should begin fading in
-    And the content fade should start at 0% opacity and reach 100% by panel arrival
+  @integration
+  Scenario: Reduced motion
+    Given prefers-reduced-motion is reduce
+    When the panel opens or closes
+    Then no animation plays
+    And the panel appears or disappears immediately
 
-  Scenario: Memory panel does not animate on page load
-    Given the memory panel is initially hidden
-    When the page first loads
-    Then the memory panel should remain hidden until a memory is selected
-
-  Scenario: Rapid memory selection queues animations correctly
-    Given the memory panel is animating in for memory A
-    When the user clicks memory B before the animation completes
-    Then the panel should immediately reverse the current animation
-    And then play the enter animation for memory B
-    And no animation state should be lost or glitched
+  @integration
+  Scenario: No neon border
+    Given the panel is visible
+    Then the panel has no neon glow or pulsing border
+    And its boundary uses the strong line token

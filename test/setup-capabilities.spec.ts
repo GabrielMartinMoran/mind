@@ -16,6 +16,7 @@ import { getSupportedAgents, type SupportedAgent } from '../src/cli/capabilities
 import { executeCommand } from '../src/cli/command-executor';
 import { renderMemoryProtocol } from '../src/cli/memory-protocol';
 import {
+  buildClaudeMcpAddArgs,
   getAgentCapabilityMatrix,
   getAgentCapabilities,
   isAgentIntegrationDetected,
@@ -23,6 +24,7 @@ import {
   runSetup,
   runSetupRefresh,
 } from '../src/cli/setup';
+import { readTomlOrThrow } from '../src/setup/safe-config';
 import { installMindManagementSkill } from '../src/setup/skill-installation';
 
 import { mockedLogger } from './mocks/mocked-logger';
@@ -254,7 +256,7 @@ describe('Setup capability model', () => {
     expect(config.mcpServers.mind.type).toBe('stdio');
     expect(config.mcpServers.mind.command).toEqual(expect.any(String));
     expect(config.mcpServers.mind.args).toEqual(['mcp']);
-    expect(config.mcpServers.mind.env).toEqual({});
+    expect(config.mcpServers.mind.env).toEqual({ MIND_AGENT: 'cursor' });
 
     const hooksPath = join(tempHome, '.cursor', 'hooks.json');
     const hooksConfig = JSON.parse(readFileSync(hooksPath, 'utf-8')) as Record<string, any>;
@@ -368,7 +370,7 @@ describe('Setup capability model', () => {
     expect(config.mcpServers.mind.type).toBe('stdio');
     expect(config.mcpServers.mind.command).toEqual(expect.any(String));
     expect(config.mcpServers.mind.args).toEqual(['mcp']);
-    expect(config.mcpServers.mind.env).toEqual({});
+    expect(config.mcpServers.mind.env).toEqual({ MIND_AGENT: 'windsurf' });
     expect(existsSync(join(tempHome, '.windsurf', 'mcp.json'))).toBe(false);
 
     const capabilities = getAgentCapabilities('windsurf');
@@ -412,7 +414,7 @@ describe('Setup capability model', () => {
     expect(config.mcpServers.mind.type).toBe('stdio');
     expect(config.mcpServers.mind.command).toEqual(expect.any(String));
     expect(config.mcpServers.mind.args).toEqual(['mcp']);
-    expect(config.mcpServers.mind.env).toEqual({});
+    expect(config.mcpServers.mind.env).toEqual({ MIND_AGENT: 'pi' });
 
     const agentsMd = readFileSync(agentsPath, 'utf-8');
     expect(agentsMd).toContain('# Existing Pi Instructions');
@@ -579,7 +581,7 @@ describe('Setup capability model', () => {
     expect(config.mcpServers.mind.type).toBe('stdio');
     expect(config.mcpServers.mind.command).toEqual(expect.any(String));
     expect(config.mcpServers.mind.args).toEqual(['mcp']);
-    expect(config.mcpServers.mind.env).toEqual({});
+    expect(config.mcpServers.mind.env).toEqual({ MIND_AGENT: 'claude-code' });
     expect(config.hooks).toBeUndefined();
   });
 
@@ -622,7 +624,7 @@ describe('Setup capability model', () => {
     expect(mergedConfig.mcpServers.mind.type).toBe('stdio');
     expect(mergedConfig.mcpServers.mind.command).toEqual(expect.any(String));
     expect(mergedConfig.mcpServers.mind.args).toEqual(['mcp']);
-    expect(mergedConfig.mcpServers.mind.env).toEqual({});
+    expect(mergedConfig.mcpServers.mind.env).toEqual({ MIND_AGENT: 'claude-code' });
 
     const claudeMd = readFileSync(claudeMdPath, 'utf-8');
     expect(claudeMd).toContain('# Custom Intro');
@@ -663,7 +665,7 @@ describe('Setup capability model', () => {
     expect(claudeConfig.mcpServers.mind.type).toBe('stdio');
     expect(claudeConfig.mcpServers.mind.command).toEqual(expect.any(String));
     expect(claudeConfig.mcpServers.mind.args).toEqual(['mcp']);
-    expect(claudeConfig.mcpServers.mind.env).toEqual({});
+    expect(claudeConfig.mcpServers.mind.env).toEqual({ MIND_AGENT: 'claude-code' });
 
     // Test cursor
     const cursorDir = join(tempHome, '.cursor');
@@ -688,7 +690,7 @@ describe('Setup capability model', () => {
     expect(cursorConfig.mcpServers.mind.type).toBe('stdio');
     expect(cursorConfig.mcpServers.mind.command).toEqual(expect.any(String));
     expect(cursorConfig.mcpServers.mind.args).toEqual(['mcp']);
-    expect(cursorConfig.mcpServers.mind.env).toEqual({});
+    expect(cursorConfig.mcpServers.mind.env).toEqual({ MIND_AGENT: 'cursor' });
 
     // Test windsurf
     const windsurfDir = join(tempHome, '.config', 'devin');
@@ -716,7 +718,7 @@ describe('Setup capability model', () => {
     expect(windsurfConfig.mcpServers.mind.type).toBe('stdio');
     expect(windsurfConfig.mcpServers.mind.command).toEqual(expect.any(String));
     expect(windsurfConfig.mcpServers.mind.args).toEqual(['mcp']);
-    expect(windsurfConfig.mcpServers.mind.env).toEqual({});
+    expect(windsurfConfig.mcpServers.mind.env).toEqual({ MIND_AGENT: 'windsurf' });
 
     // Test gemini-cli
     const geminiDir = join(tempHome, '.gemini');
@@ -744,7 +746,7 @@ describe('Setup capability model', () => {
     expect(geminiConfig.mcpServers.mind.type).toBe('stdio');
     expect(geminiConfig.mcpServers.mind.command).toEqual(expect.any(String));
     expect(geminiConfig.mcpServers.mind.args).toEqual(['mcp']);
-    expect(geminiConfig.mcpServers.mind.env).toEqual({});
+    expect(geminiConfig.mcpServers.mind.env).toEqual({ MIND_AGENT: 'gemini-cli' });
   });
 
   test('repairs dirty Claude managed blocks and removes legacy protocol files', async () => {
@@ -861,7 +863,7 @@ describe('Setup capability model', () => {
     expect(config.mcpServers.mind.type).toBe('stdio');
     expect(config.mcpServers.mind.command).toEqual(expect.any(String));
     expect(config.mcpServers.mind.args).toEqual(['mcp']);
-    expect(config.mcpServers.mind.env).toEqual({});
+    expect(config.mcpServers.mind.env).toEqual({ MIND_AGENT: 'claude-code' });
 
     // Warning about CLI not found
     expect(warnSpy.mock.calls.some(call => String(call[0]).includes('claude CLI not found'))).toBe(
@@ -1262,5 +1264,245 @@ describe('Codex TOML write path safety', () => {
     writeFileSync(configPath, '# TOML file with no mind stanza\n[other]\nkey = "value"\n');
 
     expect(isAgentIntegrationDetected('codex')).toBe(false);
+  });
+});
+
+describe('Setup MIND_AGENT attribution', () => {
+  const IDENTITY_BY_AGENT = [
+    ['opencode', 'opencode'],
+    ['claude-code', 'claude-code'],
+    ['codex', 'codex'],
+    ['cursor', 'cursor'],
+    ['windsurf', 'windsurf'],
+    ['gemini-cli', 'gemini-cli'],
+    ['vscode', 'vscode'],
+    ['antigravity', 'antigravity'],
+    ['pi', 'pi'],
+  ] as const;
+
+  function readMindEntry(agent: string): Record<string, any> {
+    const home = tempHome;
+
+    switch (agent) {
+      case 'opencode': {
+        const config = JSON.parse(
+          readFileSync(join(home, '.config', 'opencode', 'opencode.jsonc'), 'utf-8')
+        ) as Record<string, any>;
+        return config.mcp.mind as Record<string, any>;
+      }
+      case 'claude-code': {
+        const config = JSON.parse(readFileSync(join(home, '.claude.json'), 'utf-8')) as Record<
+          string,
+          any
+        >;
+        return config.mcpServers.mind as Record<string, any>;
+      }
+      case 'codex': {
+        const config = readTomlOrThrow(join(home, '.codex', 'config.toml'));
+        return (config.mcp_servers as Record<string, any>).mind as Record<string, any>;
+      }
+      case 'cursor':
+        return JSON.parse(readFileSync(join(home, '.cursor', 'mcp.json'), 'utf-8')).mcpServers
+          .mind as Record<string, any>;
+      case 'windsurf':
+        return JSON.parse(readFileSync(join(home, '.config', 'devin', 'mcp_config.json'), 'utf-8'))
+          .mcpServers.mind as Record<string, any>;
+      case 'gemini-cli':
+        return JSON.parse(readFileSync(join(home, '.gemini', 'settings.json'), 'utf-8')).mcpServers
+          .mind as Record<string, any>;
+      case 'vscode':
+        return JSON.parse(readFileSync(join(home, '.copilot', 'mcp-config.json'), 'utf-8'))
+          .mcpServers.mind as Record<string, any>;
+      case 'antigravity':
+        return JSON.parse(readFileSync(join(home, '.gemini', 'config', 'mcp_config.json'), 'utf-8'))
+          .mcpServers.mind as Record<string, any>;
+      case 'pi':
+        return JSON.parse(readFileSync(join(home, '.pi', 'agent', 'mcp.json'), 'utf-8')).mcpServers
+          .mind as Record<string, any>;
+      default:
+        throw new Error(`Unknown agent: ${agent}`);
+    }
+  }
+
+  for (const [agent, identity] of IDENTITY_BY_AGENT) {
+    test(`writes MIND_AGENT=${identity} for ${agent}`, async () => {
+      await runSetup(agent);
+
+      const entry = readMindEntry(agent);
+      const environment = (agent === 'opencode' ? entry.environment : entry.env) as Record<
+        string,
+        string
+      >;
+
+      expect(environment.MIND_AGENT).toBe(identity);
+      if (agent === 'opencode') {
+        expect(entry.command[1]).toBe('mcp');
+      } else {
+        expect(entry.args).toEqual(['mcp']);
+      }
+    });
+  }
+
+  test('preserves an existing custom env entry for JSON agents', async () => {
+    const cursorDir = join(tempHome, '.cursor');
+    mkdirSync(cursorDir, { recursive: true });
+    writeFileSync(
+      join(cursorDir, 'mcp.json'),
+      JSON.stringify(
+        {
+          mcpServers: {
+            mind: {
+              type: 'stdio',
+              command: '/old/mind',
+              args: ['mcp'],
+              env: { CUSTOM: 'keep' },
+            },
+          },
+        },
+        null,
+        2
+      )
+    );
+
+    await runSetup('cursor');
+    await runSetup('cursor');
+
+    const config = JSON.parse(readFileSync(join(cursorDir, 'mcp.json'), 'utf-8')) as Record<
+      string,
+      any
+    >;
+    expect(config.mcpServers.mind.env).toEqual({ CUSTOM: 'keep', MIND_AGENT: 'cursor' });
+  });
+
+  test('preserves an existing OpenCode environment entry and uses the environment key', async () => {
+    const opencodeDir = join(tempHome, '.config', 'opencode');
+    mkdirSync(opencodeDir, { recursive: true });
+    writeFileSync(
+      join(opencodeDir, 'opencode.jsonc'),
+      JSON.stringify({ mcp: { mind: { environment: { CUSTOM: 'keep' } } } }, null, 2)
+    );
+
+    await runSetup('opencode');
+    await runSetup('opencode');
+
+    const config = JSON.parse(readFileSync(join(opencodeDir, 'opencode.jsonc'), 'utf-8')) as Record<
+      string,
+      any
+    >;
+    expect(config.mcp.mind.environment).toEqual({ CUSTOM: 'keep', MIND_AGENT: 'opencode' });
+    expect(config.mcp.mind.env).toBeUndefined();
+  });
+
+  test('preserves custom Codex stanza env keys and overwrites MIND_AGENT', async () => {
+    const codexDir = join(tempHome, '.codex');
+    const configPath = join(codexDir, 'config.toml');
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        '# pre-existing user config',
+        '[user_settings]',
+        'theme = "dark"',
+        '',
+        '[mcp_servers.mind]',
+        'command = "/stale/path/to/mind"',
+        'args = ["mcp", "--http"]',
+        'env = { CUSTOM = "keep", MIND_AGENT = "stale" }',
+        '',
+      ].join('\n')
+    );
+
+    await runSetup('codex');
+
+    const config = readTomlOrThrow(configPath);
+    const mind = (config.mcp_servers as Record<string, any>).mind as Record<string, any>;
+    expect(mind.args).toEqual(['mcp']);
+    expect(mind.env).toEqual({ CUSTOM: 'keep', MIND_AGENT: 'codex' });
+
+    const after = readFileSync(configPath, 'utf-8');
+    expect(after).toContain('# pre-existing user config');
+    expect(after).toContain('theme = "dark"');
+    expect(after.split('[mcp_servers.mind]').length - 1).toBe(1);
+  });
+
+  test('folds a legacy Codex env subtable into the stanza without duplicating it', async () => {
+    const codexDir = join(tempHome, '.codex');
+    const configPath = join(codexDir, 'config.toml');
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        '[mcp_servers.mind]',
+        'command = "/stale/path/to/mind"',
+        'args = ["mcp"]',
+        '',
+        '[mcp_servers.mind.env]',
+        'CUSTOM = "keep"',
+        '',
+        '[user_settings]',
+        'theme = "dark"',
+        '',
+      ].join('\n')
+    );
+
+    await runSetup('codex');
+
+    const config = readTomlOrThrow(configPath);
+    const mind = (config.mcp_servers as Record<string, any>).mind as Record<string, any>;
+    expect(mind.env).toEqual({ CUSTOM: 'keep', MIND_AGENT: 'codex' });
+
+    const after = readFileSync(configPath, 'utf-8');
+    expect(after).not.toContain('[mcp_servers.mind.env]');
+    expect(after).toContain('[user_settings]');
+  });
+
+  test('is idempotent for Codex when a custom env key is present', async () => {
+    const codexDir = join(tempHome, '.codex');
+    const configPath = join(codexDir, 'config.toml');
+    mkdirSync(codexDir, { recursive: true });
+    writeFileSync(
+      configPath,
+      [
+        '[mcp_servers.mind]',
+        'command = "/stale/path/to/mind"',
+        'args = ["mcp"]',
+        'env = { CUSTOM = "keep" }',
+        '',
+      ].join('\n')
+    );
+
+    await runSetup('codex');
+    const first = readFileSync(configPath, 'utf-8');
+    const beforeBackups = readdirSync(codexDir).filter(n =>
+      n.startsWith('config.toml.bak.')
+    ).length;
+
+    await runSetup('codex');
+    const second = readFileSync(configPath, 'utf-8');
+
+    expect(second).toBe(first);
+    const afterBackups = readdirSync(codexDir).filter(n => n.startsWith('config.toml.bak.')).length;
+    expect(afterBackups).toBe(beforeBackups);
+  });
+
+  test('builds Claude mcp add argv with exactly one MIND_AGENT env flag', () => {
+    const args = buildClaudeMcpAddArgs('/opt/mind');
+
+    expect(args.filter(arg => arg === '--env')).toHaveLength(1);
+    expect(args.filter(arg => arg === 'MIND_AGENT=claude-code')).toHaveLength(1);
+    expect(args).toEqual([
+      'mcp',
+      'add',
+      '--transport',
+      'stdio',
+      '--scope',
+      'user',
+      'mind',
+      '--env',
+      'MIND_AGENT=claude-code',
+      '--',
+      '/opt/mind',
+      'mcp',
+    ]);
   });
 });

@@ -1,22 +1,29 @@
+/* ── Application shell: topbar above rail + main ──────────────────────────── */
 #app {
-  display: grid;
-  grid-template-columns: var(--sidebar-w) 1fr;
-  height: 100vh;
-}
-
-#sidebar {
-  background: var(--bg2);
-  border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  max-width: 100%;
   overflow: hidden;
 }
 
-#main {
+#sidebar {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-1);
+  border-right: 1px solid var(--line);
+}
+
+#main-content {
   display: flex;
   flex-direction: column;
   overflow: hidden;
   position: relative;
+  min-width: 0;
+  min-height: 0;
 }
 
 #space-detail {
@@ -24,39 +31,9 @@
   flex-direction: column;
   overflow: hidden;
   flex: 1;
-}
-
-#tiers {
-  overflow-y: auto;
-  flex: 1;
-  padding: 12px 20px 20px;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-#memory-panel {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--mem-panel);
-  display: flex;
-  flex-direction: column;
-  z-index: 10;
-  transform: translateX(100%);
-  opacity: 0;
-  transition:
-    transform var(--dur-panel) var(--ease-out-expo),
-    opacity var(--dur-normal) ease-out;
-  border-left: 1px solid var(--neon-cyan);
-  box-shadow: inset 2px 0 8px rgba(0, 240, 255, 0.2);
-  background: var(--bg2);
-}
-
-#memory-panel.open {
-  transform: translateX(0);
-  opacity: 1;
+  min-width: 0;
+  /* Keep the space content and graph panel clear of the viewport edges. */
+  padding: 0 16px 16px;
 }
 
 #search-results {
@@ -64,12 +41,7 @@
   flex-direction: column;
   flex: 1;
   overflow: hidden;
-}
-
-#search-list {
-  overflow-y: auto;
-  flex: 1;
-  padding: 12px 20px 20px;
+  min-width: 0;
 }
 
 #graph-view {
@@ -77,6 +49,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  min-width: 0;
 }
 
 #graph-canvas-wrap {
@@ -86,13 +59,18 @@
   position: relative;
 }
 
+/* Drawer scroll lock while the mobile navigation is open. */
+body.drawer-open {
+  overflow: hidden;
+}
+
 /* ── Mobile sidebar overlay ────────────────────────────────────────────────── */
 #sidebar-overlay {
   display: none;
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.6);
-  z-index: 50;
+  z-index: var(--z-overlay);
 }
 
 #hamburger-btn {
@@ -114,26 +92,7 @@
   outline-offset: 2px;
 }
 
-@media (max-width: 767px) {
-  #app {
-    grid-template-columns: 1fr;
-  }
-
-  #sidebar {
-    position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: var(--sidebar-w);
-    z-index: 60;
-    transform: translateX(-100%);
-    transition: transform 0.25s ease-out;
-  }
-
-  #sidebar.sidebar-open {
-    transform: translateX(0);
-  }
-
+@media (max-width: 860px) {
   #sidebar-overlay {
     display: block;
   }
@@ -143,39 +102,14 @@
   }
 
   #hamburger-btn {
-    display: flex;
+    display: inline-flex;
   }
 
   .sidebar-header {
     gap: 8px;
   }
 
-  /* Memory panel full-width on mobile */
-  #memory-panel {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    z-index: 20;
-  }
-
-  #memory-panel .panel-header {
-    flex-direction: column;
-    gap: 8px;
-  }
-
-  #memory-panel .panel-subheader {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
   /* Back button for memory panel on mobile */
-  #memory-panel .panel-title-row {
-    width: 100%;
-  }
-
   .btn-back {
     display: flex !important;
   }
@@ -183,4 +117,111 @@
 
 .btn-back {
   display: none;
+}
+
+/* ── Shell body: space rail and main view ────────────────────────────────── */
+.app-shell {
+  display: grid;
+  grid-template-columns: var(--space-rail-w, 240px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: 'rail main';
+  flex: 1;
+  width: 100%;
+  max-width: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-void);
+}
+
+.app-topbar {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.space-rail {
+  grid-area: rail;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-right: 1px solid var(--line);
+  background: var(--surface-1);
+}
+
+.app-main {
+  grid-area: main;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+/* Drawer-ready state: hidden until opened by script. */
+.drawer-trigger {
+  display: none;
+  min-width: 44px;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── 1120px: no inspector column in the current shell ────────────────────── */
+@media (max-width: 1120px) {
+  .app-shell {
+    grid-template-columns: var(--space-rail-w, 240px) minmax(0, 1fr);
+    grid-template-areas: 'rail main';
+  }
+}
+
+/* ── 860px: rail becomes a modal drawer ──────────────────────────────────── */
+@media (max-width: 860px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'main';
+  }
+
+  .space-rail {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: var(--space-rail-w, 240px);
+    max-width: 85vw;
+    z-index: var(--z-dialog);
+    border-right: 1px solid var(--line-strong);
+    transform: translateX(-100%);
+    transition: transform var(--motion-base) var(--ease-standard);
+  }
+
+  .space-rail.is-open,
+  .space-rail.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .drawer-trigger {
+    display: inline-flex;
+  }
+}
+
+/* ── 600px: compact topbar and full-screen inspector ────────────────────── */
+@media (max-width: 600px) {
+  .app-topbar {
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    flex-wrap: wrap;
+  }
+
+  .app-main,
+  .space-rail {
+    max-width: 100%;
+  }
 }

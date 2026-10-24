@@ -1,0 +1,284 @@
+/* Search: filter bar, grouped result cards, rank context and async states. */
+
+/* The legacy result list was the scroll container; the composed search page
+   now owns the scrollable surface inside the same #search-results shell. */
+#search-results > #search-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-4);
+}
+
+.search-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  padding: var(--space-4);
+}
+
+/* ── In-space search scroll owner ─────────────────────────────────────────── */
+/* #space-detail is a fixed-height flex column, so the search view must be a
+   bounded flex child. The header and shared filter bar stay above it, and the
+   result body scrolls inside; a default, content-sized view would overflow
+   #space-detail's `overflow: hidden` and clip later result cards. */
+#space-search-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  /* Match #list-view so list, map, and search share the same content gutter. */
+  padding: var(--space-3) 0 var(--space-5);
+}
+
+#space-search-view .search-results-region {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* The status line stays outside the scroller, so it remains visible while the
+   results below it scroll. */
+#space-search-view .search-status {
+  flex-shrink: 0;
+}
+
+#space-search-view .search-results-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── Status and results ──────────────────────────────────────────────────── */
+.search-results-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.search-status {
+  margin: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.search-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.search-result-item {
+  min-width: 0;
+}
+
+/* ── Result card ─────────────────────────────────────────────────────────── */
+.search-result {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.search-result:hover {
+  background: var(--surface-2);
+}
+
+.search-result:focus-within {
+  border-color: var(--accent);
+}
+
+.search-result-link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Stretched link: the anchor owns the whole card surface. */
+.search-result-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.search-result-link:hover {
+  text-decoration: none;
+}
+
+.search-result-link:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+.search-result-name {
+  color: var(--text-primary);
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.search-result-snippet {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-13);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+.search-highlight {
+  padding: 0 1px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: var(--text-primary);
+}
+
+.search-result-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+}
+
+.search-result-methods {
+  overflow-wrap: anywhere;
+}
+
+.search-result-score {
+  color: var(--text-quiet);
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Visible explanation that the score is normalized per query, not calibrated
+   across queries. Text-quiet keeps it subordinate to the result name. */
+.search-result-score-hint {
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+}
+
+/* Passive data chips: they describe the result and never look clickable. */
+.search-result-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-1);
+}
+
+.search-result-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+}
+
+/* Decorative open affordance; the anchor still owns the whole card surface. */
+.search-result-open {
+  display: inline-flex;
+  align-items: center;
+  margin-left: auto;
+  color: var(--text-quiet);
+}
+
+.search-result-open .icon {
+  margin: 0;
+}
+
+/* ── Loading, empty and error states ────────────────────────────────────── */
+.search-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.search-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.search-skeleton-title {
+  width: 40%;
+  height: 16px;
+}
+
+.search-skeleton-meta {
+  width: 60%;
+  height: 12px;
+}
+
+.search-skeleton-line {
+  height: 12px;
+}
+
+.search-skeleton-line-short {
+  width: 55%;
+}
+
+.search-empty,
+.search-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.search-error {
+  border-left: 3px solid var(--danger);
+}
+
+.search-empty-message,
+.search-error-message {
+  max-width: var(--measure);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-14);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+.search-load-more {
+  align-self: flex-start;
+  margin-top: var(--space-1);
+}

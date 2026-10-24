@@ -1,0 +1,409 @@
+/* Memory list: filters, tier sections, cards, pagination and async states. */
+
+.memory-list-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+/* ── Status, region and tier sections ────────────────────────────────────── */
+.memory-list-region {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.memory-status {
+  margin: 0;
+  color: var(--text-quiet);
+  font-size: var(--font-size-13);
+  font-variant-numeric: tabular-nums;
+}
+
+.memory-tier-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  min-width: 0;
+}
+
+.memory-tier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.memory-tier-heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-heading);
+}
+
+.memory-tier-heading.tier-1 {
+  color: var(--tier-1);
+}
+
+.memory-tier-heading.tier-2 {
+  color: var(--tier-2);
+}
+
+.memory-tier-heading.tier-3 {
+  color: var(--tier-3);
+}
+
+.memory-tier-count {
+  color: var(--text-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.memory-tier-count::before {
+  content: '·';
+  margin-right: var(--space-1);
+}
+
+.memory-tier-empty {
+  margin: 0;
+  padding: var(--space-3);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  color: var(--text-quiet);
+  font-size: var(--font-size-13);
+}
+
+.memory-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.memory-card-item {
+  min-width: 0;
+}
+
+/* ── Card ────────────────────────────────────────────────────────────────── */
+/* One compact row on wide viewports: a quiet tier marker leads, the name
+   grows, and tags plus the tabular date sit at the right edge. */
+.memory-card {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+  min-height: 42px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard);
+}
+
+.memory-card:hover {
+  background: var(--surface-2);
+}
+
+.memory-card:focus-within {
+  border-color: var(--accent);
+}
+
+.memory-card.is-current {
+  border-color: var(--accent);
+  background: var(--surface-3);
+}
+
+.memory-card-link {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Stretched link: the anchor owns the whole card surface. */
+.memory-card-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.memory-card-link:hover {
+  text-decoration: none;
+}
+
+.memory-card-link:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: var(--focus-ring-width) solid var(--accent);
+  outline-offset: var(--focus-ring-offset);
+}
+
+/* Compact tier marker: a colored dot and the tier number, no badge chrome. */
+.memory-card-tier {
+  display: inline-flex;
+  align-items: center;
+  align-self: center;
+  flex: none;
+  gap: var(--space-1);
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-semibold);
+  font-variant-numeric: tabular-nums;
+  /* Match the name line box so the dot and label share its vertical center. */
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.memory-card-tier::before {
+  content: '';
+  align-self: center;
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.memory-card-tier.tier-1 {
+  color: var(--tier-1);
+}
+
+.memory-card-tier.tier-2 {
+  color: var(--tier-2);
+}
+
+.memory-card-tier.tier-3 {
+  color: var(--tier-3);
+}
+
+.memory-card-head {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  /* Content-sized name region: the metadata region, not the name, absorbs the
+     slack so tags can extend left toward the name. */
+  flex: 0 1 auto;
+  gap: var(--space-2);
+  /* Keep a usable name region; tags yield first under width pressure. */
+  min-width: 10ch;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.memory-card-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--font-size-14);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.memory-card-pinned {
+  flex: none;
+  color: var(--accent);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+}
+
+.memory-card-meta {
+  display: flex;
+  align-items: center;
+  align-self: center;
+  /* Absorb the row slack: the group stays pinned to the right edge while its
+     left edge moves toward the name. Tags only truncate when it runs out. */
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.memory-card-changed {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.memory-card-tags {
+  display: flex;
+  flex: 0 1 auto;
+  flex-wrap: nowrap;
+  gap: var(--space-1);
+  min-width: 0;
+  margin-top: 0;
+  overflow: hidden;
+}
+
+.memory-card-tag {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+  overflow-wrap: anywhere;
+  white-space: nowrap;
+}
+
+.memory-card-tag-more {
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+}
+
+/* ── Pagination ──────────────────────────────────────────────────────────── */
+.memory-show-more {
+  align-self: flex-start;
+}
+
+/* The list container replaces the legacy `#tiers` scroll surface. */
+#list-view {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
+  /* Horizontal inset comes from #space-detail so the list and graph panel
+     share the same content width and right edge. */
+  padding: var(--space-3) 0 var(--space-5);
+  overflow-y: auto;
+}
+
+/* ── Loading, empty and error states ────────────────────────────────────── */
+.memory-skeleton-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.memory-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.memory-skeleton-title {
+  width: 40%;
+  height: 16px;
+}
+
+.memory-skeleton-meta {
+  width: 60%;
+  height: 12px;
+}
+
+.memory-skeleton-line {
+  height: 12px;
+}
+
+.memory-empty,
+.memory-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-8) var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-1);
+}
+
+.memory-error {
+  border-left: 3px solid var(--danger);
+}
+
+.memory-empty-message,
+.memory-error-message {
+  max-width: var(--measure);
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-14);
+  line-height: var(--line-height-body);
+  overflow-wrap: anywhere;
+}
+
+/* ── Narrow layout: tier and name share a row, metadata wraps below ──────── */
+@media (max-width: 860px) {
+  .memory-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--space-2);
+    padding: var(--space-3);
+  }
+
+  .memory-card-link {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    overflow: visible;
+  }
+
+  .memory-card-head {
+    /* Zero basis so the name shares row one with the tier marker instead of
+       forcing the tier onto a row of its own. */
+    flex: 1 1 0;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .memory-card-name {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    text-overflow: clip;
+    white-space: normal;
+  }
+
+  .memory-card-meta {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+    margin-left: 0;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  .memory-card-tags {
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    max-width: none;
+    margin-top: var(--space-1);
+    overflow: visible;
+  }
+
+  .memory-card-tag {
+    white-space: normal;
+  }
+}

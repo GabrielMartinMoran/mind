@@ -24,6 +24,13 @@ async function requestThroughServer(path: string): Promise<Response> {
   return handleRequest(req, store);
 }
 
+async function requestResponse(path: string): Promise<Response> {
+  const req = new Request(`http://localhost${path}`, { method: 'GET' });
+  const res = await matchApiRoute(req, store);
+  if (!res) throw new Error('Route not matched');
+  return res;
+}
+
 describe('API Routes — Space Graph', () => {
   test('returns minimal graph payload including T1-T3 memories', async () => {
     store = createTestStore();
@@ -66,6 +73,67 @@ describe('API Routes — Space Graph', () => {
   });
 });
 
+describe('API Routes — Spaces', () => {
+  test('GET /api/spaces returns additive per-tier counts for every space', async () => {
+    store = createTestStore();
+    store.createSpace('mixed', 'Mixed tiers', ['test']);
+    await store.addMemory('mixed', 'hot', 'hot content', { tier: 1, tags: ['test'] });
+    await store.addMemory('mixed', 'warm-a', 'warm content', { tier: 2, tags: ['test'] });
+    await store.addMemory('mixed', 'warm-b', 'more warm content', { tier: 2, tags: ['test'] });
+    store.createSpace('empty', 'Empty space', ['test']);
+
+    const payload = await requestJson('/api/spaces');
+
+    expect(payload).toHaveLength(2);
+
+    const mixed = payload.find((space: any) => space.name === 'mixed');
+    expect(mixed.memory_count).toBe(3);
+    expect(mixed.tier_counts).toEqual({ t1: 1, t2: 2, t3: 0 });
+    expect(mixed.tier_counts.t1 + mixed.tier_counts.t2 + mixed.tier_counts.t3).toBe(
+      mixed.memory_count
+    );
+
+    const empty = payload.find((space: any) => space.name === 'empty');
+    expect(empty.memory_count).toBe(0);
+    expect(empty.tier_counts).toEqual({ t1: 0, t2: 0, t3: 0 });
+  });
+
+  test('GET /api/spaces keeps existing keys additive to tier_counts', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+
+    const [space] = await requestJson('/api/spaces');
+
+    expect(Object.keys(space).sort()).toEqual(
+      ['description', 'hidden', 'memory_count', 'name', 'tags', 'tier_counts'].sort()
+    );
+    expect(space.hidden).toBe(false);
+    expect(space.tags).toEqual(['test']);
+  });
+});
+
+describe('API Routes — Space Tags', () => {
+  test('returns a sorted bare array of memory tags for an encoded space name', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind', ['space-only']);
+    await store.addMemory('projects/mind', 'hot', 'content', { tier: 1, tags: ['zeta', 'alpha'] });
+    await store.addMemory('projects/mind', 'cold', 'content', { tier: 3, tags: ['beta'] });
+
+    const payload = await requestJson('/api/spaces/projects%2Fmind/tags');
+
+    expect(payload).toEqual(['alpha', 'beta', 'zeta']);
+  });
+
+  test('returns HTTP 200 with an empty array for an unknown space', async () => {
+    store = createTestStore();
+
+    const response = await requestResponse('/api/spaces/missing/tags');
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+  });
+});
+
 describe('API Routes — Logs', () => {
   test('GET /api/logs does not create get_api_logs entries', async () => {
     store = createTestStore();
@@ -97,6 +165,35 @@ describe('API Routes — Logs', () => {
     expect(payload.total).toBe(2);
     expect(payload.limit).toBe(100);
     expect(payload.offset).toBe(0);
+  });
+
+  test('GET /api/logs preserves agent attribution from caller_info', async () => {
+    store = createTestStore();
+
+    store.addLog({
+      source: 'mcp',
+      operation: 'memory_add',
+      callerInfo: {
+        agent: 'opencode',
+        agentSource: 'env',
+        clientName: 'opencode',
+        clientVersion: '1.2.3',
+        transport: 'stdio',
+        mcpSession: 'sess-1',
+      },
+    });
+
+    const payload = await requestJson('/api/logs?source=mcp');
+    expect(payload.logs).toHaveLength(1);
+
+    const row = payload.logs[0]!;
+    // The route forwards the stored TEXT column; accept either a JSON string
+    // or an already-parsed object so the contract is explicit about the value.
+    const caller =
+      typeof row.caller_info === 'string' ? JSON.parse(row.caller_info) : row.caller_info;
+    expect(caller.agent).toBe('opencode');
+    expect(caller.agentSource).toBe('env');
+    expect(caller.transport).toBe('stdio');
   });
 
   test('GET /api/logs filters by source', async () => {
@@ -223,7 +320,7 @@ describe('API Server — Static web root resolution', () => {
   test.each([
     ['/styles/main.css', 'text/css', "@import url('/styles/tokens.css');"],
     ['/assets/logo.svg', 'image/svg+xml', '<svg xmlns="http://www.w3.org/2000/svg"'],
-    ['/src/app.js', 'application/javascript', "import { api } from './api/client.js';"],
+    ['/src/app.js', 'application/javascript', "import { getSpaceGraph } from './api/graph.js';"],
   ])(
     'static asset %s resolves from the repo-local web directory',
     async (pathname, type, snippet) => {
@@ -248,6 +345,53 @@ describe('API Server — Static web root resolution', () => {
     expect(response.headers.get('content-type')).toContain('application/json');
     expect(payload.total_spaces).toBe(0);
     expect(payload.total_memories).toBe(0);
+  });
+
+  test('unknown API routes return JSON 404 instead of the SPA shell', async () => {
+    store = createTestStore();
+
+    const response = await requestThroughServer('/api/unknown');
+    const payload = await response.json();
+
+    expect(response.status).toBe(404);
+    expect(response.headers.get('content-type')).toContain('application/json');
+    expect(typeof payload.error).toBe('string');
+  });
+
+  test('non-API deep links still serve the SPA shell', async () => {
+    store = createTestStore();
+
+    const response = await requestThroughServer('/totally/unknown/path');
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(body).toContain('<!doctype html>');
+  });
+});
+
+describe('API Routes — Memory detail presenter', () => {
+  test('returns UI fields and omits persistence internals', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'auth-jwt', 'JWT authentication', { tags: ['test'] });
+
+    const payload = await requestJson('/api/spaces/proj/memories/auth-jwt');
+
+    expect(payload.embedding).toBeUndefined();
+    expect(payload.fts_id).toBeUndefined();
+    expect(payload.space_id).toBeUndefined();
+
+    expect(payload.name).toBe('auth-jwt');
+    expect(payload.space_name).toBe('proj');
+    expect(payload.content).toBe('JWT authentication');
+    expect(payload.tier).toBe(2);
+    expect(payload.pinned).toBe(false);
+    expect(typeof payload.access_count).toBe('number');
+    expect(payload.last_accessed_at).toBeNull();
+    expect(payload.tags).toEqual(['test']);
+    expect(typeof payload.created_at).toBe('string');
+    expect(typeof payload.updated_at).toBe('string');
+    expect(typeof payload.changed_at).toBe('string');
   });
 });
 
@@ -303,5 +447,334 @@ describe('API Routes — Search', () => {
 
     const payload = await requestJson('/api/search?q=token&space=*');
     expect(payload.map((r: any) => r.space_name).sort()).toEqual(['proj-a', 'proj-b']);
+  });
+
+  test('filters by confidence after fusion and reports the filtered total', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'full', 'authentication token rotation', { tags: ['test'] });
+    await store.addMemory('proj', 'split', 'token rotation authentication', { tags: ['test'] });
+
+    const unfiltered = await requestJson('/api/search?q=authentication+token&space=proj');
+    expect(new Set(unfiltered.map((r: any) => r.confidence))).toEqual(new Set(['high', 'medium']));
+
+    const response = await requestResponse(
+      '/api/search?q=authentication+token&space=proj&confidence=medium'
+    );
+    const payload = await response.json();
+
+    expect(payload.map((r: any) => r.name)).toEqual(['split']);
+    expect(payload.every((r: any) => r.confidence === 'medium')).toBe(true);
+    expect(response.headers.get('X-Total-Count')).toBe('1');
+  });
+
+  test('ignores invalid confidence values', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'full', 'authentication token rotation', { tags: ['test'] });
+    await store.addMemory('proj', 'split', 'token rotation authentication', { tags: ['test'] });
+
+    const baseline = await requestJson('/api/search?q=authentication+token&space=proj');
+    const invalid = await requestJson(
+      '/api/search?q=authentication+token&space=proj&confidence=urgent'
+    );
+
+    expect(invalid.map((r: any) => r.name)).toEqual(baseline.map((r: any) => r.name));
+  });
+
+  test('exposes X-Total-Count and X-Has-More for pagination', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('proj', `m${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    const firstPage = await requestResponse('/api/search?q=token&space=proj');
+    expect((await firstPage.json()).length).toBe(25);
+    expect(firstPage.headers.get('X-Total-Count')).toBe('30');
+    expect(firstPage.headers.get('X-Has-More')).toBe('true');
+
+    const lastPage = await requestResponse('/api/search?q=token&space=proj&limit=10&offset=25');
+    expect((await lastPage.json()).length).toBe(5);
+    expect(lastPage.headers.get('X-Total-Count')).toBe('30');
+    expect(lastPage.headers.get('X-Has-More')).toBe('false');
+  });
+
+  test('exposes zero totals for empty results', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'only', 'shared token', { tags: ['test'] });
+
+    const response = await requestResponse('/api/search?q=zzznonexistent&space=proj');
+    const payload = await response.json();
+
+    expect(payload).toEqual([]);
+    expect(response.headers.get('X-Total-Count')).toBe('0');
+    expect(response.headers.get('X-Has-More')).toBe('false');
+  });
+
+  test('exposes zero totals when the query is empty', async () => {
+    store = createTestStore();
+
+    const response = await requestResponse('/api/search');
+
+    expect(await response.json()).toEqual([]);
+    expect(response.headers.get('X-Total-Count')).toBe('0');
+    expect(response.headers.get('X-Has-More')).toBe('false');
+  });
+
+  test('parses and plumbs the semantic option without changing lexical order', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'full', 'authentication token rotation', { tags: ['test'] });
+    await store.addMemory('proj', 'split', 'token rotation authentication', { tags: ['test'] });
+
+    const seen: Array<Record<string, unknown>> = [];
+    const original = store.searchPage.bind(store);
+    store.searchPage = async (query, options) => {
+      seen.push({ ...options });
+      return original(query, options);
+    };
+
+    const baseline = await requestJson('/api/search?q=authentication+token&space=proj');
+    await requestJson('/api/search?q=authentication+token&space=proj&semantic=on');
+    await requestJson('/api/search?q=authentication+token&space=proj&semantic=off');
+    await requestJson('/api/search?q=authentication+token&space=proj&semantic=maybe');
+
+    expect(seen[0]!.semantic).toBeUndefined();
+    expect(seen[1]!.semantic).toBe(true);
+    expect(seen[2]!.semantic).toBe(false);
+    // Invalid values fall back to the server default (current behavior).
+    expect(seen[3]!.semantic).toBeUndefined();
+
+    // With RAG off (test env), semantic=off must not perturb lexical ranking.
+    const off = await requestJson('/api/search?q=authentication+token&space=proj&semantic=off');
+    expect(off.map((r: any) => r.name)).toEqual(baseline.map((r: any) => r.name));
+    expect(off.map((r: any) => r.confidence)).toEqual(baseline.map((r: any) => r.confidence));
+    expect(off.map((r: any) => r.methods)).toEqual(baseline.map((r: any) => r.methods));
+  });
+});
+
+describe('API Routes — Memory query pagination', () => {
+  async function seedSpace(): Promise<void> {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    for (let i = 0; i < 6; i++) {
+      await store.addMemory('proj', `m${i}`, `content ${i}`, {
+        tier: i < 2 ? 1 : i < 4 ? 2 : 3,
+        tags: i % 2 === 0 ? ['test', 'cat:decision'] : ['test'],
+      });
+    }
+  }
+
+  test('exposes the total matching rows before limit/offset', async () => {
+    await seedSpace();
+
+    const response = await requestResponse('/api/memories/query?space=proj&limit=2&offset=0');
+    const page = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('6');
+    expect(page).toHaveLength(2);
+
+    const secondPage = await requestResponse('/api/memories/query?space=proj&limit=2&offset=2');
+    const secondBody = await secondPage.json();
+
+    expect(secondPage.headers.get('X-Total-Count')).toBe('6');
+    expect(secondBody).toHaveLength(2);
+    expect(secondBody.map((row: any) => row.name)).not.toEqual(page.map((row: any) => row.name));
+  });
+
+  test('counts respect tier and tag filters', async () => {
+    await seedSpace();
+
+    const tierResponse = await requestResponse('/api/memories/query?space=proj&tier=1');
+    expect(tierResponse.headers.get('X-Total-Count')).toBe('2');
+    expect(await tierResponse.json()).toHaveLength(2);
+
+    const tagResponse = await requestResponse('/api/memories/query?space=proj&tag=cat:decision');
+    expect(tagResponse.headers.get('X-Total-Count')).toBe('3');
+    expect(await tagResponse.json()).toHaveLength(3);
+
+    const combined = await requestResponse(
+      '/api/memories/query?space=proj&tier=2&tag=cat:decision'
+    );
+    expect(combined.headers.get('X-Total-Count')).toBe('1');
+    expect((await combined.json()).map((row: any) => row.name)).toEqual(['m2']);
+  });
+
+  test('keeps the flat array body shape', async () => {
+    await seedSpace();
+
+    const payload = await requestJson('/api/memories/query?space=proj&limit=1');
+    expect(Array.isArray(payload)).toBe(true);
+    expect(payload).toHaveLength(1);
+    expect(typeof payload[0].name).toBe('string');
+  });
+});
+
+describe('API Routes — Multi-tier filters', () => {
+  async function seedTiers(): Promise<void> {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    const rows = [
+      { name: 't1a', tier: 1, tags: ['test', 'cat:decision'], content: 'shared tier one decision' },
+      { name: 't1b', tier: 1, tags: ['test'], content: 'shared tier one plain' },
+      { name: 't2a', tier: 2, tags: ['test', 'cat:decision'], content: 'shared tier two decision' },
+      { name: 't2b', tier: 2, tags: ['test'], content: 'shared tier two plain' },
+      {
+        name: 't3a',
+        tier: 3,
+        tags: ['test', 'cat:decision'],
+        content: 'shared tier three decision',
+      },
+      { name: 't3b', tier: 3, tags: ['test'], content: 'shared tier three plain' },
+    ] as const;
+    for (const row of rows) {
+      await store.addMemory('proj', row.name, row.content, {
+        tier: row.tier,
+        tags: [...row.tags],
+      });
+    }
+  }
+
+  test('filters the memory query by an inclusive tier list', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/memories/query?space=proj&tiers=1,3');
+    const rows = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('4');
+    expect(rows.map((row: any) => row.name).sort()).toEqual(['t1a', 't1b', 't3a', 't3b']);
+  });
+
+  test('drops invalid and duplicate tier values', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/memories/query?space=proj&tiers=1,1,9,3');
+    expect(response.headers.get('X-Total-Count')).toBe('4');
+    expect((await response.json()).every((row: any) => row.tier !== 2)).toBe(true);
+  });
+
+  test('falls back to tier when tiers has no valid value', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/memories/query?space=proj&tiers=9&tier=2');
+    const rows = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('2');
+    expect(rows.map((row: any) => row.name).sort()).toEqual(['t2a', 't2b']);
+  });
+
+  test('keeps the single-tier contract unchanged', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/memories/query?space=proj&tier=2');
+    const rows = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('2');
+    expect(rows.every((row: any) => row.tier === 2)).toBe(true);
+  });
+
+  test('reflects multi-tier filters in pagination and counts', async () => {
+    await seedTiers();
+
+    const first = await requestResponse(
+      '/api/memories/query?space=proj&tiers=1,3&limit=2&offset=0'
+    );
+    const second = await requestResponse(
+      '/api/memories/query?space=proj&tiers=1,3&limit=2&offset=2'
+    );
+    const firstRows = await first.json();
+    const secondRows = await second.json();
+
+    expect(first.headers.get('X-Total-Count')).toBe('4');
+    expect(second.headers.get('X-Total-Count')).toBe('4');
+    expect(firstRows).toHaveLength(2);
+    expect(secondRows).toHaveLength(2);
+    expect(firstRows.map((row: any) => row.name)).not.toEqual(
+      secondRows.map((row: any) => row.name)
+    );
+  });
+
+  test('combines a tag filter with a tier list', async () => {
+    await seedTiers();
+
+    const response = await requestResponse(
+      '/api/memories/query?space=proj&tiers=1,3&tag=cat:decision'
+    );
+    const rows = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('2');
+    expect(rows.map((row: any) => row.name).sort()).toEqual(['t1a', 't3a']);
+  });
+
+  test('restricts search to the tier list', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/search?q=shared&space=proj&tiers=1,3');
+    const results = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('4');
+    expect(results).toHaveLength(4);
+    expect(results.every((result: any) => result.tier === 1 || result.tier === 3)).toBe(true);
+  });
+
+  test('keeps search single-tier behavior unchanged', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/search?q=shared&space=proj&tier=2');
+    const results = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('2');
+    expect(results.every((result: any) => result.tier === 2)).toBe(true);
+  });
+
+  // Non-integer tier values are invalid, so they are dropped rather than
+  // treated as a fractional tier. A lone invalid value leaves no filter, which
+  // returns every tier instead of an empty page.
+  test('ignores a non-integer single tier and keeps every tier', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/memories/query?space=proj&tier=2.5');
+    const rows = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('6');
+    expect(rows.map((row: any) => row.name).sort()).toEqual([
+      't1a',
+      't1b',
+      't2a',
+      't2b',
+      't3a',
+      't3b',
+    ]);
+  });
+
+  test('ignores a non-integer tier list value and keeps every tier', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/memories/query?space=proj&tiers=2.5');
+    const rows = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('6');
+    expect(rows.map((row: any) => row.name).sort()).toEqual([
+      't1a',
+      't1b',
+      't2a',
+      't2b',
+      't3a',
+      't3b',
+    ]);
+  });
+
+  // Existing invalid-value semantics apply: invalid entries are dropped and the
+  // valid subset is kept, so 1,2.5,3 behaves like 1,3.
+  test('keeps the valid subset of a mixed tier list', async () => {
+    await seedTiers();
+
+    const response = await requestResponse('/api/memories/query?space=proj&tiers=1,2.5,3');
+    const rows = await response.json();
+
+    expect(response.headers.get('X-Total-Count')).toBe('4');
+    expect(rows.map((row: any) => row.name).sort()).toEqual(['t1a', 't1b', 't3a', 't3b']);
   });
 });
