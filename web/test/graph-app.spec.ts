@@ -539,6 +539,45 @@ describe('neural map app wiring', () => {
     expect(alpha.classList.contains('is-selected')).toBe(true);
   });
 
+  test('a Memory List row opens the same memory in place without leaving the map', async () => {
+    const harness = await bootApp('/spaces/projects%2Fmind?view=map', 'list-activation');
+    cleanup = () => harness.dom.cleanup();
+    const { dom } = harness;
+
+    await waitFor(() => graphNodes(dom).length === 4, 'the map to render four nodes');
+
+    const node = nodeById(dom, 'n1') as SVGGElement;
+    const link = Array.from(
+      dom.document.querySelectorAll<HTMLAnchorElement>('#graph-view a.graph-memory-link')
+    ).find(anchor => anchor.getAttribute('href')?.includes('memory=alpha')) as HTMLAnchorElement;
+
+    click(dom, link);
+
+    await waitFor(() => isPanelOpen(dom), 'the memory panel');
+    await waitFor(
+      () => new URL(dom.window.location.href).searchParams.get('memory') === 'alpha',
+      'the memory URL to update'
+    );
+
+    const url = new URL(dom.window.location.href);
+    expect(url.searchParams.get('view')).toBe('map');
+
+    // The map stays on screen with the same SVG, and the list view stays hidden.
+    expect(dom.document.getElementById('graph-view')?.classList.contains('hidden')).toBe(false);
+    expect(dom.document.getElementById('list-view')?.classList.contains('hidden')).toBe(true);
+    expect(nodeById(dom, 'n1')).toBe(node);
+
+    // The row activates the same node state as a direct SVG click.
+    expect(node.classList.contains('is-selected')).toBe(true);
+    expect(node.getAttribute('aria-current')).toBe('true');
+    expect(
+      dom.document.querySelectorAll('#graph-view line.graph-edge.is-incident').length
+    ).toBeGreaterThan(0);
+
+    // Activation is DOM-only: no graph refetch and no rebuild.
+    expect(harness.graphRequests).toHaveLength(1);
+  });
+
   test('clicking a node highlights incident edges, mutes the rest and close clears them', async () => {
     const connected: GraphNodeFixture[] = [
       { id: 'n1', name: 'alpha', tier: 1, links_to: ['n2', 'n3'], linked_by: [] },

@@ -102,13 +102,15 @@
 
 /* In-space search. The form is the positioning context and the clear control
    sits inside the input at its right edge, so the form stays one row tall.
-   The compact basis leaves room for the tier, confidence, and embedding
-   controls on the same row at desktop widths. */
+   The compact basis leaves room for the tag, tier, confidence, embeddings and
+   Clear filters controls on the same row at 1280px (the search-view row is
+   1008px wide; a 300px basis pushes Clear filters onto a second line, so 280px
+   keeps the approved one-row contract while staying under the 320px ceiling). */
 .space-search {
   position: relative;
   display: flex;
   align-items: center;
-  flex: 0 1 300px;
+  flex: 0 1 280px;
   width: auto;
   min-width: 0;
 }
@@ -484,6 +486,24 @@
 
 .home-atlas-grid[hidden] {
   display: none;
+}
+
+/* Wide desktops: the 1280px one-row and 320px search contracts stay intact, so
+   the extra room goes into a wider search basis, calmer primary-row gaps, and a
+   four-column grid that spans the available width instead of adding narrow
+   columns. Everything below 1360px keeps the adaptive auto-fit grid. */
+@media (min-width: 1360px) {
+  .space-search {
+    flex: 0 1 340px;
+  }
+
+  .space-filter-primary {
+    gap: var(--space-3);
+  }
+
+  .home-atlas-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 
 .home-atlas-item {

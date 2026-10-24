@@ -98,3 +98,12 @@ Feature: All Spaces Overview
       Given the viewport is 320px wide
       Then the tier spectrum and counts remain visible
       And the page has no horizontal scroll
+
+    @manual
+    Scenario: Wide cards use four columns and adapt below desktop width
+      Given the viewport is 1680px wide
+      Then the All spaces grid has four equal columns
+      And card titles have more room to remain readable
+      When the viewport narrows below 1360px
+      Then the grid adapts its column count to the available width
+      And a 320px viewport still shows one column

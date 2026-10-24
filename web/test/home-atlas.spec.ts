@@ -1,3 +1,6 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -353,6 +356,25 @@ describe('home grid', () => {
     } finally {
       dom.cleanup();
     }
+  });
+
+  test('uses four equal columns from 1360px and auto-fit below it', () => {
+    const shellCss = readFileSync(join(import.meta.dir, '../styles/components/shell.css'), 'utf8');
+
+    // Below 1360px the grid keeps adapting its column count to the width, which
+    // also leaves a 320px viewport at the single 220px column.
+    const base = /\.home-atlas-grid\s*\{([^}]*)\}/.exec(shellCss)?.[1] ?? '';
+    expect(base).toMatch(/grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(220px,\s*1fr\)\)/);
+
+    const wide = /@media\s*\(min-width:\s*1360px\)\s*\{([\s\S]*?)\n\}/.exec(shellCss)?.[1] ?? '';
+    expect(wide, 'min-width: 1360px block should exist').not.toBe('');
+    expect(wide).toMatch(
+      /\.home-atlas-grid\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/
+    );
+
+    // Four columns span the available width; no fixed max-width reopens a gutter.
+    const wideGrid = /\.home-atlas-grid\s*\{([^}]*)\}/.exec(wide)?.[1] ?? '';
+    expect(wideGrid).not.toMatch(/max-width/);
   });
 });
 

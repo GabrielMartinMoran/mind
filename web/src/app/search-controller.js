@@ -344,8 +344,8 @@ export function createSearchController(options) {
 
   /**
    * Apply the shared filter state to the search slice. The app owns the URL, so
-   * this never writes history. `run: false` keeps the slice in sync for a
-   * list-only change without firing a hidden `/api/search` request.
+   * this never writes history. `run: false` keeps the slice in sync, clears
+   * stale results, and avoids firing a hidden `/api/search` request.
    *
    * @param {{
    *   q?: string,
@@ -379,7 +379,10 @@ export function createSearchController(options) {
       semantic: filters.semantic === true,
     });
 
-    if (options.run === false) return;
+    if (options.run === false) {
+      resetResults();
+      return;
+    }
     if (options.debounce) scheduleSearch();
     else runSearch();
   }

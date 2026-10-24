@@ -189,7 +189,7 @@ describe('static space filter bar', () => {
     expect(shellCss).not.toContain('.space-filter-controls');
 
     const search = rule('.space-search');
-    expect(search).toMatch(/flex:\s*0 1 300px/);
+    expect(search).toMatch(/flex:\s*0 1 280px/);
     expect(search).toMatch(/width:\s*auto/);
     expect(search).toMatch(/min-width:\s*0/);
 
@@ -206,6 +206,43 @@ describe('static space filter bar', () => {
     expect(shellCss).toMatch(/@media\s*\(max-width:\s*700px\)/);
     expect(shellCss).toMatch(/\.space-filter-primary \.space-search\s*\{\s*flex:\s*1 1 100%/);
     expect(shellCss).toMatch(/\.filter-tag,\s*\.filter-confidence\s*\{\s*flex:\s*1 1 160px/);
+  });
+
+  test('widens search and gaps from 1360px without touching the 1280px contract', () => {
+    // At 1280px the approved contract is one row with at most a 320px search
+    // field. The primary row is 1008px wide there; tag (160), chips (140),
+    // confidence (150), the inline embeddings row (~127), Clear filters (~106)
+    // and six 8px gaps consume ~723px, so the search basis must stay at or below
+    // 284px or Clear filters wraps to a second line. 280px keeps a small margin
+    // while remaining under the 320px ceiling.
+    const search = rule('.space-search');
+    const baseBasis = Number(/flex:\s*0 1 (\d+)px/.exec(search)?.[1]);
+    expect(Number.isFinite(baseBasis)).toBe(true);
+    expect(baseBasis).toBeLessThanOrEqual(284);
+    expect(baseBasis).toBeLessThanOrEqual(320);
+    expect(rule('.space-filter-primary')).toMatch(/gap:\s*var\(--space-2\)/);
+
+    const wide = mediaBlock('min-width: 1360px');
+    expect(wide, 'min-width: 1360px block should exist').not.toBe('');
+    expect(wide).toMatch(/\.space-search\s*\{[^}]*flex:\s*0 1 340px/);
+    expect(wide).toMatch(/\.space-filter-primary\s*\{[^}]*gap:\s*var\(--space-3\)/);
+
+    // The refinement is wide-only: nothing below 1360px restyles these controls.
+    for (const block of shellCss.matchAll(
+      /@media\s*\(min-width:\s*(\d+)px\)\s*\{([\s\S]*?)\n\}/g
+    )) {
+      const minWidth = Number(block[1]);
+      const body = block[2] ?? '';
+      if (minWidth < 1360) {
+        expect(body, `min-width: ${minWidth}px must not restyle the filters`).not.toMatch(
+          /\.space-search|\.space-filter-primary/
+        );
+      }
+    }
+
+    // The existing compact rules still own their own ranges.
+    expect(shellCss).toMatch(/@media\s*\(max-width:\s*700px\)/);
+    expect(shellCss).toMatch(/@media\s*\(max-width:\s*480px\)/);
   });
 
   test('pairs controls on phone rows so the tag select stays beside the chips', () => {

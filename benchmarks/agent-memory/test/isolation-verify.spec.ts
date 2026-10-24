@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
@@ -8,7 +8,11 @@ import { BUILTIN_SKILLS } from '../src/config';
 import type { CommandInvocation } from '../src/exec';
 import { isolationDirs, type IsolationDirs } from '../src/isolation/opencode';
 import { ContaminationError, verifyIsolation } from '../src/isolation/verify';
-import { briefActivationPath, canonicalSkillPath } from '../src/opencode/skill-first';
+import {
+  SKILL_FIRST_SKILLS,
+  briefActivationPath,
+  canonicalSkillPath,
+} from '../src/opencode/skill-first';
 import { createFakeRunner, type FakeCommandResolver } from '../src/testing/fakes';
 
 const SKILL_CONTENT = [
@@ -29,6 +33,8 @@ const ACTIVATION_CONTENT =
 const conditionDir = mkdtempSync(join(tmpdir(), 'bench-verify-'));
 const dir = isolationDirs(conditionDir);
 const env = { HOME: dir.home, XDG_CONFIG_HOME: dir.config };
+
+const noSleep = async (): Promise<void> => undefined;
 
 interface CurrentHarness {
   readonly root: string;
@@ -145,8 +151,30 @@ async function verify(
     env: options.env ?? env,
     runner: fake.runner,
     evidenceDir,
+    sleep: noSleep,
     ...(options.mindBin !== undefined ? { mindBin: options.mindBin } : {}),
   });
+}
+
+/** Override only `/api/skill` with a scripted sequence; everything else is clean. */
+function sequencedSkillsResolver(
+  target: IsolationDirs,
+  responses: readonly string[]
+): FakeCommandResolver {
+  const base = goodResolver(target);
+  let call = 0;
+  return invocation => {
+    if (invocation.args.join(' ') === 'api get /api/skill') {
+      const stdout = responses[Math.min(call, responses.length - 1)]!;
+      call += 1;
+      return { stdout };
+    }
+    return base(invocation);
+  };
+}
+
+function skillIds(ids: readonly string[]): string {
+  return JSON.stringify({ data: ids.map(id => ({ id })) });
 }
 
 async function verifyCurrent(
@@ -282,6 +310,72 @@ describe('verifyIsolation', () => {
       verifyCurrent(harness, goodResolver(harness.dir), '/somewhere/else/mind'),
       'mind'
     );
+    rmSync(harness.root, { recursive: true, force: true });
+  });
+});
+
+describe('skill discovery warm-up', () => {
+  function coldStartHarness(): CurrentHarness {
+    return makeCurrentHarness({ skill: SKILL_CONTENT, activation: ACTIVATION_CONTENT });
+  }
+
+  test('retries the skill listing until the exact surface appears', async () => {
+    const harness = coldStartHarness();
+    const responses = [skillIds(BUILTIN_SKILLS), skillIds(SKILL_FIRST_SKILLS)];
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'bench-verify-evid-'));
+    const fake = createFakeRunner(sequencedSkillsResolver(harness.dir, responses));
+
+    const report = await verifyIsolation({
+      condition: 'mind-current',
+      dir: harness.dir,
+      env: harness.env,
+      runner: fake.runner,
+      evidenceDir,
+      mindBin: harness.mindBin,
+      sleep: noSleep,
+    });
+
+    expect(report.ok).toBe(true);
+    expect(report.checks).toHaveLength(9);
+    expect(report.checks.find(check => check.name === 'skills-allowlisted')?.ok).toBe(true);
+    expect(report.checks.find(check => check.name === 'skill-first')?.ok).toBe(true);
+    expect(fake.calls.filter(inv => inv.args.join(' ') === 'api get /api/skill')).toHaveLength(2);
+    // The final (successful) listing is the one saved as evidence.
+    const evidence = readFileSync(join(evidenceDir, 'api-skill.stdout.txt'), 'utf8');
+    expect(evidence).toContain('mind-management');
+
+    rmSync(harness.root, { recursive: true, force: true });
+  });
+
+  test('fails closed with the missing skill after the retry budget', async () => {
+    const harness = coldStartHarness();
+    // Every response omits the installed skill, so the budget is exhausted.
+    const fake = createFakeRunner(sequencedSkillsResolver(harness.dir, [skillIds(BUILTIN_SKILLS)]));
+    const evidenceDir = mkdtempSync(join(tmpdir(), 'bench-verify-evid-'));
+
+    try {
+      await verifyIsolation({
+        condition: 'mind-current',
+        dir: harness.dir,
+        env: harness.env,
+        runner: fake.runner,
+        evidenceDir,
+        mindBin: harness.mindBin,
+        sleep: noSleep,
+        skillListAttempts: 3,
+      });
+      throw new Error('expected isolation contamination');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContaminationError);
+      expect((error as ContaminationError).reasons.join(' ')).toContain(
+        'missing [mind-management]'
+      );
+      expect(fake.calls.filter(inv => inv.args.join(' ') === 'api get /api/skill')).toHaveLength(3);
+      // The failed final snapshot stays visible as evidence.
+      const evidence = readFileSync(join(evidenceDir, 'api-skill.stdout.txt'), 'utf8');
+      expect(evidence).not.toContain('mind-management');
+    }
+
     rmSync(harness.root, { recursive: true, force: true });
   });
 });

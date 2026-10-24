@@ -34,6 +34,13 @@ Feature: Space Filters
       Then the search field is at most 320px wide
       And the filter bar stays one row
 
+    @manual
+    Scenario: Wide viewports give search and filters more room
+      Given the space view is open at 1680px wide
+      Then the search field uses a 340px basis
+      And the primary filter controls have 12px gaps
+      And the filter bar stays on one row
+
     @integration
     Scenario: Contextual controls do not change the row rhythm
       Given the list or map view is active
@@ -126,4 +133,12 @@ Feature: Space Filters
     Scenario: Filter bar wraps without overflow
       Given the viewport is 320px wide
       Then the filter bar wraps into rows
+      And the page has no horizontal scroll
+
+    @manual
+    Scenario: Compact space controls preserve results at 320x700
+      Given the viewport is 320x700
+      When the map and shared filter bar are visible
+      Then Delete space keeps an accessible name and visible label
+      And the results body is at least 120px tall
       And the page has no horizontal scroll

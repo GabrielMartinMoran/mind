@@ -68,13 +68,23 @@ function iconHref(root: ParentNode | null): string | null {
   return root?.querySelector('svg use')?.getAttribute('href') ?? null;
 }
 
-function click(dom: DomHarness, target: Element): void {
+interface ClickOptions {
+  button?: number;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  shiftKey?: boolean;
+  altKey?: boolean;
+}
+
+function click(dom: DomHarness, target: Element, options: ClickOptions = {}) {
   const event = new dom.window.MouseEvent('click', {
     bubbles: true,
     cancelable: true,
     button: 0,
+    ...options,
   });
   target.dispatchEvent(event as never);
+  return event;
 }
 
 function key(dom: DomHarness, target: Element, keyName: string): void {
@@ -568,6 +578,73 @@ describe('graph view accessible memory list', () => {
       expect(links[0]?.getAttribute('href')).toContain('/spaces/test');
       expect(links[0]?.getAttribute('href')).toContain('memory=alpha');
       expect(rows[0]?.textContent).toContain('T1');
+    } finally {
+      dom.cleanup();
+    }
+  });
+
+  test('activates a memory row in place through the node handler', () => {
+    const dom = installDom();
+    try {
+      const opened: Array<{ id: string; name: string }> = [];
+      const view = render(dom, baseState({ nodes: [node({ id: 'a', name: 'alpha' })] }), {
+        onOpenNode: (item: { id: string; name: string }) => opened.push(item),
+      });
+
+      const link = query<HTMLAnchorElement>(view, '.graph-memory-list a.graph-memory-link')!;
+      const href = link.getAttribute('href');
+      const event = click(dom, link);
+
+      // The row reuses the same activation as clicking an SVG node, so the app
+      // opens the panel and selects the node without leaving the map.
+      expect(opened.map(item => item.id)).toEqual(['a']);
+      expect(opened[0]?.name).toBe('alpha');
+      expect(event.defaultPrevented).toBe(true);
+
+      // The link stays a real anchor: its href is untouched for new-tab use.
+      expect(link.getAttribute('href')).toBe(href);
+    } finally {
+      dom.cleanup();
+    }
+  });
+
+  test('keeps modifier and middle clicks native so the anchor still navigates', () => {
+    const dom = installDom();
+    try {
+      const opened: string[] = [];
+      const view = render(dom, baseState({ nodes: [node({ id: 'a', name: 'alpha' })] }), {
+        onOpenNode: (item: { id: string }) => opened.push(item.id),
+      });
+
+      const link = query<HTMLAnchorElement>(view, '.graph-memory-list a.graph-memory-link')!;
+      const modified: ClickOptions[] = [
+        { ctrlKey: true },
+        { metaKey: true },
+        { shiftKey: true },
+        { altKey: true },
+        { button: 1 },
+      ];
+
+      for (const options of modified) {
+        const event = click(dom, link, options);
+        expect(event.defaultPrevented).toBe(false);
+      }
+
+      expect(opened).toEqual([]);
+    } finally {
+      dom.cleanup();
+    }
+  });
+
+  test('leaves the anchor native when no node handler is wired', () => {
+    const dom = installDom();
+    try {
+      const view = render(dom, baseState({ nodes: [node({ id: 'a', name: 'alpha' })] }));
+
+      const link = query<HTMLAnchorElement>(view, '.graph-memory-list a.graph-memory-link')!;
+      const event = click(dom, link);
+
+      expect(event.defaultPrevented).toBe(false);
     } finally {
       dom.cleanup();
     }

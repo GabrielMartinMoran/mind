@@ -265,6 +265,44 @@ describe('search controller', () => {
     expect(searchState().filters).toMatchObject({ tag: 'cat:decision', tiers: [1, 3] });
   });
 
+  test('applyFilters with run=false clears stale results when the query is removed', () => {
+    const { api, searchState, controller } = setup({
+      search: {
+        query: 'auth',
+        filters: {
+          space: 'projects/mind',
+          tag: '',
+          tier: null,
+          tiers: [1, 2, 3],
+          confidence: null,
+        },
+        semantic: false,
+        results: [{ name: 'auth-hit' }],
+        total: 1,
+        hasMore: false,
+        status: 'success',
+        error: null,
+        offset: 0,
+      },
+    });
+
+    controller.applyFilters(
+      { q: '', tag: '', tiers: [1, 2, 3], confidence: '', semantic: false },
+      { run: false }
+    );
+
+    expect(api.calls).toHaveLength(0);
+    expect(searchState()).toMatchObject({
+      query: '',
+      results: [],
+      total: 0,
+      hasMore: false,
+      status: 'idle',
+      error: null,
+      offset: 0,
+    });
+  });
+
   test('setScope updates the filter without writing the URL or issuing a request', () => {
     const { api, history, searchState, timers, controller } = setup();
 

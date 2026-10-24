@@ -246,6 +246,24 @@ describe('design system layout contracts', () => {
     expect(label).not.toMatch(/display:\s*none/);
     expect(label).not.toMatch(/position:\s*absolute/);
   });
+
+  test('wide refinements reuse tokens and never hide the Delete space label', () => {
+    const shell = readStyle('components/shell.css');
+    const wide = mediaBlock(shell, 'min-width: 1360px');
+
+    expect(wide, 'min-width: 1360px block should exist').not.toBe('');
+
+    // Wide spacing is an existing token step, not a new palette or hue.
+    expect(wide).not.toMatch(/#[0-9a-f]{3,8}\b/i);
+    expect(wide).not.toMatch(/\b(?:rgb|hsl)a?\(/i);
+    expect(wide).toMatch(/var\(--space-3\)/);
+
+    // Destructive triggers keep their visible label at every width, including
+    // the compact phone rules that shrink the identity action to an icon.
+    expect(shell).not.toMatch(
+      /#btn-delete-space[^{]*\.btn-label[^{]*\{[^}]*(?:display:\s*none|clip-path)/
+    );
+  });
 });
 
 describe('graph interaction and space spacing contracts', () => {

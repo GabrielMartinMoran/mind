@@ -293,6 +293,30 @@ describe('Memory Atlas shell markup', () => {
     }
   });
 
+  test('Delete space pairs the local trash-2 icon with its visible label', () => {
+    const { document, cleanup } = loadShell();
+
+    try {
+      const deleteSpace = document.querySelector('#btn-delete-space');
+      expect(deleteSpace).not.toBeNull();
+
+      // The sprite already ships trash-2; no new icon dependency is added.
+      expect(iconHrefs(deleteSpace)).toEqual(['/assets/icons.svg#icon-trash-2']);
+      expectDecorativeIcons(deleteSpace);
+
+      // The visible label is the accessible name, so no aria-label override.
+      expect(deleteSpace?.querySelector('.btn-label')?.textContent?.trim()).toBe('Delete space');
+      expect(deleteSpace?.textContent?.trim()).toBe('Delete space');
+      expect(deleteSpace?.getAttribute('aria-label')).toBeNull();
+
+      // The trigger stays outlined so it never competes with the primary action.
+      expect(deleteSpace?.classList.contains('btn-danger-outline')).toBe(true);
+      expect(deleteSpace?.classList.contains('btn-danger')).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
   test('view toggle buttons pair decorative icons with visible labels', () => {
     const { document, cleanup } = loadShell();
 

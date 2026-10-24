@@ -113,6 +113,9 @@ pipeline itself, see [Search engine](search-engine.md).
   the server default.
 - The controller debounces typing (200 ms), aborts in-flight requests, and
   discards stale responses, so a slow query cannot overwrite a newer one.
+- Clearing an in-space query removes its stale results and returns to the
+  memory list. A matching loaded list is reused; the app fetches only when its
+  list filters changed or no matching list is loaded.
 - Results are real anchor cards with a stretched link. Descriptive result tags
   are passive data chips (plain spans) outside the single anchor, not buttons or
   links, so filtering stays in the shared tag select. The open affordance is a
@@ -134,6 +137,9 @@ pipeline itself, see [Search engine](search-engine.md).
   List/Neural Map view switch, and stays available in both views. Below 600 px it
   becomes a named icon action, and the new-memory dialog still returns focus to
   it on close.
+- The space header's **Delete space** action pairs the local `trash-2` icon with
+  its visible label and stays an outlined destructive trigger; the confirmation
+  dialog is the only solid destructive control.
 - The sidebar's "Spaces" heading carries a count badge with the total number of
   spaces (not only the visible ones), so hidden-space filtering does not change
   the reported total.
@@ -161,7 +167,9 @@ pipeline itself, see [Search engine](search-engine.md).
   instead of a colored bar and three zeros. The footer keeps the total on the
   left and up to three tags plus `+N` on the right, with long tags truncated.
   Card rows share an equal height, and at 320 px the grid falls back to one
-  column with the spectrum and counts still visible. The spectrum and counts
+  column with the spectrum and counts still visible. At 1360 px and wider the
+  grid uses four equal columns across the available width; below that it keeps
+  an adaptive auto-fit layout. The spectrum and counts
   come from the additive `tier_counts {t1,t2,t3}` field returned by
   `GET /api/spaces` (also present on MCP `space_list`); the three counts sum to
   `memory_count`.
@@ -172,7 +180,10 @@ The open space has one filter bar for the list, the map, and in-space search.
 
 - At desktop widths the bar is one centered row: search, tag, T1/T2/T3 chips,
   confidence, embeddings, only-matches, and **Clear filters**. The search field
-  keeps a compact 300 px basis so the remaining controls fit beside it.
+  keeps a 280 px basis below 1360 px so the remaining controls still fit on one
+  row at 1280 px, and 340 px at 1360 px and wider, where the primary filter gap
+  grows from 8 px to 12 px. At 1280 px the flexible field stays at or below
+  320 px.
 - The tag control is a native select. Its first option, **All tags**, is the
   empty value; the rest are the active space's memory tags from
   `GET /api/spaces/:space/tags`, alphabetically sorted and drawn from every
@@ -288,7 +299,10 @@ backend can serve; there is no 300-node page and no separate "load full" step.
   the memory.
 - Every rendered node also appears in an accessible "Memory list" table whose
   rows link to the memory. The table is a collapsible `<details>` element: open
-  when the graph has 50 or fewer nodes and collapsed for denser graphs.
+  when the graph has 50 or fewer nodes and collapsed for denser graphs. A plain
+  primary click on a row opens the memory panel and selects/highlights the
+  matching node without leaving the map or refetching the graph; modifier-click
+  and middle-click keep the anchor's native behavior.
 - Node `aria-label`s include the linked-memory count ("1 link" / "N links"), so
   the degree signal is available to assistive technology as well as visually.
 - Dragging to pan the map never selects graph text; the accessible memory table

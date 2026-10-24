@@ -51,3 +51,11 @@ Feature: Button and Tag Emphasis
     Given a space header and delete dialog render
     Then Delete space is outlined in the danger color
     And only the final delete confirmation uses a filled danger surface
+
+  @contract
+  Scenario: Delete space keeps its label beside the decorative trash icon
+    Given the space header renders
+    Then Delete space uses the local trash-2 icon
+    And the icon is hidden from assistive technology
+    And the visible label remains "Delete space"
+    And the trigger remains outlined in the danger color

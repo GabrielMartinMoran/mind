@@ -13,7 +13,12 @@ import { describe, expect, test } from 'bun:test';
 
 import { BUILTIN_SKILLS } from '../src/config';
 import { runCommand, type CommandRunner } from '../src/exec';
-import { buildOpenCodeEnv, ensureIsolationDirs, isolationDirs } from '../src/isolation/opencode';
+import {
+  buildOpenCodeEnv,
+  ensureIsolationDirs,
+  isolationDirs,
+  type IsolationDirs,
+} from '../src/isolation/opencode';
 import {
   ContaminationError,
   findFreePort,
@@ -100,71 +105,86 @@ async function waitForSkill(
   return ids;
 }
 
+interface InstalledSkillEnvironment {
+  readonly dirs: IsolationDirs;
+  readonly env: Record<string, string>;
+  readonly instructionPath: string;
+}
+
+/**
+ * Run the real `mind setup opencode` once in an isolated HOME and build the
+ * session environment. This does not query `api get /api/skill`, so a caller
+ * can observe the cold-start registration race itself.
+ */
+async function installSkillFirstOpenCode(root: string): Promise<InstalledSkillEnvironment> {
+  // The product setup writes under HOME/.config; the benchmark session uses
+  // its own XDG config root so the managed L3 plugin is not auto-loaded.
+  const dirs = isolationDirs(root);
+  ensureIsolationDirs(dirs);
+  const setupConfigRoot = join(dirs.home, '.config');
+  mkdirSync(join(setupConfigRoot, 'opencode'), { recursive: true });
+
+  const setupEnv: Record<string, string> = {
+    HOME: dirs.home,
+    XDG_CONFIG_HOME: setupConfigRoot,
+    XDG_DATA_HOME: dirs.data,
+    XDG_STATE_HOME: dirs.state,
+    XDG_CACHE_HOME: dirs.cache,
+    MIND_DB_PATH: dirs.mindDb,
+    MIND_DATA_DIR: dirs.mindDataDir,
+    MIND_SYNC_ROOT: dirs.syncRoot,
+    MIND_RAG: 'false',
+  };
+  const setup = await runOpencode(MIND_BIN, setupEnv, dirs.workspace, ['setup', 'opencode']).catch(
+    error => ({
+      stdout: '',
+      stderr: String(error),
+      exitCode: 1,
+    })
+  );
+  expect(setup.exitCode, setup.stderr || setup.stdout).toBe(0);
+
+  const canonicalSkill = join(dirs.home, '.agents', 'skills', SKILL_ID, 'SKILL.md');
+  expect(existsSync(canonicalSkill)).toBe(true);
+
+  const instructionPath = join(
+    setupConfigRoot,
+    'opencode',
+    'instructions',
+    'mind-memory-protocol.md'
+  );
+  expect(existsSync(instructionPath)).toBe(true);
+  const activation = readFileSync(instructionPath, 'utf8');
+  expect(activation).toContain(`\`${SKILL_ID}\` skill`);
+  // The L2 file is the brief activation, not the full protocol body.
+  expect(activation).not.toContain('## ORIENT');
+  expect(activation.length).toBeLessThan(2_000);
+
+  const configPath = join(setupConfigRoot, 'opencode', 'opencode.jsonc');
+  expect(existsSync(configPath)).toBe(true);
+  const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
+    instructions?: unknown;
+    mcp?: unknown;
+  };
+  expect(config.instructions).toContain(instructionPath);
+  expect(JSON.stringify(config.mcp)).toContain('mind');
+
+  // Give the isolated session the same L2 activation the setup installed,
+  // without loading the setup-managed L3 plugin.
+  const env = buildOpenCodeEnv({ condition: 'mind-current', dir: dirs, mindBin: MIND_BIN });
+  const sessionConfig = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? '{}') as {
+    instructions?: string[];
+  };
+  sessionConfig.instructions = [instructionPath];
+  env.OPENCODE_CONFIG_CONTENT = `${JSON.stringify(sessionConfig, null, 2)}\n`;
+  return { dirs, env, instructionPath };
+}
+
 describe.skipIf(!enabled)('OpenCode skill discovery (integration)', () => {
   test('discovers the canonical skill, its L2 activation and a clean MCP registration', async () => {
     const root = mkdtempSync(join(tmpdir(), 'bench-skill-discovery-'));
     try {
-      // The product setup writes under HOME/.config; the benchmark session uses
-      // its own XDG config root so the managed L3 plugin is not auto-loaded.
-      const dirs = isolationDirs(root);
-      ensureIsolationDirs(dirs);
-      const setupConfigRoot = join(dirs.home, '.config');
-      mkdirSync(join(setupConfigRoot, 'opencode'), { recursive: true });
-
-      const setupEnv: Record<string, string> = {
-        HOME: dirs.home,
-        XDG_CONFIG_HOME: setupConfigRoot,
-        XDG_DATA_HOME: dirs.data,
-        XDG_STATE_HOME: dirs.state,
-        XDG_CACHE_HOME: dirs.cache,
-        MIND_DB_PATH: dirs.mindDb,
-        MIND_DATA_DIR: dirs.mindDataDir,
-        MIND_SYNC_ROOT: dirs.syncRoot,
-        MIND_RAG: 'false',
-      };
-      const setup = await runOpencode(MIND_BIN, setupEnv, dirs.workspace, [
-        'setup',
-        'opencode',
-      ]).catch(error => ({
-        stdout: '',
-        stderr: String(error),
-        exitCode: 1,
-      }));
-      expect(setup.exitCode, setup.stderr || setup.stdout).toBe(0);
-
-      const canonicalSkill = join(dirs.home, '.agents', 'skills', SKILL_ID, 'SKILL.md');
-      expect(existsSync(canonicalSkill)).toBe(true);
-
-      const instructionPath = join(
-        setupConfigRoot,
-        'opencode',
-        'instructions',
-        'mind-memory-protocol.md'
-      );
-      expect(existsSync(instructionPath)).toBe(true);
-      const activation = readFileSync(instructionPath, 'utf8');
-      expect(activation).toContain(`\`${SKILL_ID}\` skill`);
-      // The L2 file is the brief activation, not the full protocol body.
-      expect(activation).not.toContain('## ORIENT');
-      expect(activation.length).toBeLessThan(2_000);
-
-      const configPath = join(setupConfigRoot, 'opencode', 'opencode.jsonc');
-      expect(existsSync(configPath)).toBe(true);
-      const config = JSON.parse(readFileSync(configPath, 'utf8')) as {
-        instructions?: unknown;
-        mcp?: unknown;
-      };
-      expect(config.instructions).toContain(instructionPath);
-      expect(JSON.stringify(config.mcp)).toContain('mind');
-
-      // Give the isolated session the same L2 activation the setup installed,
-      // without loading the setup-managed L3 plugin.
-      const env = buildOpenCodeEnv({ condition: 'mind-current', dir: dirs, mindBin: MIND_BIN });
-      const sessionConfig = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? '{}') as {
-        instructions?: string[];
-      };
-      sessionConfig.instructions = [instructionPath];
-      env.OPENCODE_CONFIG_CONTENT = `${JSON.stringify(sessionConfig, null, 2)}\n`;
+      const { dirs, env, instructionPath } = await installSkillFirstOpenCode(root);
       writeIsolatedServicePort(dirs, await findFreePort());
 
       const debugConfig = await runOpencode(opencodeBin!, env, dirs.workspace, ['debug', 'config']);
@@ -225,6 +245,37 @@ describe.skipIf(!enabled)('OpenCode skill discovery (integration)', () => {
           sleep: async () => undefined,
         })
       ).rejects.toThrow(ContaminationError);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 240_000);
+
+  test('the isolation gate waits for asynchronous skill discovery on a cold service', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'bench-skill-cold-start-'));
+    try {
+      const { dirs, env } = await installSkillFirstOpenCode(root);
+
+      // No prior `api get /api/skill` call: the gate itself must absorb the
+      // watcher's registration delay instead of trusting the first listing.
+      const evidenceDir = join(root, 'cold-start-evidence');
+      const report = await verifyIsolation({
+        condition: 'mind-current',
+        dir: dirs,
+        env,
+        runner: runCommand,
+        opencodeBin: opencodeBin!,
+        evidenceDir,
+        mindBin: MIND_BIN,
+        allowedAgents: [...BUILTIN_AGENTS],
+      });
+
+      expect(report.ok).toBe(true);
+      expect(report.checks).toHaveLength(9);
+      const skillFirstCheck = report.checks.find(check => check.name === 'skill-first');
+      expect(skillFirstCheck?.ok).toBe(true);
+      // The final listing, not the cold initial one, is saved as evidence.
+      const evidence = readFileSync(join(evidenceDir, 'api-skill.stdout.txt'), 'utf8');
+      expect(evidence).toContain(SKILL_ID);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

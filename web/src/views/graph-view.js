@@ -364,6 +364,18 @@ function nodePayload(node) {
   return { id: node.id, name: node.name, tier: node.tier, degree: node.degree };
 }
 
+/**
+ * True for an unmodified primary click. Modified clicks and other buttons must
+ * keep the anchor's native behavior so a memory can still open in a new tab or
+ * window.
+ *
+ * @param {MouseEvent} event
+ * @returns {boolean}
+ */
+function isPlainPrimaryClick(event) {
+  return event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
+}
+
 /** @param {number} count */
 function matchCountLabel(count) {
   return `${count} ${count === 1 ? 'match' : 'matches'}`;
@@ -1136,9 +1148,10 @@ function renderMap(state, model, renderedNodes, layout, handlers) {
 /**
  * @param {GraphModelNode[]} renderedNodes
  * @param {string} spaceName
+ * @param {GraphViewHandlers} handlers
  * @returns {HTMLElement}
  */
-function renderMemoryList(renderedNodes, spaceName) {
+function renderMemoryList(renderedNodes, spaceName, handlers) {
   const panel = element('section', 'graph-list-panel');
   panel.setAttribute('aria-labelledby', 'graph-list-heading');
 
@@ -1170,6 +1183,12 @@ function renderMemoryList(renderedNodes, spaceName) {
     link.className = 'graph-memory-link';
     link.href = memoryHref(spaceName, node.name);
     link.textContent = node.name;
+    link.addEventListener('click', event => {
+      // Without a node handler the row stays a plain anchor.
+      if (!handlers.onOpenNode || !isPlainPrimaryClick(event)) return;
+      event.preventDefault();
+      handlers.onOpenNode(nodePayload(node));
+    });
     nameCell.appendChild(link);
     row.appendChild(nameCell);
     row.appendChild(element('td', undefined, `T${node.tier}`));
@@ -1317,7 +1336,7 @@ function buildBody(state, model, handlers) {
   const map = renderMap(state, model, renderedNodes, layout, handlers);
   body.appendChild(renderToolbar(map));
   body.appendChild(map.wrap);
-  body.appendChild(renderMemoryList(renderedNodes, spaceNameOf(state.space)));
+  body.appendChild(renderMemoryList(renderedNodes, spaceNameOf(state.space), handlers));
 
   return body;
 }

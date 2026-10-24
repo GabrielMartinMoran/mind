@@ -61,6 +61,17 @@ Feature: Neural Map Graph View
       And no extra graph request is made
 
     @integration
+    Scenario: Memory List activation opens and selects a node in place
+      Given the neural map is displayed
+      When the user activates a memory row in the Memory List
+      Then the neural map remains displayed
+      And the memory panel opens
+      And the matching graph node is selected with its incident links highlighted
+      And the URL records view=map and the memory name
+      And no extra graph request is made
+      And Ctrl or Command click and middle click still follow the anchor
+
+    @integration
     Scenario: Node keyboard activation opens the memory panel
       Given a graph node has focus
       When pressing Enter

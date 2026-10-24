@@ -352,7 +352,9 @@ describe('in-space search app wiring', () => {
 
     await waitFor(() => isHidden(dom, 'space-search-view'), 'the results to hide');
     expect(isHidden(dom, 'list-view')).toBe(false);
-    expect(dom.document.querySelector('#space-search-view a.search-result-link')).toBeNull();
+    const hasStaleResult =
+      dom.document.querySelector('#space-search-view a.search-result-link') !== null;
+    expect(hasStaleResult).toBe(false);
     expect(dom.document.getElementById('space-search')).toHaveProperty('value', '');
     expect(new URL(dom.window.location.href).searchParams.has('q')).toBe(false);
     // The loaded list is reused instead of refetched.
