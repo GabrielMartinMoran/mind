@@ -12,6 +12,8 @@ import { join } from 'node:path';
 
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 
+import { getSupportedAgents, type SupportedAgent } from '../src/cli/capabilities';
+import { executeCommand } from '../src/cli/command-executor';
 import { renderMemoryProtocol } from '../src/cli/memory-protocol';
 import {
   getAgentCapabilityMatrix,
@@ -22,6 +24,9 @@ import {
   runSetupRefresh,
 } from '../src/cli/setup';
 import { installMindManagementSkill } from '../src/setup/skill-installation';
+
+import { mockedLogger } from './mocks/mocked-logger';
+import { createTestStore } from './mocks/test-store';
 
 let previousHome = '';
 let previousClaudeHooksOptIn = '';
@@ -159,14 +164,14 @@ describe('Setup capability model', () => {
     expect(antigravity?.capabilities.L3_HOOKS.status).toBe('unsupported');
   });
 
-  test('setup command output exposes capability statuses and evidence notes', () => {
+  test('compatibility output exposes capability statuses and evidence notes', () => {
     const logSpy = spyOn(console, 'log');
 
     listAgents();
 
     const lines = logSpy.mock.calls.map(call => String(call[0]));
-    // New format uses 🧠 Available Agents header and compact badge format
-    expect(lines.some(line => line.includes('🧠 Available Agents'))).toBe(true);
+    // Compatibility output uses a clear heading and compact capability badges.
+    expect(lines.some(line => line.includes('🧠 Agent Compatibility'))).toBe(true);
     expect(lines.some(line => line.includes('Cursor'))).toBe(true);
     // Capability badges show ⚠️ for unverified status
     expect(lines.some(line => line.includes('⚠️'))).toBe(true);
@@ -177,6 +182,67 @@ describe('Setup capability model', () => {
         line => line.includes('skill') && line.includes('~/.agents/skills/mind-management') // documented path
       )
     ).toBe(true);
+  });
+
+  test('bare setup configures every supported agent integration', async () => {
+    const store = createTestStore();
+    const logSpy = spyOn(console, 'log');
+
+    try {
+      await executeCommand(['setup'], store, mockedLogger());
+
+      const agents = getSupportedAgents() as SupportedAgent[];
+      expect(agents.length).toBeGreaterThan(1);
+      for (const agent of agents) {
+        expect(isAgentIntegrationDetected(agent)).toBe(true);
+      }
+
+      expect(
+        logSpy.mock.calls.some(call =>
+          String(call[0]).includes(`Setup complete for all ${agents.length} supported agents`)
+        )
+      ).toBe(true);
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  test('setup compatibility displays the matrix without configuring agents', async () => {
+    const store = createTestStore();
+    const logSpy = spyOn(console, 'log');
+
+    try {
+      await executeCommand(['setup', 'compatibility'], store, mockedLogger());
+
+      const lines = logSpy.mock.calls.map(call => String(call[0]));
+      expect(lines.some(line => line.includes('🧠 Agent Compatibility'))).toBe(true);
+      expect(lines.some(line => line.includes('Cursor'))).toBe(true);
+      for (const agent of getSupportedAgents() as SupportedAgent[]) {
+        expect(isAgentIntegrationDetected(agent)).toBe(false);
+      }
+    } finally {
+      store.cleanup();
+    }
+  });
+
+  test('setup refresh keeps its detected integration behavior', async () => {
+    const store = createTestStore();
+    const logSpy = spyOn(console, 'log');
+
+    try {
+      await executeCommand(['setup', 'refresh', '--dry-run'], store, mockedLogger());
+
+      expect(
+        logSpy.mock.calls.some(call =>
+          String(call[0]).includes('No detected mind integrations to refresh')
+        )
+      ).toBe(true);
+      for (const agent of getSupportedAgents() as SupportedAgent[]) {
+        expect(isAgentIntegrationDetected(agent)).toBe(false);
+      }
+    } finally {
+      store.cleanup();
+    }
   });
 
   test('keeps Cursor L1 setup behavior while configuring managed global hooks artifacts', async () => {

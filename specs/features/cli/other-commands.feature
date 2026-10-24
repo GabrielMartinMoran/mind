@@ -106,8 +106,12 @@ Feature: CLI Other Commands
 
   Rule: setup command
 
-    Scenario: setup without agent shows capability matrix
+    Scenario: setup without agent configures all supported integrations
       When running "./mind setup"
+      Then setup completes for all supported agents
+
+    Scenario: setup compatibility shows the capability matrix
+      When running "./mind setup compatibility"
       Then the full capability matrix is displayed
       And per-level status is shown for all adapters
 

@@ -27,6 +27,10 @@ Example:
 
 ## [Unreleased]
 
+### Changed
+
+- Changed bare `mind setup` to configure all supported agent integrations; moved the compatibility matrix to `mind setup compatibility` and kept `mind setup refresh` for detected integrations.
+
 ### Added
 
 - Added `CONTRIBUTING.md` and `docs/mind-philosophy.md` to document contribution standards and Mind's purpose and product principles, with entry points from the README, docs index, and `AGENTS.md`.
@@ -113,6 +117,7 @@ Example:
 
 ### Fixed
 
+- Fixed `checkpoint_query` end-date filtering so date-only bounds include the full UTC day on hosts with non-UTC local timezones.
 - Fixed `mind setup` leaving persistent `SKILL.md.bak.*` and `mind-management.bak.*` artifacts inside agent skill discovery roots. Managed skill updates now replace content atomically without skill backups; ancestor-repair and agent config backups remain, and existing skill backups are not auto-deleted.
 - Fixed GitHub Actions only running on slash-free branches: CI now triggers on every push and pull request (including `feat/`, `fix/`, and nested names) plus manual dispatch, with unchanged independent jobs, frozen installs, and blocking high-severity audits.
 - Fixed silent search recall on accented/partial words (R1): folding diacritics in the trigram tokenizer makes accented and unaccented queries match both ways.
