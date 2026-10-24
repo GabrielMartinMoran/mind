@@ -50,6 +50,8 @@ export interface StartMindServerOptions {
   readonly paths: MindPaths;
   readonly cwd?: string;
   readonly port?: number;
+  /** Enable embeddings for query-time semantic retrieval (off by default). */
+  readonly rag?: boolean;
   /** Enable `MIND_SEARCH_DIAG=1` (per-query timing on stderr). */
   readonly searchDiag?: boolean;
   readonly spawnFn?: ServerSpawn;
@@ -135,7 +137,7 @@ export async function startMindServer(options: StartMindServerOptions): Promise<
   const fetchFn = options.fetchFn ?? fetch;
   const port = options.port ?? (await findFreePort());
   const env: Record<string, string | undefined> = {
-    ...buildMindEnv(options.paths, options.baseEnv, false),
+    ...buildMindEnv(options.paths, options.baseEnv, options.rag ?? false),
     MIND_PORT: String(port),
     ...(options.searchDiag ? { MIND_SEARCH_DIAG: '1' } : {}),
   };

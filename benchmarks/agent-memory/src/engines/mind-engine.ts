@@ -44,6 +44,8 @@ export interface MindEngineOptions {
   readonly space: string;
   readonly cwd?: string;
   readonly runner?: CommandRunner;
+  /** Enable embeddings for ingest and query-time retrieval (off by default). */
+  readonly rag?: boolean;
   /** Override server startup (tests inject a fake); defaults to `startMindServer`. */
   readonly startServer?: (options: StartMindServerOptions) => Promise<MindServerHandle>;
   readonly fetchFn?: typeof fetch;
@@ -74,6 +76,7 @@ export function createMindEngine(
     bin: options.bin,
     paths: options.paths,
     cwd: options.cwd,
+    rag: options.rag,
     runner: options.runner,
     baseEnv: options.baseEnv,
   });
@@ -91,6 +94,7 @@ export function createMindEngine(
         bin: options.bin,
         paths: options.paths,
         cwd: options.cwd,
+        rag: options.rag,
         searchDiag: options.searchDiag,
         fetchFn: options.fetchFn,
         baseEnv: options.baseEnv,

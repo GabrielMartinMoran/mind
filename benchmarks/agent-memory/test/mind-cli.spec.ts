@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { MindCli, MindCliError, buildMindEnv, type MindPaths } from '../src/mind/cli';
+import { startMindServer, type ServerChild } from '../src/mind/server';
 import { createFakeRunner } from '../src/testing/fakes';
 
 const paths: MindPaths = {
@@ -19,8 +20,10 @@ describe('buildMindEnv', () => {
     expect(env.MIND_RAG).toBe('false');
   });
 
-  test('enables RAG only when explicitly requested', () => {
+  test('enables RAG and selects the OpenRouter provider only when explicitly requested', () => {
     expect(buildMindEnv(paths, {}, true).MIND_RAG).toBe('true');
+    expect(buildMindEnv(paths, {}, true).MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+    expect(buildMindEnv(paths, {}, false).MIND_EMBEDDING_PROVIDER).toBeUndefined();
   });
 });
 
@@ -47,5 +50,64 @@ describe('MindCli', () => {
     const { runner } = createFakeRunner(() => ({ stderr: 'boom', exitCode: 1 }));
     const cli = new MindCli({ bin: '/worktrees/v9/mind', paths, runner });
     await expect(cli.exec(['status'])).rejects.toThrow(MindCliError);
+  });
+
+  test('a RAG CLI carries the provider into every invocation', async () => {
+    const { runner, calls } = createFakeRunner(() => ({ exitCode: 0 }));
+    const cli = new MindCli({ bin: '/w/mind', paths, runner, rag: true });
+    await cli.run(['add', 'locomo/conv-26', 'D1:1', 'text', '--tier', '3']);
+    expect(calls[0]!.env!.MIND_RAG).toBe('true');
+    expect(calls[0]!.env!.MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+  });
+});
+
+describe('startMindServer RAG wiring', () => {
+  test('starts the A1 server with RAG and the provider only when requested', async () => {
+    const envs: Record<string, string | undefined>[] = [];
+    const spawnFn = (
+      _command: string,
+      _args: readonly string[],
+      options: { env: Record<string, string | undefined> }
+    ): ServerChild => {
+      envs.push(options.env);
+      let exitListener: ((...args: unknown[]) => void) | undefined;
+      return {
+        pid: 1234,
+        kill: () => {
+          exitListener?.(0);
+          return true;
+        },
+        on: (event, listener) => {
+          if (event === 'exit') exitListener = listener;
+        },
+        stderr: null,
+      };
+    };
+    const fetchFn = (async () => new Response('[]', { status: 200 })) as unknown as typeof fetch;
+
+    const handle = await startMindServer({
+      bin: '/w/mind',
+      paths,
+      port: 43123,
+      rag: true,
+      spawnFn,
+      fetchFn,
+    });
+    await handle.stop();
+
+    expect(envs).toHaveLength(1);
+    expect(envs[0]!.MIND_RAG).toBe('true');
+    expect(envs[0]!.MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+
+    const offHandle = await startMindServer({
+      bin: '/w/mind',
+      paths,
+      port: 43124,
+      spawnFn,
+      fetchFn,
+    });
+    await offHandle.stop();
+    expect(envs[1]!.MIND_RAG).toBe('false');
+    expect(envs[1]!.MIND_EMBEDDING_PROVIDER).toBeUndefined();
   });
 });

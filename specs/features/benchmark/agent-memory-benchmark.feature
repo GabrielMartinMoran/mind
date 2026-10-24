@@ -80,8 +80,31 @@ Feature: Agent memory benchmark harness
       Then each database contains exactly one memory per dialogue turn named by its dia_id
       And no memory was evicted, deleted or summarized
 
-  Rule: Retrieval measurement (A1)
+  Rule: Embedding mode
+    @unit
+    Scenario: Embeddings stay disabled unless the run requests them
+      Given the benchmark runs without the RAG option
+      When the A1, A2 and scenario environments are built
+      Then every environment keeps MIND_RAG false
+      And no embedding provider override is injected
+      And the run metadata records embeddings as disabled
 
+    @unit
+    Scenario: A RAG run enables embeddings everywhere and records the mode
+      Given the benchmark runs with the RAG option
+      When the A1 ingest, A1 server, A2 profiles and scenario environments are built
+      Then each environment sets MIND_RAG true
+      And each environment selects the OpenRouter embedding provider
+      And the run metadata records embeddings as enabled with that provider
+
+    @integration
+    Scenario: Ingest aborts before answering when embeddings are incomplete
+      Given a RAG ingest leaves at least one memory without an embedding
+      When the post-ingest coverage check runs
+      Then the run aborts before any answering or scenario stage starts
+      And the failure names the missing embedding coverage
+
+  Rule: Retrieval measurement (A1)
     @unit
     Scenario: Retrieval metrics are computed correctly
       Given ranked results with known evidence positions

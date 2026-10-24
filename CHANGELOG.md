@@ -29,6 +29,7 @@ Example:
 
 ### Added
 
+- Added a default-off `--rag` switch to the agent-memory benchmark. When absent, every stage keeps `MIND_RAG=false` with no embedding-provider override; when passed, A1 ingest, the A1 search server, every A2 profile and every B scenario unit use `MIND_RAG=true` with the OpenRouter embedding provider, the run records `rag` in `meta.json`, and a post-ingest coverage gate aborts before A1 scoring if any ingested memory lacks an embedding.
 - Added redacted execution evidence to agent-memory benchmark session results: each `result.json` keeps only ordered tool and skill names, nested code-mode tool names, parent/child session ids, recorded `memory_query` memory names with their `methods`, and the idle outcome. Prompts, message text, tool results, and memory contents are dropped before the file is written.
 - Added `CONTRIBUTING.md` and `docs/mind-philosophy.md` to document contribution standards and Mind's purpose and product principles, with entry points from the README, docs index, and `AGENTS.md`.
 - Added a self-hosted Lucide 0.547.0 icon sprite (`web/assets/icons.svg`) and a shared `createIcon` helper for web command actions, with no CDN or runtime icon package. The upstream ISC license and the MIT notice for Feather-derived portions are retained in `web/assets/vendor/LICENSE.lucide`.

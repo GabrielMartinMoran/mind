@@ -30,6 +30,7 @@ import { createProcessExecutor } from '../opencode/executor';
 import { prepareSkillFirst } from '../opencode/skill-first';
 import {
   mergeActiveConditions,
+  ragMeta,
   readRunMeta,
   withStage,
   writeRunMeta,
@@ -64,6 +65,8 @@ export interface A2CommandOptions {
   readonly reps?: number;
   /** Re-judge stored answers only; skip the paid answering stage. */
   readonly judgeOnly: boolean;
+  /** Run-level embeddings switch for every A2 condition profile. */
+  readonly rag?: boolean;
 }
 
 export interface A2CommandDeps {
@@ -431,6 +434,11 @@ export async function runA2Command(
     },
   };
 
+  // A RAG A2 run records its mode even when the free A1 stage predated it.
+  if (options.rag === true && meta.rag?.enabled !== true) {
+    writer.set({ ...meta, rag: ragMeta(true) });
+  }
+
   // Backfill tool versions on a run prepared before version capture existed
   // (e.g. the T7b pilot), so the report never shows `n/a` for OpenCode/SDK.
   const existingVersions = meta.versions ?? { opencode: null, sdk: null, bun: null };
@@ -494,6 +502,7 @@ export async function runA2Command(
     conditions: options.conditions,
     worktrees,
     credentialEnv: resolveCredentialEnv(deps),
+    rag: options.rag === true,
   });
   const profileMap: Partial<Record<ConditionId, ConditionProfile>> = {};
   const prepareCondition = deps.prepareCondition ?? defaultPrepareCondition;

@@ -91,8 +91,10 @@ Every condition gets its own isolated run tree under
 - the `OPENCODE_DISABLE_*` guards (project config, Claude Code, default plugins,
   model fetch, autocompact);
 - a fresh Mind database per condition/scenario
-  (`MIND_DB_PATH`/`MIND_DATA_DIR`/`MIND_SYNC_ROOT` under the run dir,
-  `MIND_RAG=false`). The user's live `data/mind.db` is never opened.
+  (`MIND_DB_PATH`/`MIND_DATA_DIR`/`MIND_SYNC_ROOT` under the run dir). RAG is
+  off (`MIND_RAG=false`) unless the run passes `--rag`; a RAG run sets
+  `MIND_RAG=true` and `MIND_EMBEDDING_PROVIDER=openrouter` instead. The user's
+  live `data/mind.db` is never opened.
 
 **Skill-first preparation (current only).** Every `mind-current` A2 condition
 and B1–B11 unit runs the real `<checkout>/mind setup opencode` once inside its
@@ -214,6 +216,36 @@ bun run cli scenarios --scenarios b1,b4 --budget 5 --confirm
 # Full orchestration: free A1 always, then paid A2 + scenarios + REPORT
 bun run full --budget 5 --confirm
 ```
+
+### Run-level RAG (`--rag`)
+
+`--rag` is a default-off, run-level embeddings switch. Without it, every stage
+keeps the existing behavior: `MIND_RAG=false`, no embedding-provider override,
+and no coverage gate. With it, the harness sets `MIND_RAG=true` and
+`MIND_EMBEDDING_PROVIDER=openrouter` for A1 ingest, the A1 search server, every
+A2 condition profile (including the MCP `environment` block) and every B
+scenario unit — not only the scenarios that declare `rag: true`. The OpenRouter
+credential (`OPENROUTER_API_KEY`) is read at runtime and injected into the A1
+children (A2/B already receive it) without being printed or persisted.
+
+```sh
+# Free A1 ingest + retrieval with embeddings on
+bun run cli locomo --subset full --rag --run-id <id>
+
+# Paid A2 answering, then all B scenarios, reusing the same run id
+bun run cli locomo --answers --run-id <id> --rag --budget 2.5 --confirm --reps 3
+bun run cli scenarios --run-id <id> --rag --budget 1.4 --confirm
+```
+
+After A1 ingest and only for a RAG run, the harness checks embedding coverage
+read-only and **aborts before A1 scoring** (and therefore before any A2 or B
+stage) when any ingested memory lacks an embedding. The failure names the
+expected and embedded counts. Every run records `rag: { enabled, provider }` in
+`meta.json`, where a default run stores `{ enabled: false, provider: null }`.
+Embedding-provider charges are excluded from the model-cost cap per the approved
+run instructions, but the embedding calls stay bounded to the single ingest plus
+query embeddings during the run. `--rag` is not forwarded by the `full`
+orchestrator.
 
 ### Standalone credential smoke
 
@@ -416,6 +448,8 @@ today:
   prompt's lexical overlap is empty, proving the scenario tests meaning rather
   than term matching.
   B10 declares `rag: true` and `requires: ['mind-memory', 'semantic-recall']`.
+  A run-level `--rag` overrides every scenario's own flag, so it also enables
+  B10 (and every other unit) without changing the scenario definition.
   Without a Mind condition, the RAG embedding credential (currently
   `OPENROUTER_API_KEY` for the fixed `openrouter` provider) or an explicit RAG
   request, the runner records it **not_run** with a clear reason, zero sessions

@@ -30,6 +30,7 @@ import {
   createRunLayout,
   createRunMeta,
   mergeActiveConditions,
+  ragMeta,
   readRunMeta,
   withStage,
   writeRunMeta,
@@ -61,6 +62,8 @@ export interface ScenariosCommandOptions {
   readonly scenarios: readonly string[];
   /** Hard cost cap; null refuses any positive spend. */
   readonly budgetUsd: number | null;
+  /** Run-level embeddings switch applied to every scenario unit. */
+  readonly rag?: boolean;
 }
 
 export interface ScenariosCommandDeps {
@@ -208,6 +211,7 @@ export async function runScenariosCommand(
     meta = {
       ...existing,
       activeConditions: mergeActiveConditions(existing.activeConditions, options.conditions),
+      ...(options.rag === true ? { rag: ragMeta(true) } : {}),
     };
   } else {
     const limits = { ...DEFAULT_LIMITS, maxCostUsd: options.budgetUsd };
@@ -220,6 +224,7 @@ export async function runScenariosCommand(
       subset: { seed: 0, count: 0, conversation: '' },
       limits,
       budget: { maxCostUsd: options.budgetUsd, spentUsd: 0 },
+      rag: ragMeta(options.rag === true),
       activeConditions: options.conditions,
       now: deps.now,
     });
@@ -292,6 +297,9 @@ export async function runScenariosCommand(
         stdout: deps.stdout,
         stderr: deps.stderr,
         credentialEnv,
+        // Only an explicit `--rag` overrides per-scenario defaults; absent means
+        // `undefined` so B10's own `rag: true` still applies.
+        rag: options.rag === true ? true : undefined,
       },
       {
         fixtureDirFor: scenario => join(deps.repoRoot, HARNESS_RELATIVE, scenario.fixture),

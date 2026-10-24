@@ -198,6 +198,11 @@ export interface RunScenariosOptions {
    * Empty for offline/dry runs; never written to result artifacts.
    */
   readonly credentialEnv?: Record<string, string>;
+  /**
+   * Run-level embeddings override. `undefined` keeps each scenario's own
+   * `rag` flag; `true` enables RAG for every unit; `false` disables it.
+   */
+  readonly rag?: boolean;
 }
 
 export interface InitMindDbInput {
@@ -298,10 +303,11 @@ export function scenarioRunStatus(
 export function scenarioGateReason(
   scenario: Pick<Scenario, 'rag' | 'requires'>,
   condition: ConditionId,
-  credentialEnv: Record<string, string>
+  credentialEnv: Record<string, string>,
+  ragOverride?: boolean
 ): string | null {
   const isMind = engineForCondition(condition) !== null;
-  const rag = scenario.rag === true;
+  const rag = ragOverride ?? scenario.rag === true;
   if (rag && !isMind) {
     return 'RAG requires a Mind condition';
   }
@@ -392,13 +398,14 @@ async function runUnit(
   }
 
   const mindBin = engine === null ? null : join(deps.worktrees[engine]!, 'mind');
+  const effectiveRag = options.rag ?? scenario.rag === true;
   let env: Record<string, string> = {
     ...buildOpenCodeEnv({
       condition,
       dir: dirs,
       mindBin,
-      rag: scenario.rag === true,
-      embeddingProvider: scenario.rag === true ? RAG_EMBEDDING_PROVIDER : undefined,
+      rag: effectiveRag,
+      embeddingProvider: effectiveRag ? RAG_EMBEDDING_PROVIDER : undefined,
     }),
     ...(options.credentialEnv ?? {}),
   };
@@ -515,7 +522,12 @@ export async function runScenarioRun(
         options.stderr(`scenarios: fixture missing for '${scenario.id}'; skipping`);
         continue;
       }
-      const gateReason = scenarioGateReason(scenario, condition, options.credentialEnv ?? {});
+      const gateReason = scenarioGateReason(
+        scenario,
+        condition,
+        options.credentialEnv ?? {},
+        options.rag
+      );
       const result =
         gateReason === null
           ? await runUnit(options, deps, scenario, condition, runner)

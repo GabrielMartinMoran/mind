@@ -227,3 +227,35 @@ describe('provider credential injection', () => {
     expect(judge.env.OPENROUTER_API_KEY).toBe('test-key');
   });
 });
+
+describe('A2 condition profile RAG wiring', () => {
+  test('keeps every profile RAG-off by default', () => {
+    const profiles = buildConditionProfiles({
+      runDir: '/runs/run-1',
+      conditions: ['mind-current', 'no-memory'],
+      worktrees: { current: '/worktrees/current' },
+    });
+    for (const profile of profiles) {
+      expect(profile.env.MIND_RAG).toBe('false');
+      expect(profile.env.MIND_EMBEDDING_PROVIDER).toBeUndefined();
+    }
+  });
+
+  test('enables RAG and the OpenRouter provider in every profile for a RAG run', () => {
+    const profiles = buildConditionProfiles({
+      runDir: '/runs/run-1',
+      conditions: ['mind-current'],
+      worktrees: { current: '/worktrees/current' },
+      rag: true,
+    });
+    expect(profiles).toHaveLength(1);
+    const profile = profiles[0]!;
+    expect(profile.env.MIND_RAG).toBe('true');
+    expect(profile.env.MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+    const config = JSON.parse(profile.env.OPENCODE_CONFIG_CONTENT!) as {
+      mcp?: { servers: Record<string, { environment: Record<string, string> }> };
+    };
+    expect(config.mcp!.servers.mind!.environment.MIND_RAG).toBe('true');
+    expect(config.mcp!.servers.mind!.environment.MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+  });
+});
