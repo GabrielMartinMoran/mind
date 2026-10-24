@@ -55,6 +55,7 @@ time.
 If you want semantic search, you can enable optional embeddings from OpenAI or
 OpenRouter. They are off by default.
 
+Mind's purpose and product principles are in [Mind's philosophy](docs/mind-philosophy.md).
 To learn how to decide what to remember, write durable memories, maintain tiers
 and links, supersede old decisions, and keep living references current, see
 [Cognitive memory lifecycle](docs/cognitive-memory-lifecycle.md). For the full
@@ -745,11 +746,10 @@ GitHub's generated release notes fallback.
 
 ## Contributing
 
-Issues and PRs are welcome.
-
-- Keep changes focused and documented.
-- Preserve command behavior and compatibility when possible.
-- Update `AGENTS.md` when architecture or command behavior changes.
+Issues and PRs are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) for the
+workflow, code quality expectations, and validation gates. See [Mind's purpose
+and philosophy](docs/mind-philosophy.md) for the product principles contributions
+should preserve.
 
 ## License
 

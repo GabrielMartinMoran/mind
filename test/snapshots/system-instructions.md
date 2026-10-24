@@ -81,6 +81,24 @@ RAG is optional and off by default. When enabled, semantic matches can appear
 without sharing words with the query; check `methods` before trusting a weak
 hit.
 
+### Temporal fallback
+
+When the user asks what they have been working on recently, or continuity
+remains unclear after checking useful checkpoints and session summaries, use
+`memory_query` without a `search` field to inspect recently changed memories in
+the relevant project space. Use `space: "*"` for an explicitly cross-project
+recap. Start with a small `limit`; prioritize session summaries and memories
+about decisions, discoveries, or fixes, then inspect only promising candidates
+with `memory_read` and `noPromote: true`.
+
+Use this only on demand, not as a startup ritual: do not fetch a fixed batch of
+recent memories when a checkpoint, session summary, or focused query already
+answers the question. `changed_at` is a retrieval clue, not a complete activity
+history: it records the latest relevant memory change, can reflect maintenance
+changes, and does not preserve intermediate versions or all tag/link changes.
+Describe what the retrieved memories support and state when the evidence is
+incomplete.
+
 ## LEARN
 
 **Trigger:** You verified stable knowledge that future sessions need: a
