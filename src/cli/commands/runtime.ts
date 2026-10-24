@@ -7,6 +7,7 @@ import { runUpdateCommand } from '../self-update';
 import {
   listAgents,
   runSetup,
+  runSetupAll,
   runSetupRefresh,
   startMcpDetached,
   startServeDetached,
@@ -35,10 +36,14 @@ const SERVE_START = new ArgParser(['serve|server|web', 'start'], 'Starts web HTT
 ]);
 const SERVE_STOP = new ArgParser(['serve|server|web', 'stop'], 'Stops web HTTP server');
 
-const SETUP = new ArgParser(['setup|install'], 'Lists supported agents for setup');
+const SETUP = new ArgParser(['setup|install'], 'Configures Mind for all supported agents');
+const SETUP_COMPATIBILITY = new ArgParser(
+  ['setup|install', 'compatibility'],
+  'Shows agent integration compatibility'
+);
 const SETUP_REFRESH = new ArgParser(
   ['setup|install', 'refresh'],
-  'Refreshes mind-managed agent integrations',
+  'Refreshes detected Mind-managed agent integrations',
   [
     { name: 'dry-run', hasValue: false, description: 'show what would be refreshed' },
     { name: 'all', hasValue: false, description: 'refresh all supported agents' },
@@ -47,7 +52,7 @@ const SETUP_REFRESH = new ArgParser(
 );
 const SETUP_AGENT = new ArgParser(
   ['setup|install', p('agent')],
-  `Setup agent MCP integration.\n\tSupported agents: ${getSupportedAgents().join(', ')}`
+  `Configures Mind for one agent.\n\tSupported agents: ${getSupportedAgents().join(', ')}`
 );
 
 const UPDATE = new ArgParser(['update'], 'Updates mind from GitHub releases', [
@@ -87,6 +92,8 @@ export const runtimeGroup: CommandGroup = {
     MCP_STOP,
     SERVE_START,
     SERVE_STOP,
+    SETUP,
+    SETUP_COMPATIBILITY,
     SETUP_REFRESH,
     SETUP_AGENT,
     UPDATE,
@@ -140,7 +147,8 @@ export const runtimeGroup: CommandGroup = {
       },
     },
     {
-      matches: args => SETUP_REFRESH.matches(args),
+      matches: args =>
+        SETUP_REFRESH.matches(args) && SETUP_REFRESH.getPositionalArgs(args)[1] === 'refresh',
       execute: async args => {
         const flags = SETUP_REFRESH.getFlags(args);
         await runSetupRefresh({
@@ -148,6 +156,14 @@ export const runtimeGroup: CommandGroup = {
           agent: typeof flags.agent === 'string' ? (flags.agent as SupportedAgent) : undefined,
           dryRun: !!flags['dry-run'],
         });
+      },
+    },
+    {
+      matches: args =>
+        SETUP_COMPATIBILITY.matches(args) &&
+        SETUP_COMPATIBILITY.getPositionalArgs(args)[1] === 'compatibility',
+      execute: async () => {
+        listAgents();
       },
     },
     {
@@ -160,9 +176,7 @@ export const runtimeGroup: CommandGroup = {
     {
       matches: args => SETUP.matches(args),
       execute: async () => {
-        console.log('mind setup <agent>  Setup MCP for an agent');
-        console.log('');
-        listAgents();
+        await runSetupAll();
       },
     },
     {

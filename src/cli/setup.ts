@@ -1059,6 +1059,17 @@ export async function runSetup(
   printCapabilityDiagnostics(cfg.capabilities, getAgentSkillDeclaration(agent));
 }
 
+export async function runSetupAll(): Promise<SupportedAgent[]> {
+  const agents = getSupportedAgents() as SupportedAgent[];
+
+  for (const agent of agents) {
+    await runSetup(agent);
+  }
+
+  console.log(`✅ Setup complete for all ${agents.length} supported agents.`);
+  return agents;
+}
+
 export interface SetupRefreshOptions {
   mode?: 'detected' | 'all';
   agent?: SupportedAgent;
@@ -1242,7 +1253,7 @@ function formatAgentRow(
 }
 
 export function listAgents(): void {
-  console.log('🧠 Available Agents\n');
+  console.log('🧠 Agent Compatibility\n');
 
   for (const { agent, name, capabilities, skill } of getAgentCapabilityMatrix()) {
     console.log(formatAgentRow(agent, name, capabilities, skill));

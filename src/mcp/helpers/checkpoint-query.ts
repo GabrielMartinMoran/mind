@@ -35,7 +35,9 @@ export function applyCheckpointFilters(
 
   if (to) {
     const toDate = new Date(to);
-    toDate.setHours(23, 59, 59, 999);
+    // Date-only bounds are UTC dates; use UTC here so inclusion of the end day
+    // does not change with the host's local timezone.
+    toDate.setUTCHours(23, 59, 59, 999);
     filtered = filtered.filter(memory => new Date(memory.changed_at) <= toDate);
   }
 
