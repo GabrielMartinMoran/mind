@@ -4,8 +4,9 @@
 // JavaScript parses that form as local time, so every bound and timestamp is
 // resolved through the store's canonical UTC parser (`parseUtcBound`) instead
 // of the host timezone. Both `checkpoint_query` and `memory_query` share this
-// implementation, and it cannot diverge from the store query path because both
-// use the same parser.
+// implementation. The store query path calls the same parser and the same
+// whole-second resolution, so a given bound selects the same rows on both
+// paths.
 
 import { parseUtcBound } from '../../store/shared/datetime-helpers';
 
@@ -17,9 +18,10 @@ interface DatedValue {
  * Return the items whose UTC `changed_at` falls inside the inclusive bounds.
  *
  * Bounds and timestamps are parsed by {@link parseUtcBound}: date-only bounds
- * cover their full UTC day, zone-less date-times are read as UTC, and explicit
- * zones are converted to UTC. Passing neither bound returns the list unchanged;
- * an invalid bound excludes all items, matching the previous filter behavior
+ * cover their full UTC day, zone-less date-times are read as UTC, explicit
+ * zones are converted to UTC, and fractional seconds floor to the whole second
+ * used by `changed_at`. Passing neither bound returns the list unchanged; an
+ * invalid bound excludes all items, matching the previous filter behavior
  * instead of silently widening.
  */
 export function filterByDateRange<T extends DatedValue>(

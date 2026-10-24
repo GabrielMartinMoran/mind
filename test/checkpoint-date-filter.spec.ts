@@ -1,27 +1,12 @@
-import { describe, expect, test } from 'bun:test';
+import { Database } from 'bun:sqlite';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import * as queryMemoriesModule from '../src/mcp/handlers/memories/query-memories';
 import { applyCheckpointFilters } from '../src/mcp/helpers/checkpoint-query';
-import { normalizeDateBound } from '../src/store/shared/datetime-helpers';
+import { filterByDateRange } from '../src/mcp/helpers/date-filter';
 import type { MemorySummary } from '../src/types';
 
-// The store path compares `changed_at` textually against a normalized bound.
-// Reproduce that decision here so the MCP filter and the store path can be
-// asserted against the exact same fixtures and bounds.
-function storeFilter(memories: MemorySummary[], from?: string, to?: string): MemorySummary[] {
-  const fromBound = from ? normalizeDateBound(from, false) : null;
-  const toBound = to ? normalizeDateBound(to, true) : null;
-
-  return memories.filter(memory => {
-    if (fromBound !== null && memory.changed_at < fromBound) {
-      return false;
-    }
-    if (toBound !== null && memory.changed_at > toBound) {
-      return false;
-    }
-    return true;
-  });
-}
+import { createTestStore } from './mocks/test-store';
 
 // The memory_query filter is exported so both call sites can be asserted against
 // the exact same boundary cases. It must never diverge from checkpoint_query.
@@ -155,18 +140,120 @@ describe('bound spellings resolve to the same UTC instant on every surface', () 
     test(`${label} keeps only rows at or before the UTC instant`, () => {
       expect(names(checkpointFilter(boundFixtures, undefined, to))).toEqual([...expected]);
       expect(names(memoryQueryFilter(boundFixtures, undefined, to))).toEqual([...expected]);
-      expect(names(storeFilter(boundFixtures, undefined, to))).toEqual([...expected]);
     });
   }
 
-  test('the MCP filter and the store path agree on every bound spelling', () => {
+  test('the checkpoint and memory_query filters agree on every bound spelling', () => {
     for (const { to } of cases) {
       expect(names(checkpointFilter(boundFixtures, undefined, to))).toEqual(
-        names(storeFilter(boundFixtures, undefined, to))
-      );
-      expect(names(memoryQueryFilter(boundFixtures, undefined, to))).toEqual(
-        names(storeFilter(boundFixtures, undefined, to))
+        names(memoryQueryFilter(boundFixtures, undefined, to))
       );
     }
   });
+});
+
+// The store SQL path and the MCP filter are separate implementations, so this
+// suite runs both against one real SQLite store. `changed_at` is written at
+// second precision in production; the SQL updates below reproduce that shape.
+describe('store query and MCP date filter return identical rows (real store)', () => {
+  let store: ReturnType<typeof createTestStore> | undefined;
+
+  afterEach(() => {
+    store?.cleanup();
+    store = undefined;
+  });
+
+  const rows = [
+    ['before-day', '2026-10-23 23:59:59'],
+    ['start', '2026-10-24 00:00:00'],
+    ['at-120000', '2026-10-24 12:00:00'],
+    ['at-120001', '2026-10-24 12:00:01'],
+    ['end', '2026-10-24 23:59:59'],
+    ['after-day', '2026-10-25 00:00:00'],
+  ] as const;
+
+  async function seed(): Promise<void> {
+    const testStore = createTestStore();
+    store = testStore;
+    testStore.createSpace('projects/test', 'A test space', ['test']);
+    for (const [name] of rows) {
+      await testStore.addMemory('projects/test', name, `content ${name}`, {
+        tags: ['checkpoint'],
+      });
+    }
+
+    // Force deterministic `changed_at` values through SQL. `getStatus()` exposes
+    // the real store's database path, so this edits the same rows the store reads.
+    const db = new Database(testStore.getStatus().db_path);
+    try {
+      for (const [name, changedAt] of rows) {
+        db.run('UPDATE memories SET changed_at = ? WHERE name = ?', [changedAt, name]);
+      }
+    } finally {
+      db.close();
+    }
+  }
+
+  function queryStore(from?: string, to?: string): string[] {
+    return store!
+      .queryMemories({ space: 'projects/test', from, to, limit: 500 })
+      .map(memory => memory.name)
+      .sort();
+  }
+
+  function queryMcp(from?: string, to?: string): string[] {
+    // memory_query fetches rows first, then filters them in JavaScript.
+    const all = store!.queryMemories({ space: 'projects/test', limit: 500 });
+    return filterByDateRange(all, from, to)
+      .map(memory => memory.name)
+      .sort();
+  }
+
+  const cases: Array<{
+    label: string;
+    from?: string;
+    to?: string;
+    expected: string[];
+  }> = [
+    {
+      label: 'date-only bounds',
+      from: '2026-10-24',
+      to: '2026-10-24',
+      expected: ['at-120000', 'at-120001', 'end', 'start'],
+    },
+    {
+      label: 'zone-less T bound',
+      from: '2026-10-24T12:00:00',
+      expected: ['after-day', 'at-120000', 'at-120001', 'end'],
+    },
+    {
+      label: 'space separator with explicit offset',
+      from: '2026-10-24 14:00:00+02:00',
+      expected: ['after-day', 'at-120000', 'at-120001', 'end'],
+    },
+    {
+      label: 'fractional-second from bound',
+      from: '2026-10-24 12:00:00.500',
+      expected: ['after-day', 'at-120000', 'at-120001', 'end'],
+    },
+    {
+      label: 'fractional-second to bound',
+      to: '2026-10-24T12:00:00.001',
+      expected: ['at-120000', 'before-day', 'start'],
+    },
+    {
+      label: 'fractional-second to bound at .500',
+      to: '2026-10-24 12:00:00.500',
+      expected: ['at-120000', 'before-day', 'start'],
+    },
+  ];
+
+  for (const { label, from, to, expected } of cases) {
+    test(`${label} agrees between the store and the MCP filter`, async () => {
+      await seed();
+      expect(queryStore(from, to)).toEqual([...expected]);
+      expect(queryMcp(from, to)).toEqual([...expected]);
+      expect(queryMcp(from, to)).toEqual(queryStore(from, to));
+    });
+  }
 });

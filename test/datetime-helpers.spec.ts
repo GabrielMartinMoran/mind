@@ -46,6 +46,17 @@ describe('normalizeDateBound', () => {
     expect(normalizeDateBound('2026-10-24 12:00:00Z')).toBe('2026-10-24 12:00:00');
   });
 
+  test('fractional seconds are resolved to whole seconds', () => {
+    expect(normalizeDateBound('2026-10-24 12:00:00.500')).toBe('2026-10-24 12:00:00');
+    expect(normalizeDateBound('2026-10-24T12:00:00.001')).toBe('2026-10-24 12:00:00');
+    expect(normalizeDateBound('2026-10-24T12:00:00.999Z')).toBe('2026-10-24 12:00:00');
+    expect(normalizeDateBound('2026-10-24T14:00:00.500+02:00')).toBe('2026-10-24 12:00:00');
+  });
+
+  test('a fractional-second time-bearing to bound still floors to its whole second', () => {
+    expect(normalizeDateBound('2026-10-24 12:00:00.500', true)).toBe('2026-10-24 12:00:00');
+  });
+
   test('invalid input still throws', () => {
     expect(() => normalizeDateBound('not-a-date')).toThrow('Invalid date value: not-a-date');
   });

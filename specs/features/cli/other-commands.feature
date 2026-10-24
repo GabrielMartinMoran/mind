@@ -106,6 +106,7 @@ Feature: CLI Other Commands
 
   Rule: setup command
 
+    @unit
     Scenario: setup without agent configures all supported integrations
       When running "./mind setup"
       Then setup completes for all supported agents
