@@ -144,7 +144,7 @@ Example:
 
 ### Fixed
 
-- Fixed `checkpoint_query` end-date filtering so date-only bounds include the full UTC day on hosts with non-UTC local timezones.
+- Fixed `checkpoint_query` and `memory_query` date-range filtering on hosts with non-UTC local timezones. Zone-less `changed_at` values are now parsed as UTC, date-only bounds cover the full UTC day (`from` starts at 00:00:00.000 and `to` ends at 23:59:59.999), a bound that carries a time is honored exactly as UTC instead of being widened, and `from`/`to` are symmetric. Both tools share one implementation so their results cannot diverge.
 - Fixed the agent-memory benchmark isolation gate rejecting valid `mind-current` environments during a cold start. `verifyIsolation` now polls `/api/skill` a bounded number of times until the exact allowlisted surface appears, evaluates the skills allowlist and skill-first checks against that final listing, and saves it as evidence; a skill that never appears still fails closed with its id.
 - Fixed clearing an in-space query so stale search results are removed without another search request and a matching memory list is reused.
 - Fixed long in-space search result lists being clipped by the fixed-height space view: results now scroll inside their own region while the space header, shared filter bar, and result status stay visible, with no page scroll. At phone widths the tag select pairs with the tier chips and confidence pairs with embeddings, so the results body keeps at least 120 px at 320x700 instead of collapsing to 111 px.

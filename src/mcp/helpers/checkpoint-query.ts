@@ -3,6 +3,8 @@ import { fetchCheckpointContent } from '../../helpers/checkpoint-content';
 import type { MindStore } from '../../store/mind-store';
 import type { MemorySummary } from '../../types';
 
+import { filterByDateRange } from './date-filter';
+
 export interface CheckpointSummary {
   name: string;
   goal: string;
@@ -28,20 +30,7 @@ export function applyCheckpointFilters(
     filtered = filtered.filter(memory => memory.tags.includes(tag));
   }
 
-  if (from) {
-    const fromDate = new Date(from);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) >= fromDate);
-  }
-
-  if (to) {
-    const toDate = new Date(to);
-    // Date-only bounds are UTC dates; use UTC here so inclusion of the end day
-    // does not change with the host's local timezone.
-    toDate.setUTCHours(23, 59, 59, 999);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) <= toDate);
-  }
-
-  return filtered;
+  return filterByDateRange(filtered, from, to);
 }
 
 export function applyCheckpointSortAndPagination(
