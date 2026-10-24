@@ -1,48 +1,48 @@
 # 🧠 Mind
 
-_**Stop losing context across sessions, tools, and time. Give your AI workflow a memory that lasts.**_
+![Mind banner: connected memory nodes](./assets/image/mind-banner.png)
 
-Mind is a local memory layer for AI workflows: a persistent memory system for
-durable context such as decisions, bug fixes, patterns, checkpoints, and
-session summaries that would otherwise disappear across sessions and tools.
+**Your coding agent forgets. Mind remembers.**
 
-It supports recovery after compaction through checkpoint and session
-continuity behavior, while giving humans a way to visualize, inspect, and
-modify that memory through the CLI and web UI.
+Mind is local, persistent memory for AI coding agents. Keep project decisions,
+bug fixes, and working context available across sessions, compaction, and
+tools.
 
-**Why Mind works above the fold:**
+**Local-first · Open source · MCP**
 
-- **Local persistent store.** One SQLite-backed memory system you control.
-- **Built for agent workflows.** Use it through the CLI, MCP server, HTTP API,
-  and web UI.
-- **Resumption tools included.** Checkpoints and session summaries help recover
-  context and continue work.
-- **Optional file sync.** Experimental autosync can mirror project spaces into
-  versioned `.mind/` files.
-- **Search when you need it.** Full-text search is built in, and semantic
-  search is available as an optional add-on.
+### Get started
 
-Get started with [Installation](#installation) or jump straight to the
-[Quick start](#quick-start).
+Install Mind, then configure your agent. This example uses OpenCode:
 
-![Mind Preview](./assets/video/web-preview.gif)
+```bash
+curl -fsSL https://raw.githubusercontent.com/GabrielMartinMoran/mind/main/scripts/install.sh | bash
+mind setup opencode
+```
 
-## Why try Mind?
+[Installation](#installation) ·
+[Supported agents](docs/agent-integration-matrix.md) ·
+[How Mind works](docs/cognitive-memory-lifecycle.md) ·
+[Project philosophy](docs/mind-philosophy.md)
 
-Mind helps you keep durable context organized, retrievable, and usable as work
-moves across tools, sessions, and compaction boundaries.
+## See Mind in action
 
-- **Structured memory you can revisit.** Organize information into spaces,
-  tags, directional links, tiers, pins, checkpoints, and session summaries.
-- **A lifecycle, not a dump.** Capture durable knowledge, relate it, maintain
-  current truth, supersede what changed, and hand off work across sessions.
-- **Recovery built into the workflow.** Restore context after compaction,
-  resume work from checkpoints, and keep important state visible over time.
-- **Shared interfaces, one memory layer.** Use the CLI, MCP server, HTTP API,
-  and web app against the same local source of truth.
-- **Per-space visibility with Neural Map.** Each space includes a read-only
-  graph view so you can understand how memories connect without claiming a
-  global knowledge graph.
+![Mind web app preview](./assets/video/web-preview.gif)
+
+The preview shows Mind's web app for inspecting and maintaining saved memories.
+
+## Why Mind?
+
+- **Keep project knowledge available.** Save decisions, fixes, patterns,
+  checkpoints, and session summaries in one local SQLite store.
+- **Use the same memory across tools.** Access it through the CLI, MCP server,
+  HTTP API, and web app.
+- **Recover working context.** Checkpoints and session summaries help agents
+  resume work across sessions and after compaction.
+- **Keep memory organized.** Spaces, tags, tiers, and links help you maintain
+  current knowledge over time; the per-space Neural Map makes those
+  relationships visible.
+- **Choose how to search.** Full-text search works out of the box; optional
+  semantic search can be enabled with OpenAI or OpenRouter embeddings.
 
 ## What is Mind?
 
