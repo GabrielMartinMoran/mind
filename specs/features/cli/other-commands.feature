@@ -118,6 +118,7 @@ Feature: CLI Other Commands
       And the output names the agent that failed
       And the success summary is not printed
 
+    @unit
     Scenario: setup compatibility shows the capability matrix
       When running "./mind setup compatibility"
       Then the full capability matrix is displayed

@@ -2,7 +2,26 @@ import { describe, expect, test } from 'bun:test';
 
 import * as queryMemoriesModule from '../src/mcp/handlers/memories/query-memories';
 import { applyCheckpointFilters } from '../src/mcp/helpers/checkpoint-query';
+import { normalizeDateBound } from '../src/store/shared/datetime-helpers';
 import type { MemorySummary } from '../src/types';
+
+// The store path compares `changed_at` textually against a normalized bound.
+// Reproduce that decision here so the MCP filter and the store path can be
+// asserted against the exact same fixtures and bounds.
+function storeFilter(memories: MemorySummary[], from?: string, to?: string): MemorySummary[] {
+  const fromBound = from ? normalizeDateBound(from, false) : null;
+  const toBound = to ? normalizeDateBound(to, true) : null;
+
+  return memories.filter(memory => {
+    if (fromBound !== null && memory.changed_at < fromBound) {
+      return false;
+    }
+    if (toBound !== null && memory.changed_at > toBound) {
+      return false;
+    }
+    return true;
+  });
+}
 
 // The memory_query filter is exported so both call sites can be asserted against
 // the exact same boundary cases. It must never diverge from checkpoint_query.
@@ -99,6 +118,54 @@ describe('date-range filters treat zone-less timestamps as UTC', () => {
     ] as const) {
       expect(names(checkpointFilter(dayFixtures, from, to))).toEqual(
         names(memoryQueryFilter(dayFixtures, from, to))
+      );
+    }
+  });
+});
+
+describe('bound spellings resolve to the same UTC instant on every surface', () => {
+  const boundFixtures = [
+    summary('just-before', '2026-10-24 09:59:59'),
+    summary('lower-edge', '2026-10-24 10:00:00'),
+    summary('mid', '2026-10-24 11:00:00'),
+    summary('upper-edge', '2026-10-24 12:00:00'),
+    summary('just-after', '2026-10-24 12:00:01'),
+  ];
+
+  // Each case has a `to` bound and the exact set of fixture names it may keep.
+  const cases = [
+    {
+      label: 'zone-less ISO T bound',
+      to: '2026-10-24T12:00:00',
+      expected: ['just-before', 'lower-edge', 'mid', 'upper-edge'],
+    },
+    {
+      label: 'space separator with explicit offset',
+      to: '2026-10-24 12:00:00+02:00',
+      expected: ['just-before', 'lower-edge'],
+    },
+    {
+      label: 'explicit Z bound',
+      to: '2026-10-24T12:00:00Z',
+      expected: ['just-before', 'lower-edge', 'mid', 'upper-edge'],
+    },
+  ] as const;
+
+  for (const { label, to, expected } of cases) {
+    test(`${label} keeps only rows at or before the UTC instant`, () => {
+      expect(names(checkpointFilter(boundFixtures, undefined, to))).toEqual([...expected]);
+      expect(names(memoryQueryFilter(boundFixtures, undefined, to))).toEqual([...expected]);
+      expect(names(storeFilter(boundFixtures, undefined, to))).toEqual([...expected]);
+    });
+  }
+
+  test('the MCP filter and the store path agree on every bound spelling', () => {
+    for (const { to } of cases) {
+      expect(names(checkpointFilter(boundFixtures, undefined, to))).toEqual(
+        names(storeFilter(boundFixtures, undefined, to))
+      );
+      expect(names(memoryQueryFilter(boundFixtures, undefined, to))).toEqual(
+        names(storeFilter(boundFixtures, undefined, to))
       );
     }
   });

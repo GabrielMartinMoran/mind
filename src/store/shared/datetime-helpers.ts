@@ -11,13 +11,24 @@ export function now(): string {
 }
 
 /**
- * Parse a query bound as UTC.
+ * Parse a date/time bound as UTC. This is the single parser shared by the store
+ * query path and the MCP date-range filter, so both resolve every accepted
+ * spelling to the same instant regardless of the host timezone.
  *
- * A date-only `from` starts at 00:00:00 and a date-only `to` ends at 23:59:59
- * of that same UTC day. A bound that carries a time is honored exactly as UTC
- * and is never widened. Inputs that name an explicit zone are converted to UTC.
+ * Resolution rules:
+ * - A date-only `YYYY-MM-DD` bound resolves to 00:00:00 of that UTC day, or to
+ *   23:59:59 when `endOfDay` is true.
+ * - A zone-less date-time (`YYYY-MM-DD HH:MM:SS` or `YYYY-MM-DDTHH:MM:SS`) is
+ *   read as UTC.
+ * - An explicit zone (trailing `Z`, or an offset `±HH:MM` / `±HHMM` with either
+ *   a `T` or a space separator) is honored and converted to UTC.
+ * - Any other value yields an invalid `Date` (never a host-local guess).
+ *
+ * @param raw - the raw date string
+ * @param endOfDay - if true, a date-only value resolves to 23:59:59 instead of
+ *   00:00:00; a value that already carries a time is unaffected
  */
-function parseUtcBound(raw: string, endOfDay: boolean): Date {
+export function parseUtcBound(raw: string, endOfDay = false): Date {
   const text = raw.trim();
 
   if (DATE_ONLY.test(text)) {
@@ -25,7 +36,8 @@ function parseUtcBound(raw: string, endOfDay: boolean): Date {
   }
 
   if (EXPLICIT_ZONE.test(text)) {
-    return new Date(text);
+    // Normalize a space separator to `T` so every engine honors the offset.
+    return new Date(text.replace(' ', 'T'));
   }
 
   // Zone-less forms such as "YYYY-MM-DD HH:MM:SS" would otherwise parse as
@@ -36,10 +48,11 @@ function parseUtcBound(raw: string, endOfDay: boolean): Date {
 /**
  * Normalize a date bound (from/to) to the zone-less UTC storage format
  * (`YYYY-MM-DD HH:MM:SS`), which is lexicographically comparable with
- * `changed_at`.
+ * `changed_at`. Parsing rules are those of {@link parseUtcBound}.
  * @param raw - the raw date string
  * @param endOfDay - if true, a date-only value resolves to 23:59:59 instead of
  *   00:00:00; a value that already carries a time is left unchanged
+ * @throws when the input cannot be parsed as a date bound
  */
 export function normalizeDateBound(raw: string, endOfDay = false): string {
   const parsed = parseUtcBound(raw, endOfDay);
