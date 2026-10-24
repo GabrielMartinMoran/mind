@@ -12,11 +12,11 @@ tools.
 
 ### Get started
 
-Install Mind, then configure your agent. This example uses OpenCode:
+Install Mind and configure all supported agent integrations in one pass:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/GabrielMartinMoran/mind/main/scripts/install.sh | bash
-mind setup opencode
+mind setup refresh --all
 ```
 
 [Installation](#installation) ·
