@@ -13,13 +13,24 @@
 
 import type { ConditionId } from '../config';
 import { mulberry32 } from '../locomo/subset';
-import type { DriverTokenUsage, SessionDriver, SessionLimits } from '../opencode/driver';
+import type {
+  DriverIdleOutcome,
+  DriverTokenUsage,
+  SessionDriver,
+  SessionLimits,
+} from '../opencode/driver';
+
+/** Whether a measurement finished a session with a successful idle outcome. */
+export type A2Completion = 'complete' | 'incomplete';
 
 export type A2Class =
   | 'correct'
   | 'partial'
   | 'incorrect'
   | 'correct_abstention'
+  | 'abstention'
+  | 'empty_answer'
+  | 'incomplete'
   | 'hallucination'
   | 'error';
 
@@ -28,6 +39,9 @@ export const A2_CLASSES: readonly A2Class[] = [
   'partial',
   'incorrect',
   'correct_abstention',
+  'abstention',
+  'empty_answer',
+  'incomplete',
   'hallucination',
   'error',
 ];
@@ -105,18 +119,38 @@ export interface DeterministicInput {
   readonly adversarial: boolean;
   /** Set when the measurement itself failed (auth/timeout/error). */
   readonly error?: boolean;
+  /** Explicit terminal completion, when the runner resolved it. */
+  readonly completion?: A2Completion;
+  /**
+   * Session idle outcome. `null` means the outcome was not successful;
+   * `undefined` means legacy evidence that predates completion tracking.
+   */
+  readonly idleOutcome?: DriverIdleOutcome | null;
+}
+
+function isIncompleteInput(input: DeterministicInput): boolean {
+  if (input.error === true) return true;
+  if (input.completion === 'incomplete') return true;
+  // An explicitly recorded idle outcome must be `succeeded`; `null` (unknown or
+  // absent) is not proof of completion. Legacy inputs omit the field entirely.
+  return input.idleOutcome !== undefined && input.idleOutcome !== 'succeeded';
 }
 
 export function scoreDeterministic(input: DeterministicInput): DeterministicScore {
   const answer = input.answer.trim();
   const abstained = isAbstention(answer);
 
-  if (input.error) return { klass: 'error', f1: null, abstained };
+  if (isIncompleteInput(input)) return { klass: 'incomplete', f1: null, abstained };
+  // A successful session that produced no final text is visible, but it is
+  // never an answer to score as correct, partial or invented.
+  if (answer.length === 0) return { klass: 'empty_answer', f1: null, abstained: false };
   if (input.adversarial) {
     if (abstained) return { klass: 'correct_abstention', f1: null, abstained: true };
-    if (answer.length === 0) return { klass: 'incorrect', f1: null, abstained: false };
     return { klass: 'hallucination', f1: null, abstained: false };
   }
+  // A canonical abstention on an answerable question is its own outcome; token
+  // overlap with the reference must not turn it into a partial answer.
+  if (abstained) return { klass: 'abstention', f1: null, abstained: true };
   if (!input.reference) return { klass: 'incorrect', f1: null, abstained };
   const f1 = tokenF1(answer, input.reference);
   return { klass: classifyByF1(f1), f1, abstained };
@@ -328,6 +362,8 @@ export interface A2QuestionResult {
   readonly answer: string;
   readonly reference: string | null;
   readonly deterministic: DeterministicScore;
+  /** Terminal completion, when the runner captured it. Absent on legacy results. */
+  readonly completion?: A2Completion;
   /** Judge verdict for THIS condition's candidate (mapped back from the label). */
   readonly judge: JudgeVerdict | null;
   readonly memoryCalls: number;
@@ -335,6 +371,19 @@ export interface A2QuestionResult {
   readonly costUsd: number;
   readonly latencyMs: number;
   readonly error: string | null;
+}
+
+/**
+ * Only a completed, non-empty answer is an answer-quality measurement. Empty
+ * and incomplete results stay visible in the artifacts but never reach the
+ * blind judge and never enter the answer-quality means.
+ */
+export function isJudgeableResult(
+  result: Pick<A2QuestionResult, 'answer' | 'deterministic'>
+): boolean {
+  const klass = result.deterministic.klass;
+  if (klass === 'incomplete' || klass === 'empty_answer') return false;
+  return result.answer.trim().length > 0;
 }
 
 /** Unique measurement key for a (question, rep) pair. */
@@ -368,7 +417,7 @@ export function questionRepRows(results: readonly A2QuestionResult[]): A2Questio
     categoryName: result.categoryName,
     adversarial: result.adversarial,
     f1: result.deterministic.f1,
-    judgeScore: result.judge?.score ?? null,
+    judgeScore: isJudgeableResult(result) ? (result.judge?.score ?? null) : null,
     memoryCalls: result.memoryCalls,
     costUsd: result.costUsd,
     latencyMs: result.latencyMs,
@@ -398,6 +447,9 @@ function emptyClassCounts(): Record<A2Class, number> {
     partial: 0,
     incorrect: 0,
     correct_abstention: 0,
+    abstention: 0,
+    empty_answer: 0,
+    incomplete: 0,
     hallucination: 0,
     error: 0,
   };
@@ -436,6 +488,7 @@ export function aggregateCondition(
     ),
     judgeScoreMean: mean(
       results
+        .filter(isJudgeableResult)
         .map(result => result.judge?.score)
         .filter((value): value is number => typeof value === 'number')
     ),

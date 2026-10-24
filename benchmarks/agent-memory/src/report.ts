@@ -12,7 +12,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
-import type { A2QuestionResult } from './benchmarkA/judge';
+import { isJudgeableResult, type A2QuestionResult } from './benchmarkA/judge';
 import type { ScenarioConditionResult } from './benchmarkB/runner';
 import { CONDITIONS, PINNED_VERSIONS, isMindCondition, type ConditionId } from './config';
 import { LOCOMO_CATEGORIES, categoryName } from './locomo/types';
@@ -422,12 +422,33 @@ function section7(
     }
   }
   lines.push('', '**Errores por ítem (A2)**', '');
+  // Incomplete runs are listed in their own section below; do not repeat them
+  // here when the failure also populated `error`.
   const a2Errors = Object.entries(a2).flatMap(([condition, results]) =>
     (results ?? [])
-      .filter(result => result.error !== null)
+      .filter(
+        result =>
+          result.error !== null &&
+          result.deterministic.klass !== 'incomplete' &&
+          result.completion !== 'incomplete'
+      )
       .map(result => `${condition}/${result.id}: ${result.error}`)
   );
   lines.push(a2Errors.length === 0 ? '- ninguno' : a2Errors.map(e => `- ${e}`).join('\n'));
+
+  lines.push('', '**Ejecuciones A2 incompletas (no puntuadas)**', '');
+  const a2Incomplete = Object.entries(a2).flatMap(([condition, results]) =>
+    (results ?? [])
+      .filter(
+        result => result.deterministic.klass === 'incomplete' || result.completion === 'incomplete'
+      )
+      .map(
+        result =>
+          `${condition}/${result.id}${result.rep !== undefined ? `#rep${result.rep}` : ''}: ` +
+          `${result.error ?? 'session did not complete with a successful idle outcome'}`
+      )
+  );
+  lines.push(a2Incomplete.length === 0 ? '- ninguna' : a2Incomplete.map(e => `- ${e}`).join('\n'));
 
   lines.push('', '**Sesiones B fallidas/contaminadas**', '');
   const bErrors = Object.entries(b).flatMap(([condition, results]) =>
@@ -495,7 +516,8 @@ function section11(summary: RunSummary): string {
     const entry = summary.conditions[condition];
     const a2 = entry?.a2;
     lines.push(
-      `| A2 | ${condition} | ${num(a2?.reps)} | judge=${fmt(a2?.judgeScoreMean ?? null)} | ` +
+      `| A2 | ${condition} | ${num(a2?.reps)} | F1 det.=${fmt(a2?.f1Mean)} ` +
+        `juez ciego=${fmt(a2?.judgeScoreMean ?? null)} | ` +
         `${num(a2?.memoryCalls)} | ${num(a2?.tokensInput)} | ` +
         `${num(a2?.tokensOutput)} | ${fmt(a2?.costUsd ?? null, 4)} |`
     );
@@ -1045,8 +1067,8 @@ function renderA2ByCategory(summary: RunSummary): string {
   const lines = ['### A2 por categoría `[MEDIDO]`', ''];
   if (ids.length === 0) return `${lines[0]}\n\n_not_run_`;
   lines.push(
-    '| categoría | condition | n | correct | partial | incorrect | abst. | halluc. | F1 mean | judge mean |',
-    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'
+    '| categoría | condition | n | correct | partial | incorrect | abst. adv. | abst. | empty | incomplete | halluc. | F1 det. mean | juez ciego mean |',
+    '| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |'
   );
   for (const category of LOCOMO_CATEGORIES) {
     for (const id of ids) {
@@ -1055,6 +1077,7 @@ function renderA2ByCategory(summary: RunSummary): string {
       lines.push(
         `| ${categoryName(category)} | ${id} | ${cat.count} | ${cat.classes.correct} | ` +
           `${cat.classes.partial} | ${cat.classes.incorrect} | ${cat.correctAbstentions} | ` +
+          `${cat.classes.abstention} | ${cat.classes.empty_answer} | ${cat.classes.incomplete} | ` +
           `${cat.hallucinations} | ${fmt(cat.f1Mean)} | ${fmt(cat.judgeScoreMean)} |`
       );
     }
@@ -1128,6 +1151,7 @@ function renderPerQuestionAppendix(
         )
         .join(', ');
       const judgeScores = list
+        .filter(isJudgeableResult)
         .map(result => result.judge?.score)
         .filter((value): value is number => typeof value === 'number');
       const judgeMean =
@@ -1440,7 +1464,7 @@ export function buildCuratedPerQuestion(
         rep: result.rep ?? 0,
         class: result.deterministic.klass,
         f1: result.deterministic.f1,
-        judgeScore: result.judge?.score ?? null,
+        judgeScore: isJudgeableResult(result) ? (result.judge?.score ?? null) : null,
         memoryCalls: result.memoryCalls,
         costUsd: result.costUsd,
       });

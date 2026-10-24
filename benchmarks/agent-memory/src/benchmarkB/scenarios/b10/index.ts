@@ -18,6 +18,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { inspectAllMemories, inspectEmbeddingCoverage } from '../../../mind/inspect';
+import { sessionSearchProvenance } from '../../runner';
 import { duplicateMemoryNames } from '../../duplicates';
 import type {
   Scenario,
@@ -134,6 +135,21 @@ export async function makeAssertion(
     details.push('no duplicate memory names in project spaces');
   }
 
+  // The target must have been retrieved through the semantic channel and that
+  // provenance must be recorded in the session evidence. Embedding presence and
+  // a correct artifact alone never prove semantic recall.
+  const targetProvenance = ctx.sessionResults
+    .flatMap(session => sessionSearchProvenance(session))
+    .find(result => result.name === B10_TARGET && result.methods.includes('semantic'));
+  if (targetProvenance) {
+    details.push(
+      `recorded memory_query result for '${B10_TARGET}' used the semantic channel ` +
+        `(methods: ${targetProvenance.methods.join(', ')})`
+    );
+  } else {
+    details.push(`no recorded memory_query result for '${B10_TARGET}' with semantic provenance`);
+  }
+
   let artifactOk = false;
   const artifactPath = join(ctx.workspaceDir, B10_ARTIFACT_FILE);
   if (!existsSync(artifactPath)) {
@@ -157,7 +173,12 @@ export async function makeAssertion(
   }
 
   return {
-    pass: Boolean(target) && targetOk && duplicates.length === 0 && artifactOk,
+    pass:
+      Boolean(target) &&
+      targetOk &&
+      duplicates.length === 0 &&
+      artifactOk &&
+      Boolean(targetProvenance),
     details,
   };
 }

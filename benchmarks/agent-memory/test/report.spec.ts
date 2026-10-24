@@ -8,7 +8,14 @@ import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
 
 import type { A2QuestionResult } from '../src/benchmarkA/judge';
-import { assertNoSecrets, generateReport, runReport, SecretLeakError } from '../src/report';
+import { loadRunSummary } from '../src/metrics/aggregate';
+import {
+  assertNoSecrets,
+  buildCuratedPerQuestion,
+  generateReport,
+  runReport,
+  SecretLeakError,
+} from '../src/report';
 
 import { makeA1, makeA2, makeMeta, makeScenario, writeFixtureRun } from './fixtures/bench-run';
 
@@ -51,6 +58,27 @@ describe('generateReport sections', () => {
     // SHA and model from meta.
     expect(report).toContain('2222222');
     expect(report).toContain('deepseek-v4.1-flash');
+  });
+
+  test('renders abstention, empty answers and incomplete runs as separate outcomes', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-report-outcomes-'));
+    writeFixtureRun(dir, {
+      a2: {
+        'mind-v10': [
+          makeA2('mind-v10', 'q1', 'abstention'),
+          makeA2('mind-v10', 'q2', 'empty_answer'),
+          makeA2('mind-v10', 'q3', 'incomplete', { error: 'idle outcome failed' }),
+        ],
+      },
+    });
+    const report = generateReport({ runDir: dir });
+    expect(report).toContain('| empty | incomplete |');
+    expect(report).toContain('Ejecuciones A2 incompletas');
+    // Section 7 lists an incomplete run once, in the incomplete section only.
+    expect(report.split('mind-v10/q3').length - 1).toBe(1);
+    // Deterministic F1 and the blind-judge score stay separately labelled.
+    expect(report).toContain('F1 det.');
+    expect(report).toContain('juez ciego');
   });
 
   test('renders a not_run scenario with its reason instead of labeling it fail', () => {
@@ -316,6 +344,62 @@ describe('runReport command', () => {
     );
     expect(code).toBe(1);
     expect(err.join('\n')).toContain('not found');
+  });
+});
+
+describe('judge scores exclude non-judgeable results everywhere', () => {
+  // Contract 3: an empty/incomplete answer never receives a positive blind-judge
+  // score. A stale judge score left on such a result must not re-enter the
+  // report appendix or the curated export while the summary already excludes it.
+  function staleJudgeFixture(): A2QuestionResult[] {
+    return [
+      makeA2('mind-v10', 'conv-26#1', 'correct', { judgeScore: 0.9, f1: 0.8, rep: 0 }),
+      {
+        ...makeA2('mind-v10', 'conv-26#1', 'empty_answer', { judgeScore: 0.1, rep: 1 }),
+        answer: '',
+      },
+    ];
+  }
+
+  test('per-question appendix mean matches the summary mean', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bench-report-judgeable-'));
+    writeFixtureRun(dir, { a2: { 'mind-v10': staleJudgeFixture() } });
+
+    const summaryMean = loadRunSummary(dir).conditions['mind-v10']?.a2?.judgeScoreMean ?? null;
+    expect(summaryMean).toBeCloseTo(0.9, 6);
+
+    const report = generateReport({ runDir: dir });
+    const appendix = report.slice(report.indexOf('## Anexo'));
+    const row = appendix.split('\n').find(line => line.startsWith('| conv-26#1 |'));
+    expect(row).toBeDefined();
+    // The stale 0.1 on the empty_answer rep must not drag the appendix down.
+    expect(row).toContain(`${summaryMean!.toFixed(3)}`);
+    expect(row).not.toContain('0.500');
+  });
+
+  test('curated export omits judge scores for empty answers but keeps judgeable ones', () => {
+    const results = staleJudgeFixture();
+    // A judgeable result that carries an error is still an answer measurement.
+    results.push(
+      makeA2('mind-v10', 'conv-26#1', 'partial', {
+        judgeScore: 0.7,
+        rep: 2,
+        error: 'post-answer warning',
+      })
+    );
+
+    const entry = buildCuratedPerQuestion({ 'mind-v10': results }).find(
+      item => item.id === 'conv-26#1'
+    );
+    expect(entry).toBeDefined();
+    const reps = entry?.conditions['mind-v10'] ?? [];
+    const byRep = new Map(reps.map(rep => [rep.rep, rep]));
+
+    expect(byRep.get(0)?.judgeScore).toBe(0.9);
+    expect(byRep.get(1)?.judgeScore).toBeNull();
+    expect(byRep.get(2)?.judgeScore).toBe(0.7);
+    // Non-judge fields stay untouched for the excluded rep.
+    expect(byRep.get(1)?.class).toBe('empty_answer');
   });
 });
 

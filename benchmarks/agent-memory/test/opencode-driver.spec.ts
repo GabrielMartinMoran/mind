@@ -4,12 +4,15 @@ import {
   DriverAuthError,
   DriverError,
   DriverTimeoutError,
+  buildDriverEvidence,
   classifyDriverError,
   countMemoryCalls,
   createSdkDriver,
   extractToolCalls,
+  hostCreateOptions,
   isAuthError,
   isMemoryTool,
+  isRunComplete,
   nestedToolNames,
   normalizeStructuredError,
   summarizeMessages,
@@ -194,6 +197,9 @@ describe('createSdkDriver terminal-error promotion', () => {
         async wait() {
           return {};
         },
+        async get() {
+          return { id: 'ses_1', outcome: 'succeeded', time: { idle: 1 } };
+        },
         async list() {
           return { data: [] };
         },
@@ -240,5 +246,209 @@ describe('createSdkDriver terminal-error promotion', () => {
       limits: { steps: 1, timeoutMs: 500 },
     });
     expect(result.finalText).toBe('pong');
+  });
+});
+
+describe('host database binding', () => {
+  test('passes the unit database path explicitly instead of relying on env alone', () => {
+    expect(hostCreateOptions({ OPENCODE_DB: '/run/unit/opencode.db' })).toEqual({
+      database: { path: '/run/unit/opencode.db' },
+    });
+    expect(hostCreateOptions({}, '/run/unit/opencode.db')?.database).toEqual({
+      path: '/run/unit/opencode.db',
+    });
+  });
+
+  test('sends no database option when no isolated path exists', () => {
+    expect(hostCreateOptions({})?.database).toBeUndefined();
+  });
+});
+
+describe('evidence capture status', () => {
+  test('captures ordered tool events and skill ids without content', () => {
+    const evidence = buildDriverEvidence({
+      sessionId: 'ses_1',
+      messages: [
+        { type: 'user', content: [{ type: 'text', text: 'secret prompt' }] },
+        { type: 'skill', skill: 'mind-management', name: 'mind-management', text: 'secret' },
+        assistant({
+          content: [
+            { type: 'text', text: 'secret answer' },
+            { type: 'tool', id: 't1', name: 'mind_memory_query' },
+          ],
+        }),
+        assistant({ content: [{ type: 'tool', id: 't2', name: 'bash' }] }),
+      ],
+      childSessionIds: ['ses_child'],
+      idleOutcome: 'succeeded',
+    });
+
+    expect(evidence.status).toBe('captured');
+    expect(evidence.messages).toBe('captured');
+    expect(evidence.children).toBe('captured');
+    expect(evidence.idle).toBe('captured');
+    expect(evidence.tools).toEqual([
+      { name: 'mind_memory_query', server: 'mind' },
+      { name: 'bash', server: null },
+    ]);
+    expect(evidence.skillIds).toEqual(['mind-management']);
+    expect(evidence.childSessionIds).toEqual(['ses_child']);
+    expect(evidence.assistantFinish).toBe('stop');
+    expect(evidence.idleOutcome).toBe('succeeded');
+    expect(JSON.stringify(evidence)).not.toContain('secret');
+  });
+
+  test('a failed message read is unavailable, never valid empty evidence', () => {
+    const evidence = buildDriverEvidence({
+      sessionId: 'ses_1',
+      messages: null,
+      childSessionIds: [],
+      idleOutcome: 'succeeded',
+      reason: 'message list failed',
+    });
+
+    expect(evidence.status).toBe('unavailable');
+    expect(evidence.messages).toBe('unavailable');
+    expect(evidence.reason).toContain('message list failed');
+  });
+
+  test('a failed child read is unavailable, never no-child evidence', () => {
+    const evidence = buildDriverEvidence({
+      sessionId: 'ses_1',
+      messages: [],
+      childSessionIds: null,
+      idleOutcome: 'succeeded',
+      reason: 'child list failed',
+    });
+
+    expect(evidence.status).toBe('unavailable');
+    expect(evidence.children).toBe('unavailable');
+    expect(evidence.reason).toContain('child list failed');
+  });
+});
+
+describe('completion outcome', () => {
+  test('only a successful idle outcome is complete', () => {
+    expect(isRunComplete({ idleOutcome: 'succeeded' })).toBe(true);
+    expect(isRunComplete({ idleOutcome: 'failed' })).toBe(false);
+    expect(isRunComplete({ idleOutcome: 'interrupted' })).toBe(false);
+    expect(isRunComplete({ idleOutcome: null })).toBe(false);
+    expect(isRunComplete({})).toBe(false);
+  });
+
+  test('a final tool-calls message without a successful idle outcome is incomplete', () => {
+    const result = summarizeMessages(
+      [assistant({ content: [{ type: 'tool', id: 't1', name: 'bash' }], finish: 'tool-calls' })],
+      { sessionId: 'ses_1', latencyMs: 1 }
+    );
+    expect(result.finish).toBe('tool-calls');
+    expect(isRunComplete({ ...result, idleOutcome: null })).toBe(false);
+    expect(isRunComplete({ ...result, idleOutcome: 'succeeded' })).toBe(true);
+  });
+});
+
+describe('driver host lifetime and capture failures', () => {
+  interface Tracker {
+    creates: number;
+    closes: number;
+  }
+
+  function trackedInstance(tracker: Tracker, overrides: Record<string, unknown> = {}) {
+    return {
+      sessions: {
+        async create() {
+          return { id: 'ses_1' };
+        },
+        async prompt() {
+          return {};
+        },
+        async wait() {
+          return {};
+        },
+        async get() {
+          return { id: 'ses_1', outcome: 'succeeded', time: { idle: 1 } };
+        },
+        async list() {
+          return { data: [] };
+        },
+        ...((overrides.sessions as Record<string, unknown>) ?? {}),
+      },
+      message: {
+        async list() {
+          return {
+            data: [assistant({ content: [{ type: 'text', text: 'pong' }] })],
+          };
+        },
+        ...((overrides.message as Record<string, unknown>) ?? {}),
+      },
+      async close() {
+        tracker.closes += 1;
+      },
+    };
+  }
+
+  test('keeps ONE host open through prompt, child and message capture', async () => {
+    const tracker: Tracker = { creates: 0, closes: 0 };
+    const driver = createSdkDriver({
+      createInstance: async () => {
+        tracker.creates += 1;
+        return trackedInstance(tracker);
+      },
+    });
+
+    const result = await driver.runPrompt({
+      workspaceDir: '/tmp',
+      prompt: 'x',
+      limits: { steps: 1, timeoutMs: 500 },
+    });
+    await driver.children(result.sessionId);
+    await driver.rawMessages(result.sessionId);
+
+    expect(tracker.creates).toBe(1);
+    expect(tracker.closes).toBe(0);
+    await driver.close();
+    expect(tracker.closes).toBe(1);
+  });
+
+  test('a child-list read failure is surfaced instead of an empty array', async () => {
+    const tracker: Tracker = { creates: 0, closes: 0 };
+    const driver = createSdkDriver({
+      createInstance: async () =>
+        trackedInstance(tracker, {
+          sessions: {
+            async list() {
+              throw new Error('child list failed');
+            },
+          },
+        }),
+    });
+
+    await expect(driver.children('ses_1')).rejects.toThrow('child list failed');
+    await driver.close();
+  });
+
+  test('a message read failure becomes unavailable evidence, not empty success', async () => {
+    const tracker: Tracker = { creates: 0, closes: 0 };
+    const driver = createSdkDriver({
+      createInstance: async () =>
+        trackedInstance(tracker, {
+          message: {
+            async list() {
+              throw new Error('message list failed');
+            },
+          },
+        }),
+    });
+
+    const result = await driver.runPrompt({
+      workspaceDir: '/tmp',
+      prompt: 'x',
+      limits: { steps: 1, timeoutMs: 500 },
+    });
+    expect(result.idleOutcome).toBe('succeeded');
+    expect(result.evidence?.status).toBe('unavailable');
+    expect(result.evidence?.messages).toBe('unavailable');
+    expect(result.evidence?.reason).toContain('message list failed');
+    await driver.close();
   });
 });

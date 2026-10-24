@@ -7,9 +7,11 @@ import { join } from 'node:path';
 
 import { describe, expect, test } from 'bun:test';
 
+import { aggregateCondition } from '../src/benchmarkA/judge';
 import {
   aggregateA1,
   aggregateA2,
+  aggregateA2ByCategory,
   aggregateB,
   buildSummary,
   loadRunSummary,
@@ -73,6 +75,38 @@ describe('aggregateA2', () => {
     expect(summary.correctAbstentions).toBe(1);
     expect(summary.hallucinations).toBe(1);
     expect(summary.f1Mean).toBeNull();
+  });
+
+  test('counts abstention, empty answers and incomplete runs as distinct classes', () => {
+    const summary = aggregateA2([
+      makeA2('mind-v10', 'q1', 'abstention'),
+      makeA2('mind-v10', 'q2', 'empty_answer'),
+      makeA2('mind-v10', 'q3', 'incomplete'),
+    ]);
+    expect(summary.classes.abstention).toBe(1);
+    expect(summary.classes.empty_answer).toBe(1);
+    expect(summary.classes.incomplete).toBe(1);
+    expect(summary.classes.correct).toBe(0);
+    expect(summary.classes.partial).toBe(0);
+    expect(summary.f1Mean).toBeNull();
+    expect(summary.judgeScoreMean).toBeNull();
+  });
+
+  test('excludes stale judges on empty and incomplete results from every judge mean', () => {
+    const results = [
+      makeA2('mind-v10', 'q1', 'correct', { f1: 1, judgeScore: 0.9 }),
+      makeA2('mind-v10', 'q2', 'empty_answer', { judgeScore: 0.8 }),
+      makeA2('mind-v10', 'q3', 'incomplete', { judgeScore: 0.7 }),
+    ];
+    const overall = aggregateA2(results);
+    const byCategory = aggregateA2ByCategory(results)['1']!;
+    const condition = aggregateCondition('mind-v10', results);
+
+    // A pre-existing verdict on a non-judgeable result must never enter the
+    // answer-quality means: every aggregate agrees on the judgeable subset.
+    expect(overall.judgeScoreMean).toBeCloseTo(0.9, 10);
+    expect(byCategory.judgeScoreMean).toBeCloseTo(0.9, 10);
+    expect(condition.judgeScoreMean).toBeCloseTo(0.9, 10);
   });
 });
 

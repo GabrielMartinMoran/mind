@@ -33,6 +33,7 @@ import {
   type IsolationDirs,
 } from '../isolation/opencode';
 import { buildMindEnv, type MindPaths } from '../mind/cli';
+import type { DriverEvidence } from '../opencode/driver';
 import { prepareSkillFirst } from '../opencode/skill-first';
 
 import type {
@@ -75,6 +76,48 @@ export interface BSessionJob {
 }
 
 export type BSessionExecutor = (job: BSessionJob) => Promise<BSessionOutcome>;
+
+/**
+ * Prefix for an assertion detail that reports a harness error: the run could
+ * not observe the behavior, so it is not a model/scenario failure.
+ */
+export const HARNESS_ERROR_PREFIX = 'harness error:';
+
+/**
+ * One redacted `memory_query` result recorded from the agent's tool output.
+ * Only the memory name and the fused `methods` provenance are retained.
+ */
+export interface SearchProvenanceResult {
+  readonly name: string;
+  readonly methods: readonly string[];
+}
+
+/**
+ * Runtime-only fields the B worker adds to a session outcome (Contract 1).
+ * `scenario.ts` is the shared type owner and does not declare them, so the
+ * runner reads them through this narrow shape instead of widening that file.
+ */
+interface BSessionRuntimeFields {
+  readonly evidence?: DriverEvidence;
+  readonly searchProvenance?: readonly SearchProvenanceResult[];
+}
+
+/** Redacted execution evidence for a session, or `null` when none was recorded. */
+export function sessionEvidence(session: BSessionResult): DriverEvidence | null {
+  return (session as BSessionResult & BSessionRuntimeFields).evidence ?? null;
+}
+
+/** Recorded `memory_query` provenance for a session (empty when none was captured). */
+export function sessionSearchProvenance(
+  session: BSessionResult
+): readonly SearchProvenanceResult[] {
+  return (session as BSessionResult & BSessionRuntimeFields).searchProvenance ?? [];
+}
+
+/** Harness-error details carried by an assertion result, if any. */
+export function harnessErrorDetails(assertion: Pick<ScenarioAssertionResult, 'details'>): string[] {
+  return assertion.details.filter(detail => detail.startsWith(HARNESS_ERROR_PREFIX));
+}
 
 export function emptyBSessionOutcome(
   status: BSessionStatus,
@@ -119,6 +162,13 @@ export interface ScenarioConditionResult {
   /** `not_run` scenarios carry a reason and are excluded from failed counts. */
   readonly status: ScenarioRunStatus;
   readonly notRunReason: string | null;
+  /**
+   * Explicit capture/harness diagnostic. A non-null value means the run could
+   * not observe the behavior; the result is excluded from failed counts instead
+   * of being reported as a model failure. Optional so existing stored results
+   * and fixtures remain valid.
+   */
+  readonly harnessError?: string | null;
 }
 
 export interface ScenarioAggregate {
@@ -298,6 +348,7 @@ export function notRunScenarioResult(
     error: null,
     status: 'not_run',
     notRunReason: reason,
+    harnessError: null,
   };
 }
 
@@ -423,6 +474,7 @@ async function runUnit(
   });
 
   const failedSession = sessions.find(session => session.status !== 'ok');
+  const harnessError = harnessErrorDetails(assertion)[0] ?? null;
   const result: ScenarioConditionResult = {
     scenarioId: scenario.id,
     title: scenario.title,
@@ -436,8 +488,9 @@ async function runUnit(
     assertion,
     mindDb,
     error: failedSession?.error ?? null,
-    status: assertion.pass ? 'passed' : 'failed',
-    notRunReason: null,
+    status: harnessError ? 'not_run' : assertion.pass ? 'passed' : 'failed',
+    notRunReason: harnessError,
+    harnessError,
   };
   writeJson(join(unitDir, 'assertion.json'), assertion);
   return result;

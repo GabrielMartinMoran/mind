@@ -12,6 +12,7 @@ import {
   runA2,
   type A2UnitExecutor,
   type A2UnitJob,
+  type A2UnitOutcome,
 } from '../src/benchmarkA/a2';
 import { BudgetExceededError, BudgetGuard } from '../src/budget';
 import type { ConditionId } from '../src/config';
@@ -254,5 +255,91 @@ describe('runA2 dry-run with the fake driver', () => {
         }
       )
     ).rejects.toBeInstanceOf(BudgetExceededError);
+  });
+});
+
+describe('A2 outcome semantics', () => {
+  async function runOne(
+    item: (typeof subset)[number],
+    overrides: Partial<A2UnitOutcome>
+  ): Promise<{
+    result: Awaited<ReturnType<typeof runA2>>['results'][number];
+    run: Awaited<ReturnType<typeof runA2>>;
+  }> {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-a2-sem-'));
+    mkdirSync(join(runDir, 'mind-v10'), { recursive: true });
+    const executor: A2UnitExecutor = async () => ({
+      ...emptyA2Outcome('ok', null),
+      ...overrides,
+    });
+    const run = await runA2(
+      {
+        runId: 'run-sem',
+        runDir,
+        conditions: ['mind-v10'],
+        subset: [item],
+        limits: { steps: 1, timeoutMs: 1000 },
+        budget: new BudgetGuard({ maxCostUsd: 5 }),
+        stdout: () => undefined,
+        stderr: () => undefined,
+      },
+      {
+        profiles: { 'mind-v10': profile('mind-v10', runDir) },
+        sourceDb: { 'mind-v10': '/fake.db' },
+        executor,
+        copyDb: () => ({ sha256: 'x' }),
+      }
+    );
+    return { result: run.results[0]!, run };
+  }
+
+  test('an idle outcome without success is incomplete and never judged', async () => {
+    const { result } = await runOne(subset[0]!, {
+      answer: 'a red hat',
+      idleOutcome: null,
+    });
+    expect(result.deterministic.klass).toBe('incomplete');
+    expect(result.deterministic.f1).toBeNull();
+    expect(result.judge).toBeNull();
+    expect(result.completion).toBe('incomplete');
+  });
+
+  test('an empty answer with a successful idle outcome is an explicit empty answer', async () => {
+    const { result } = await runOne(subset[0]!, {
+      answer: '   ',
+      idleOutcome: 'succeeded',
+    });
+    expect(result.deterministic.klass).toBe('empty_answer');
+    expect(result.deterministic.f1).toBeNull();
+    expect(result.judge).toBeNull();
+    expect(result.completion).toBe('complete');
+  });
+
+  test('an empty answer without a successful idle outcome stays incomplete', async () => {
+    const { result } = await runOne(subset[0]!, {
+      answer: '',
+      idleOutcome: 'interrupted',
+    });
+    expect(result.deterministic.klass).toBe('incomplete');
+  });
+
+  test('a completed answer is still scored and adversarial semantics are preserved', async () => {
+    const correct = await runOne(subset[0]!, {
+      answer: 'a red hat',
+      idleOutcome: 'succeeded',
+    });
+    expect(correct.result.deterministic.klass).toBe('correct');
+
+    const abstained = await runOne(subset[2]!, {
+      answer: 'no information available',
+      idleOutcome: 'succeeded',
+    });
+    expect(abstained.result.deterministic.klass).toBe('correct_abstention');
+
+    const invented = await runOne(subset[2]!, {
+      answer: 'the code is 42',
+      idleOutcome: 'succeeded',
+    });
+    expect(invented.result.deterministic.klass).toBe('hallucination');
   });
 });

@@ -29,6 +29,7 @@ Example:
 
 ### Added
 
+- Added redacted execution evidence to agent-memory benchmark session results: each `result.json` keeps only ordered tool and skill names, nested code-mode tool names, parent/child session ids, recorded `memory_query` memory names with their `methods`, and the idle outcome. Prompts, message text, tool results, and memory contents are dropped before the file is written.
 - Added `CONTRIBUTING.md` and `docs/mind-philosophy.md` to document contribution standards and Mind's purpose and product principles, with entry points from the README, docs index, and `AGENTS.md`.
 - Added a self-hosted Lucide 0.547.0 icon sprite (`web/assets/icons.svg`) and a shared `createIcon` helper for web command actions, with no CDN or runtime icon package. The upstream ISC license and the MIT notice for Feather-derived portions are retained in `web/assets/vendor/LICENSE.lucide`.
 - Added `GET /api/spaces/:space/tags`, which returns a space's distinct normalized memory tags in alphabetical order (empty for an unknown space). The web filter bar now uses a native **All tags** select populated from it, covering every tier and excluding space tags; a URL tag that is missing from the latest list stays selected as a temporary option.
@@ -139,6 +140,7 @@ Example:
 
 ### Fixed
 
+- Fixed agent-memory benchmark B verdicts over unobservable evidence. B4 now reports "no child" only after a successful child-session capture (unavailable child evidence after a recorded `subagent` call is a harness error), B11 records unavailable or empty message evidence as a harness error instead of a skill-order failure, and B10 passes only when a recorded target `memory_query` result includes `semantic` in its `methods` rather than relying on embedding presence and a correct artifact. Harness errors are stored as `not_run` with a reason and excluded from failed counts.
 - Fixed the agent-memory benchmark isolation gate rejecting valid `mind-current` environments during a cold start. `verifyIsolation` now polls `/api/skill` a bounded number of times until the exact allowlisted surface appears, evaluates the skills allowlist and skill-first checks against that final listing, and saves it as evidence; a skill that never appears still fails closed with its id.
 - Fixed clearing an in-space query so stale search results are removed without another search request and a matching memory list is reused.
 - Fixed long in-space search result lists being clipped by the fixed-height space view: results now scroll inside their own region while the space header, shared filter bar, and result status stay visible, with no page scroll. At phone widths the tag select pairs with the tier chips and confidence pairs with embeddings, so the results body keeps at least 120 px at 320x700 instead of collapsing to 111 px.

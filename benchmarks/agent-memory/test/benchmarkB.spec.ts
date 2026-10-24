@@ -25,7 +25,13 @@ import {
   type PrepareUnit,
   type ScenariosRunResult,
 } from '../src/benchmarkB/runner';
-import type { BChildResult, Scenario, ScenarioAssertionContext } from '../src/benchmarkB/scenario';
+import type {
+  BChildResult,
+  BSessionOutcome,
+  BSessionResult,
+  Scenario,
+  ScenarioAssertionContext,
+} from '../src/benchmarkB/scenario';
 import {
   ISO_UTC_PATTERN,
   makeAssertion as b1MakeAssertion,
@@ -99,6 +105,12 @@ import { BudgetExceededError, BudgetGuard } from '../src/budget';
 import type { ConditionId } from '../src/config';
 import type { CommandRunner } from '../src/exec';
 import { inspectEmbeddingCoverage } from '../src/mind/inspect';
+import {
+  buildDriverEvidence,
+  type DriverEvidence,
+  type DriverToolCall,
+} from '../src/opencode/driver';
+import type { SearchProvenanceResult } from '../src/benchmarkB/runner';
 import { createFakeSessionDriver, type FakeSessionScript } from '../src/testing/fakes';
 
 const HARNESS_ROOT = join(import.meta.dir, '..');
@@ -158,6 +170,47 @@ function child(memoryCalls: number): BChildResult {
     steps: 1,
     finish: 'stop',
     error: null,
+  };
+}
+
+function toolCall(name: string): DriverToolCall {
+  return { id: `tool_${name}`, name, server: null };
+}
+
+/**
+ * A B session that carries the runtime evidence Contract 1 added. The shared
+ * `BSessionOutcome` type is owned by `scenario.ts`, so the extra field is
+ * modelled locally here.
+ */
+function sessionWithEvidence(
+  toolNames: readonly string[] = [],
+  childSessionIds: readonly string[] | null = []
+): BSessionResult & { evidence: DriverEvidence } {
+  return {
+    status: 'ok',
+    sessionId: 'ses_parent',
+    finalText: '',
+    toolCalls: toolNames.map(toolCall),
+    memoryCalls: 0,
+    model: null,
+    tokens: null,
+    costUsd: 0,
+    latencyMs: 0,
+    steps: 1,
+    finish: 'stop',
+    error: null,
+    errorType: null,
+    isolationOk: true,
+    children: [],
+    rawMessages: { data: [] },
+    sessionIndex: 0,
+    prompt: 'prompt',
+    evidence: buildDriverEvidence({
+      sessionId: 'ses_parent',
+      messages: [],
+      childSessionIds,
+      idleOutcome: 'succeeded',
+    }),
   };
 }
 
@@ -258,7 +311,10 @@ describe('B1 assertion', () => {
 describe('B4 assertion', () => {
   test('passes when the test suite passes and a child session exists', async () => {
     const result = await b4MakeAssertion(
-      ctx(mkdtempSync(join(tmpdir(), 'bench-b4-pass-')), { childResults: [child(0)] })
+      ctx(mkdtempSync(join(tmpdir(), 'bench-b4-pass-')), {
+        childResults: [child(0)],
+        sessionResults: [sessionWithEvidence(['subagent'], ['ses_child'])],
+      })
     );
     expect(result.pass).toBe(true);
     expect(result.details.join('\n')).toContain('1 child session(s) captured');
@@ -269,6 +325,7 @@ describe('B4 assertion', () => {
     const result = await b4MakeAssertion(
       ctx(mkdtempSync(join(tmpdir(), 'bench-b4-fail-')), {
         childResults: [child(2)],
+        sessionResults: [sessionWithEvidence(['subagent'], ['ses_child'])],
         run: okRunner(1),
       })
     );
@@ -276,15 +333,43 @@ describe('B4 assertion', () => {
     expect(result.details.join('\n')).toContain('test suite failed');
   });
 
-  test('fails when no child session was created', async () => {
-    const result = await b4MakeAssertion(ctx(mkdtempSync(join(tmpdir(), 'bench-b4-nochild-'))));
+  test('fails when no child session was created after a successful capture', async () => {
+    const result = await b4MakeAssertion(
+      ctx(mkdtempSync(join(tmpdir(), 'bench-b4-nochild-')), {
+        sessionResults: [sessionWithEvidence(['subagent'], [])],
+      })
+    );
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain('no child (sub-agent) session');
   });
 
+  test('Unavailable child evidence is not reported as no child behavior', async () => {
+    const result = await b4MakeAssertion(
+      ctx(mkdtempSync(join(tmpdir(), 'bench-b4-harness-')), {
+        sessionResults: [sessionWithEvidence(['subagent'], null)],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('harness error');
+    expect(details).toContain('child evidence unavailable after a recorded subagent call');
+    expect(details).not.toContain('no child (sub-agent) session');
+  });
+
+  test('reports a harness error instead of no child when no session evidence exists', async () => {
+    const result = await b4MakeAssertion(ctx(mkdtempSync(join(tmpdir(), 'bench-b4-noev-'))));
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('harness error');
+    expect(details).not.toContain('no child (sub-agent) session');
+  });
+
   test('reports child memory use as measured, not required', async () => {
     const result = await b4MakeAssertion(
-      ctx(mkdtempSync(join(tmpdir(), 'bench-b4-mem-')), { childResults: [child(3)] })
+      ctx(mkdtempSync(join(tmpdir(), 'bench-b4-mem-')), {
+        childResults: [child(3)],
+        sessionResults: [sessionWithEvidence(['subagent'], ['ses_child'])],
+      })
     );
     expect(result.pass).toBe(true);
     expect(result.details.join('\n')).toContain('child used memory tools: yes');
@@ -1143,6 +1228,51 @@ function b10PassWorkspace(): string {
   return dir;
 }
 
+/**
+ * A recorded `memory_query` provenance entry. B10 must pass on this recorded
+ * semantic evidence, never on embedding presence plus answer text alone.
+ */
+function b10SessionWithProvenance(
+  results: readonly SearchProvenanceResult[]
+): BSessionResult & { searchProvenance: readonly SearchProvenanceResult[] } {
+  return {
+    status: 'ok',
+    sessionId: 'ses_b10',
+    finalText: '',
+    toolCalls: [toolCall('mind_memory_query')],
+    memoryCalls: 1,
+    model: null,
+    tokens: null,
+    costUsd: 0,
+    latencyMs: 0,
+    steps: 1,
+    finish: 'stop',
+    error: null,
+    errorType: null,
+    isolationOk: true,
+    children: [],
+    rawMessages: { data: [] },
+    sessionIndex: 0,
+    prompt: B10_PROMPTS[0]!,
+    searchProvenance: results,
+  };
+}
+
+const B10_SEMANTIC_PROVENANCE: readonly SearchProvenanceResult[] = [
+  { name: B10_DISTRACTOR, methods: ['all'] },
+  { name: B10_TARGET, methods: ['all', 'semantic'] },
+];
+
+function b10Ctx(
+  workspaceDir: string,
+  overrides: Partial<ScenarioAssertionContext> = {}
+): ScenarioAssertionContext {
+  return ctx(workspaceDir, {
+    sessionResults: [b10SessionWithProvenance(B10_SEMANTIC_PROVENANCE)],
+    ...overrides,
+  });
+}
+
 /** Content words, folded and stripped of the prompt's common scaffolding. */
 const PROMPT_STOPWORDS = new Set([
   'a',
@@ -1187,15 +1317,51 @@ function contentTokens(text: string): string[] {
 
 describe('B10 semantic recall assertion', () => {
   test('passes with an embedded target memory, correct artifact and no distractor answer', async () => {
-    const result = await b10MakeAssertion(ctx(b10PassWorkspace(), { mindDb: b10Db() }));
+    const result = await b10MakeAssertion(b10Ctx(b10PassWorkspace(), { mindDb: b10Db() }));
     expect(result.pass).toBe(true);
     expect(result.details.join('\n')).toContain('target memory');
     expect(result.details.join('\n')).toContain('carries the paraphrase recall');
+    expect(result.details.join('\n')).toContain('used the semantic channel');
+  });
+
+  test('B10 requires recorded semantic provenance for the target result', async () => {
+    const withoutProvenance = await b10MakeAssertion(
+      b10Ctx(b10PassWorkspace(), { mindDb: b10Db(), sessionResults: [] })
+    );
+    expect(withoutProvenance.pass).toBe(false);
+    expect(withoutProvenance.details.join('\n')).toContain(
+      `no recorded memory_query result for '${B10_TARGET}' with semantic provenance`
+    );
+    // Embedding presence and a correct artifact are no longer sufficient alone.
+    expect(withoutProvenance.details.join('\n')).toContain('carries the paraphrase recall');
+    expect(withoutProvenance.details.join('\n')).toContain('has an embedding');
+
+    const lexicalOnly = await b10MakeAssertion(
+      b10Ctx(b10PassWorkspace(), {
+        mindDb: b10Db(),
+        sessionResults: [
+          b10SessionWithProvenance([{ name: B10_TARGET, methods: ['all', 'trigram'] }]),
+        ],
+      })
+    );
+    expect(lexicalOnly.pass).toBe(false);
+    expect(lexicalOnly.details.join('\n')).toContain('with semantic provenance');
+
+    const semantic = await b10MakeAssertion(
+      b10Ctx(b10PassWorkspace(), {
+        mindDb: b10Db(),
+        sessionResults: [b10SessionWithProvenance(B10_SEMANTIC_PROVENANCE)],
+      })
+    );
+    expect(semantic.pass).toBe(true);
+    expect(semantic.details.join('\n')).toContain(
+      `recorded memory_query result for '${B10_TARGET}' used the semantic channel`
+    );
   });
 
   test('fails when the target memory has no embedding (RAG was not applied)', async () => {
     const result = await b10MakeAssertion(
-      ctx(b10PassWorkspace(), { mindDb: b10Db({ targetEmbedding: false }) })
+      b10Ctx(b10PassWorkspace(), { mindDb: b10Db({ targetEmbedding: false }) })
     );
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain('has no embedding');
@@ -1203,7 +1369,7 @@ describe('B10 semantic recall assertion', () => {
 
   test('fails when the target memory is missing', async () => {
     const result = await b10MakeAssertion(
-      ctx(b10PassWorkspace(), { mindDb: b10Db({ targetPresent: false }) })
+      b10Ctx(b10PassWorkspace(), { mindDb: b10Db({ targetPresent: false }) })
     );
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain(`target memory '${B10_TARGET}' is missing`);
@@ -1211,7 +1377,7 @@ describe('B10 semantic recall assertion', () => {
 
   test('fails when the artifact is missing', async () => {
     const result = await b10MakeAssertion(
-      ctx(mkdtempSync(join(tmpdir(), 'bench-b10-noartifact-')), { mindDb: b10Db() })
+      b10Ctx(mkdtempSync(join(tmpdir(), 'bench-b10-noartifact-')), { mindDb: b10Db() })
     );
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain(`${B10_ARTIFACT_FILE} was not written`);
@@ -1220,7 +1386,7 @@ describe('B10 semantic recall assertion', () => {
   test('fails when the artifact does not carry the target fact', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'bench-b10-wrong-'));
     write(join(dir, B10_ARTIFACT_FILE), 'Release credentials are renewed weekly.\n');
-    const result = await b10MakeAssertion(ctx(dir, { mindDb: b10Db() }));
+    const result = await b10MakeAssertion(b10Ctx(dir, { mindDb: b10Db() }));
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain('does not contain the target fact');
   });
@@ -1228,21 +1394,21 @@ describe('B10 semantic recall assertion', () => {
   test('fails when the artifact answers with the distractor fact', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'bench-b10-distractor-'));
     write(join(dir, B10_ARTIFACT_FILE), `${B10_DISTRACTOR_CONTENT}\n`);
-    const result = await b10MakeAssertion(ctx(dir, { mindDb: b10Db() }));
+    const result = await b10MakeAssertion(b10Ctx(dir, { mindDb: b10Db() }));
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain('answers with the distractor fact');
   });
 
   test('fails when the target name is stored twice', async () => {
     const result = await b10MakeAssertion(
-      ctx(b10PassWorkspace(), { mindDb: b10Db({ duplicateTarget: true }) })
+      b10Ctx(b10PassWorkspace(), { mindDb: b10Db({ duplicateTarget: true }) })
     );
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain('duplicate memory name');
   });
 
   test('fails clearly when there is no Mind database', async () => {
-    const result = await b10MakeAssertion(ctx(b10PassWorkspace()));
+    const result = await b10MakeAssertion(b10Ctx(b10PassWorkspace()));
     expect(result.pass).toBe(false);
     expect(result.details.join('\n')).toContain('no Mind database');
   });
@@ -1599,7 +1765,13 @@ function executorFrom(
       isolationOk: true,
       children,
       rawMessages: { data: [] },
-    };
+      evidence: buildDriverEvidence({
+        sessionId: result.sessionId,
+        messages: [],
+        childSessionIds: children.map(captured => captured.sessionId),
+        idleOutcome: 'succeeded',
+      }),
+    } satisfies BSessionOutcome & { evidence: DriverEvidence };
   };
 }
 
@@ -1702,6 +1874,47 @@ describe('runScenarioRun lifecycle', () => {
     const b4 = run.results.find(r => r.scenarioId === 'b4')!;
     expect(b4.childResults).toHaveLength(1);
     expect(b4.childResults[0]!.sessionId).toBe('ses_child_b4');
+  });
+
+  test('records a harness-error assertion as not_run, never as a failure', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-b-harness-'));
+    const driver = createFakeSessionDriver([
+      { text: 'probe answer', cost: 0, toolNames: [], children: [] },
+    ]);
+    const probe: Scenario = {
+      id: 'bhx',
+      title: 'Harness error probe',
+      fixture: 'fixtures/b1',
+      sessions: [{ prompt: 'probe' }],
+      makeAssertion: async () => ({
+        pass: false,
+        details: ['harness error: session 2: message evidence unavailable'],
+      }),
+    };
+
+    const run = await runScenarioRun(
+      {
+        runId: 'run-harness-error',
+        runDir,
+        conditions: ['no-memory'],
+        scenarios: [probe],
+        limits: { steps: 1, timeoutMs: 1000 },
+        budget: new BudgetGuard({ maxCostUsd: 1 }),
+        stdout: () => undefined,
+        stderr: () => undefined,
+      },
+      {
+        fixtureDirFor,
+        worktrees: {},
+        executor: executorFrom(driver),
+        runner: okRunner(),
+      }
+    );
+
+    const result = run.results[0]!;
+    expect(result.status).toBe('not_run');
+    expect(result.harnessError).toContain('message evidence unavailable');
+    expect(run.aggregates[0]).toMatchObject({ passed: 0, failed: 0, notRun: 1 });
   });
 });
 
