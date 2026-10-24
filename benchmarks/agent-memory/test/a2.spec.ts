@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
@@ -255,6 +255,119 @@ describe('runA2 dry-run with the fake driver', () => {
         }
       )
     ).rejects.toBeInstanceOf(BudgetExceededError);
+  });
+});
+
+describe('per-unit OpenCode database', () => {
+  function profilesWithConditionDb(
+    conditions: readonly ConditionId[],
+    runDir: string
+  ): Partial<Record<ConditionId, ConditionProfile>> {
+    return Object.fromEntries(
+      conditions.map(condition => {
+        const base = profile(condition, runDir);
+        return [
+          condition,
+          {
+            ...base,
+            // Mirrors `buildOpenCodeEnv`: the condition-level database is the
+            // shared parent that every unit inherited before this fix.
+            env: {
+              ...base.env,
+              OPENCODE_DB: join(runDir, condition, 'opencode', 'data', 'opencode.db'),
+            },
+          },
+        ];
+      })
+    );
+  }
+
+  test('gives every (condition, question, rep) its own OpenCode database path', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-a2-ocdb-'));
+    const conditions: ConditionId[] = ['no-memory', 'mind-v10'];
+    for (const c of conditions) mkdirSync(join(runDir, c), { recursive: true });
+
+    const seenJobs: A2UnitJob[] = [];
+    await runA2(
+      {
+        runId: 'run-ocdb',
+        runDir,
+        conditions,
+        subset,
+        limits: { steps: 3, timeoutMs: 1000 },
+        reps: 2,
+        budget: new BudgetGuard({ maxCostUsd: 5 }),
+        stdout: () => undefined,
+        stderr: () => undefined,
+      },
+      {
+        profiles: profilesWithConditionDb(conditions, runDir),
+        sourceDb: { 'mind-v10': '/fake/v10.db' },
+        executor: async job => {
+          seenJobs.push(job);
+          return { ...emptyA2Outcome('ok', null), answer: 'a' };
+        },
+        copyDb: () => ({ sha256: 'deadbeef' }),
+      }
+    );
+
+    // 2 conditions × 3 questions × 2 reps = 12 independent units.
+    expect(seenJobs).toHaveLength(12);
+    const dbPaths = seenJobs.map(job => job.env.OPENCODE_DB);
+    expect(new Set(dbPaths).size).toBe(seenJobs.length);
+
+    for (const job of seenJobs) {
+      // Each unit's database lives in its own unit directory, never in the
+      // shared condition-level OpenCode tree where a prior session would leak.
+      expect(job.env.OPENCODE_DB).toBe(join(job.unitDir, 'opencode.db'));
+      expect(dirname(job.env.OPENCODE_DB!)).toBe(job.unitDir);
+      expect(job.env.OPENCODE_DB).not.toBe(
+        join(runDir, job.condition, 'opencode', 'data', 'opencode.db')
+      );
+      // The fail-closed path check still needs every resolved path inside the
+      // run directory, so the worker receives the unit's isolation root.
+      expect(job.isolationRootDir).toBe(runDir);
+    }
+
+    // Consecutive units no longer share the path that leaked the first session.
+    const [first, second] = seenJobs;
+    expect(first!.env.OPENCODE_DB).not.toBe(second!.env.OPENCODE_DB);
+  });
+
+  test('keeps the per-unit database distinct across repetitions of one question', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-a2-ocdb-rep-'));
+    mkdirSync(join(runDir, 'mind-v10'), { recursive: true });
+
+    const seenJobs: A2UnitJob[] = [];
+    await runA2(
+      {
+        runId: 'run-ocdb-rep',
+        runDir,
+        conditions: ['mind-v10'],
+        subset: [subset[0]!],
+        limits: { steps: 1, timeoutMs: 1000 },
+        reps: 3,
+        budget: new BudgetGuard({ maxCostUsd: 5 }),
+        stdout: () => undefined,
+        stderr: () => undefined,
+      },
+      {
+        profiles: profilesWithConditionDb(['mind-v10'], runDir),
+        sourceDb: { 'mind-v10': '/fake/v10.db' },
+        executor: async job => {
+          seenJobs.push(job);
+          return { ...emptyA2Outcome('ok', null), answer: 'a' };
+        },
+        copyDb: () => ({ sha256: 'deadbeef' }),
+      }
+    );
+
+    expect(seenJobs).toHaveLength(3);
+    expect(new Set(seenJobs.map(job => job.env.OPENCODE_DB)).size).toBe(3);
+    for (const job of seenJobs) {
+      expect(job.env.OPENCODE_DB).toBe(join(job.unitDir, 'opencode.db'));
+      expect(dirname(job.env.OPENCODE_DB!)).toBe(job.unitDir);
+    }
   });
 });
 

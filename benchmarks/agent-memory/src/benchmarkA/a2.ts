@@ -79,6 +79,14 @@ export interface A2UnitJob {
   readonly prompt: string;
   readonly workspaceDir: string;
   readonly conditionDir: string;
+  /**
+   * Narrowest root the fail-closed path check validates every resolved OpenCode
+   * path against. A2 unit databases live under the unit directory, so the run
+   * directory is the root that still contains both the shared condition
+   * environment and each unit. Absent on legacy fixtures/jobs, where the
+   * condition directory remains the root.
+   */
+  readonly isolationRootDir?: string;
   readonly unitDir: string;
   readonly evidenceDir: string;
   readonly limits: A2Limits;
@@ -236,6 +244,15 @@ export async function runA2(options: RunA2Options, deps: RunA2Deps): Promise<A2R
           });
         }
 
+        // Each unit owns its OpenCode database. The condition-level database is
+        // left untouched as the shared template; it is never copied because
+        // every unit must start with an empty session list for the fail-closed
+        // isolation check. Sharing it let the first unit's session contaminate
+        // every later unit.
+        const opencodeDbPath = join(unitDir, 'opencode.db');
+        mkdirSync(unitDir, { recursive: true });
+        env = { ...env, OPENCODE_DB: opencodeDbPath };
+
         const job: A2UnitJob = {
           runId: options.runId,
           condition,
@@ -245,6 +262,7 @@ export async function runA2(options: RunA2Options, deps: RunA2Deps): Promise<A2R
           prompt: buildA2Prompt(item.question),
           workspaceDir: unitWorkspace,
           conditionDir: profile.dirs.conditionDir,
+          isolationRootDir: options.runDir,
           unitDir,
           evidenceDir: join(unitDir, 'isolation-evidence'),
           limits: options.limits,

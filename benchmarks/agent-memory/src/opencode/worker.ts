@@ -133,11 +133,16 @@ async function main(): Promise<number> {
 
   // 1. Fail-closed isolation gate (FREE) — no prompt until it passes.
   const dir = isolationDirs(job.conditionDir);
+  // Unit-owned databases live under the unit directory while HOME/XDG stay in
+  // the shared condition tree, so the narrowest root containing every resolved
+  // path is the run directory. Legacy jobs without a root keep the strict
+  // condition directory.
+  const verifyDir = job.isolationRootDir ? { ...dir, conditionDir: job.isolationRootDir } : dir;
   ensureIsolationDirs(dir);
   try {
     await verifyIsolation({
       condition: job.condition,
-      dir,
+      dir: verifyDir,
       env: runtimeEnv,
       runner: runCommand,
       evidenceDir: job.evidenceDir,
