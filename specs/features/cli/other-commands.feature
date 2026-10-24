@@ -110,6 +110,14 @@ Feature: CLI Other Commands
       When running "./mind setup"
       Then setup completes for all supported agents
 
+    @unit
+    Scenario: setup without agent reports a failing agent and keeps configuring the rest
+      Given one supported agent setup fails
+      When running "./mind setup"
+      Then the remaining agents are still configured
+      And the output names the agent that failed
+      And the success summary is not printed
+
     Scenario: setup compatibility shows the capability matrix
       When running "./mind setup compatibility"
       Then the full capability matrix is displayed

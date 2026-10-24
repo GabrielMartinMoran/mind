@@ -22,6 +22,7 @@ import {
   isAgentIntegrationDetected,
   listAgents,
   runSetup,
+  runSetupAll,
   runSetupRefresh,
 } from '../src/cli/setup';
 import { readTomlOrThrow } from '../src/setup/safe-config';
@@ -206,6 +207,38 @@ describe('Setup capability model', () => {
       ).toBe(true);
     } finally {
       store.cleanup();
+    }
+  });
+
+  test('setup without agent reports a failing agent and keeps configuring the rest', async () => {
+    const attempted: SupportedAgent[] = [];
+    const logSpy = spyOn(console, 'log');
+    const errorSpy = spyOn(console, 'error');
+
+    try {
+      // Earlier tests in this file may leave console spies attached; clear
+      // captured calls so we only assert on this run's output.
+      logSpy.mockClear();
+      errorSpy.mockClear();
+
+      const result = await runSetupAll(['cursor', 'codex', 'opencode'], async agent => {
+        attempted.push(agent);
+        if (agent === 'codex') {
+          throw new Error('broken config');
+        }
+      });
+
+      // Every agent was attempted in order, including the ones after the failure.
+      expect(attempted).toEqual(['cursor', 'codex', 'opencode']);
+      expect(result.configured).toEqual(['cursor', 'opencode']);
+      expect(result.failed).toEqual([{ agent: 'codex', message: 'broken config' }]);
+
+      const output = [...logSpy.mock.calls, ...errorSpy.mock.calls].map(call => String(call[0]));
+      expect(output.some(line => line.includes('codex'))).toBe(true);
+      expect(output.some(line => line.includes('Setup complete for all'))).toBe(false);
+    } finally {
+      logSpy.mockRestore();
+      errorSpy.mockRestore();
     }
   });
 
