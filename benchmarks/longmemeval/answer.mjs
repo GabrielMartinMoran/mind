@@ -1,0 +1,191 @@
+/**
+ * End-to-end LongMemEval-S QA pilot over the exact retrieved session IDs.
+ * Paired arms: Mind, BM25, and no memory. Answerer + blinded LLM judge.
+ * NO gold answers or has_answer flags are ever placed in answer prompts.
+ * Judge implements official LongMemEval task-specific rubric.
+ *
+ * Invocation:
+ * bun benchmarks/longmemeval/answer.mjs --input=/tmp/longmemeval_s_cleaned.json \
+ *   --retrieval=benchmarks/longmemeval/retrieval.json --output=benchmarks/longmemeval/qa.json \
+ *   --provider=ollama --model=llama3.2:3b
+ */
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+
+const opts = new Map(process.argv.slice(2).map((arg) => {
+  const [key, ...value] = arg.replace(/^--/, '').split('=');
+  return [key, value.join('=')];
+}));
+const input = opts.get('input') ?? '/tmp/longmemeval_s_cleaned.json';
+const retrievalPath = opts.get('retrieval') ?? 'benchmarks/longmemeval/retrieval.json';
+const output = opts.get('output') ?? 'benchmarks/longmemeval/qa.json';
+const provider = opts.get('provider') ?? (process.env.OPENROUTER_API_KEY ? 'openrouter' : 'ollama');
+const model = opts.get('model') ?? (provider === 'openrouter' ? 'deepseek/deepseek-v4.1-flash' : 'llama3.2:3b');
+const maxSessions = Number(opts.get('sessions') ?? 5);
+const charsPerSession = Number(opts.get('session-chars') ?? 2800);
+const arms = ['mind', 'bm25', 'no-memory'];
+const dataset = await Bun.file(input).json();
+const retrieval = await Bun.file(retrievalPath).json();
+const byId = new Map(dataset.map((item) => [item.question_id, item]));
+const items = retrieval.perQuestion;
+if (!items?.length) throw new Error('Retrieval results missing.');
+if (!['ollama', 'openrouter'].includes(provider)) throw new Error('Unsupported provider: ' + provider);
+if (provider === 'openrouter' && !process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is absent');
+const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
+const result = {
+  protocol: 'LongMemEval-S cleaned QA, forced retrieval, session-level memory (NOT autonomous write/use)',
+  datasetSha256: retrieval.datasetSha256,
+  answerer: { provider, model, temperature: 0 },
+  judge: { provider, model, temperature: 0, criterion: 'official task-specific LongMemEval yes/no rubrics' },
+  context: { maxSessions, charsPerSession, turnSelection: 'query-term overlap, identical for both retrieved arms' },
+  cases: [],
+};
+
+async function chat(messages, maxTokens) {
+  const endpoint = provider === 'ollama'
+    ? 'http://127.0.0.1:11434/api/chat'
+    : 'https://openrouter.ai/api/v1/chat/completions';
+  const payload = provider === 'ollama'
+    ? { model, messages, stream: false, options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: maxTokens } }
+    : { model, messages, temperature: 0, max_tokens: maxTokens };
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 180000);
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(provider === 'openrouter' ? { Authorization: 'Bearer ' + process.env.OPENROUTER_API_KEY } : {}),
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+      const body = await response.text();
+      if (!response.ok) {
+        if ([429, 502, 503, 504].includes(response.status) && attempt < 2) {
+          await sleep(1500 * (attempt + 1));
+          continue;
+        }
+        throw new Error('Model HTTP ' + response.status + ': ' + body.slice(0, 400));
+      }
+      const parsed = JSON.parse(body);
+      const answer = provider === 'ollama'
+        ? parsed.message?.content
+        : parsed.choices?.[0]?.message?.content;
+      if (typeof answer !== 'string') throw new Error('Empty/nontext completion');
+      return { text: answer.trim(), usage: parsed.usage ?? null };
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error('Inference retries exhausted');
+}
+const stop = new Set('who what why when where how which did does was were is are as the a an in on at to of for with since during from and or my me i we they he she their them it this that about after before be been was by into has had have do not did'.split(' '));
+function excerpt(session, query) {
+  const terms = new Set((query.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []).filter((x) => !stop.has(x)));
+  const scored = session.map((turn, i) => {
+    const content = String(turn.content ?? '');
+    const words = new Set(content.toLowerCase().match(/[a-z0-9]{3,}/g) ?? []);
+    let score = 0;
+    for (const word of terms) if (words.has(word)) score += 1;
+    return { index: i, score, content, role: String(turn.role ?? 'unknown') };
+  });
+  // Select the top query-relevant turns, then restore chronological order.
+  scored.sort((a, b) => b.score - a.score || a.index - b.index);
+  const picked = scored.slice(0, 6).sort((a, b) => a.index - b.index);
+  const text = picked.map((turn) => turn.role + ': ' + turn.content).join('\n\n');
+  return text.slice(0, charsPerSession);
+}
+function contextFor(example, ids) {
+  const lookup = new Map(example.haystack_session_ids.map((id, i) => [String(id), i]));
+  const parts = [];
+  for (const id of ids.slice(0, maxSessions)) {
+    const i = lookup.get(String(id));
+    if (i === undefined) continue;
+    const excerptText = excerpt(example.haystack_sessions[i], example.question);
+    parts.push('Conversation session (' + String(example.haystack_dates[i]) + '):\n' + excerptText);
+  }
+  return parts.join('\n\n---\n\n');
+}
+function answerPrompt(example, context) {
+  return [
+    { role: 'system', content: 'You are an assistant answering questions about a user from their conversation history. Use only the history provided. If information is missing, say you cannot determine the answer. Be concise. Never guess or invent personal details.' },
+    { role: 'user', content: 'Conversation history:\n' + (context || '(No conversation history available)') + '\n\nQuestion date: ' + example.question_date + '\nQuestion: ' + example.question + '\nAnswer:' },
+  ];
+}
+function judgePrompt(example, response) {
+  const task = example.question_type;
+  let lead;
+  let tail = 'Is the model response correct? Answer yes or no only.';
+  if (example.question_id.endsWith('_abs')) {
+    lead = 'I will give you an unanswerable question, an explanation, and a response from a model. Please answer yes if the model correctly identifies the question as unanswerable. The model could say that the information is incomplete, or some other information is given but the asked information is not.';
+    tail = 'Does the model correctly identify the question as unanswerable? Answer yes or no only.';
+  } else if (task === 'single-session-preference') {
+    lead = 'I will give you a question, a rubric for desired personalized response, and a response from a model. Please answer yes if the response satisfies the desired response. Otherwise, answer no. The model does not need to reflect all the points in the rubric. The response is correct as long as it recalls and utilizes the user\'s personal information correctly.';
+  } else if (task === 'knowledge-update') {
+    lead = 'I will give you a question, a correct answer, and a response from a model. Please answer yes if the response contains the correct answer. Otherwise, answer no. If the response contains some previous information along with an updated answer, the response should be considered as correct as long as the updated answer is the required answer.';
+  } else {
+    lead = 'I will give you a question, a correct answer, and a response from a model. Please answer yes if the response contains the correct answer. Otherwise, answer no. If the response is equivalent to the correct answer or contains all the intermediate steps to get the correct answer, you should also answer yes. If the response only contains a subset of the information required by the answer, answer no.';
+    if (task === 'temporal-reasoning') lead += ' In addition, do not penalize off-by-one errors for the number of days/weeks/months.';
+  }
+  return lead + '\n\nQuestion: ' + example.question + '\n\nCorrect Answer / Explanation: ' + String(example.answer) + '\n\nModel Response: ' + response + '\n\n' + tail;
+}
+function accuracy(arm, filter = () => true) {
+  const rows = result.cases.filter(filter).flatMap((x) => x[arm] ? [x[arm]] : []);
+  const judged = rows.filter((x) => typeof x.correct === 'boolean');
+  return { judged: judged.length, correct: judged.filter((x) => x.correct).length, accuracy: judged.length ? judged.filter((x) => x.correct).length / judged.length : null };
+}
+function flush() {
+  result.scores = Object.fromEntries(arms.map((arm) => [arm, accuracy(arm)]));
+  result.categories = Object.fromEntries([...new Set(result.cases.map((x) => x.type))].sort().map((category) => [
+    category,
+    Object.fromEntries(arms.map((arm) => [arm, accuracy(arm, (item) => item.type === category)])),
+  ]));
+  mkdirSync(resolve(output, '..'), { recursive: true });
+  writeFileSync(output, JSON.stringify(result, null, 2) + '\n');
+}
+for (const [index, row] of items.entries()) {
+  const example = byId.get(row.id);
+  if (!example) throw new Error('Dataset ID not found: ' + row.id);
+  const entry = {
+    id: row.id,
+    type: example.question_type,
+    abstention: row.isAbstention,
+    retrieval: { mind: row.mind, bm25: row.bm25, gold: row.gold },
+    question: example.question,
+    goldAnswer: example.answer,
+  };
+  result.cases.push(entry);
+  for (const arm of arms) {
+    const context = arm === 'no-memory' ? '' : contextFor(example, row[arm]);
+    const began = performance.now();
+    try {
+      const predicted = await chat(answerPrompt(example, context), 160);
+      const verdict = await chat([{ role: 'user', content: judgePrompt(example, predicted.text) }], 12);
+      const label = /^(yes)\b/i.test(verdict.text.trim());
+      const rejected = /^(no)\b/i.test(verdict.text.trim());
+      entry[arm] = {
+        answer: predicted.text,
+        judgeRaw: verdict.text,
+        correct: label ? true : rejected ? false : null,
+        contextChars: context.length,
+        latencyMs: Math.round(performance.now() - began),
+        usageAnswer: predicted.usage,
+        usageJudge: verdict.usage,
+      };
+    } catch (error) {
+      entry[arm] = { error: String(error), correct: null, contextChars: context.length };
+      flush();
+      throw error;
+    }
+    flush();
+  }
+  console.log('QA_PROGRESS ' + (index + 1) + '/' + items.length
+    + ' scores=' + JSON.stringify(result.scores));
+}
+flush();
+console.log('QA_RESULT ' + JSON.stringify({
+  count: result.cases.length,
+  model, provider, scores: result.scores, categories: result.categories,
+}));
