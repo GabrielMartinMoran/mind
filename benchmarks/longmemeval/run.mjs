@@ -267,6 +267,7 @@ console.log('BENCHMARK_RESULT ' + JSON.stringify({
   benchmark: report.benchmark,
   datasetSha256: report.datasetSha256,
   count: report.count,
+  sourceCommit: report.sourceCommit,
   answerableCount: report.answerableCount,
   mind: report.mind,
   ...(ragComparison ? { mindRagOn: report.mindRagOn, mindRagOff: report.mindRagOff, fullyEmbedded: report.fullyEmbedded, semanticInvocations: report.semanticInvocations } : {}),
