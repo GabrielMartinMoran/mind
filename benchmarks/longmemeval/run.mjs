@@ -13,13 +13,20 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Database } from 'bun:sqlite';
-import { createSqliteStore } from '../../src/store/sqlite-store.ts';
-
-process.env.MIND_RAG = 'false';
 const argv = new Map(process.argv.slice(2).map((arg) => {
   const [key, ...value] = arg.replace(/^--/, '').split('=');
   return [key, value.join('=')];
 }));
+
+const ragComparison = argv.get('rag') === 'both';
+if (ragComparison && !process.env.OPENROUTER_API_KEY) {
+  throw new Error('OPENROUTER_API_KEY is required to compare embeddings');
+}
+// CONFIG is read at import time: set the RAG environment BEFORE loading the store.
+process.env.MIND_RAG = ragComparison ? 'true' : 'false';
+if (ragComparison) process.env.MIND_EMBEDDING_PROVIDER = 'openrouter';
+const { createSqliteStore } = await import('../../src/store/sqlite-store.ts');
+const { setSearchDiagnosticsSink } = await import('../../src/store/repositories/search-repository.ts');
 const input = argv.get('input') ?? '/tmp/longmemeval_s_cleaned.json';
 const count = Number(argv.get('count') ?? 60);
 const output = argv.get('output') ?? '/tmp/mind-longmemeval-results.json';
@@ -136,6 +143,43 @@ try {
       });
       const mindMs = performance.now() - startSearch;
       const mind = ranked.map((item) => keyToGold.get(item.name)).filter(Boolean);
+      let mindRagOn;
+      let mindRagOnMs;
+      let semanticCandidates = null;
+      let embeddedCount = null;
+      if (ragComparison) {
+        // Fail closed: best-effort embedding failures must never masquerade as RAG.
+        const checkDb = new Database(dbPath, { readonly: true });
+        try {
+          embeddedCount = checkDb.query('SELECT COUNT(*) AS count FROM memories WHERE embedding IS NOT NULL').get().count;
+        } finally {
+          checkDb.close();
+        }
+        if (embeddedCount !== sessions.length) {
+          throw new Error('RAG embedding coverage incomplete: ' + embeddedCount + '/' + sessions.length + ' for ' + example.question_id);
+        }
+        let semanticInvoked = false;
+        setSearchDiagnosticsSink(diag => {
+          const entry = diag.channels.find(channel => channel.channel === 'semantic');
+          if (entry) {
+            semanticInvoked = true;
+            semanticCandidates = entry.candidates;
+          }
+        });
+        try {
+          const ragStart = performance.now();
+          const withRag = await store.search(example.question, {
+            space: 'longmemeval',
+            limit: topK,
+            semantic: true,
+          });
+          mindRagOnMs = performance.now() - ragStart;
+          mindRagOn = withRag.map(item => keyToGold.get(item.name)).filter(Boolean);
+        } finally {
+          setSearchDiagnosticsSink(null);
+        }
+        if (!semanticInvoked) throw new Error('Semantic search channel was not executed for ' + example.question_id);
+      }
 
       // Independent, deliberately simple no-LLM baseline over the same FTS index.
       const baseDb = new Database(dbPath, { readonly: true });
@@ -164,6 +208,7 @@ try {
         sessionCount: sessions.length,
         gold: (example.answer_session_ids ?? []).map(String),
         mind,
+        ...(ragComparison ? { mindRagOff: mind, mindRagOn, embeddedCount, semanticCandidates, mindRagOnMs } : {}),
         bm25,
         ingestMs,
         mindMs,
@@ -194,19 +239,23 @@ const byCategory = Object.fromEntries(
 );
 const report = {
   benchmark: 'LongMemEval-S cleaned (2025-09)',
-  protocol: 'per-question isolated corpus; one memory per entire session; direct evidence session-id matching; lexical RAG OFF',
+  protocol: ragComparison
+    ? 'per-question isolated corpus; one memory per entire session; same embedding-complete DB queried with semantic channel OFF vs ON'
+    : 'per-question isolated corpus; one memory per entire session; direct evidence session-id matching; lexical RAG OFF',
   datasetSha256: digest(Buffer.from(await Bun.file(input).arrayBuffer())),
   count: records.length,
   answerableCount: answerable.length,
   abstentionCount: records.length - answerable.length,
   topK,
   mind: summarize(answerable, 'mind'),
+  ...(ragComparison ? { mindRagOff: summarize(answerable, 'mindRagOff'), mindRagOn: summarize(answerable, 'mindRagOn'), embeddingModel: 'openai/text-embedding-3-small', semanticInvocations: records.filter(r => r.semanticCandidates !== null).length, fullyEmbedded: records.every(r => r.embeddedCount === r.sessionCount) } : {}),
   bm25: summarize(answerable, 'bm25'),
   byCategory,
   timingsMs: {
     mindP50: percentile(records.map((row) => row.mindMs), 0.5),
     mindP95: percentile(records.map((row) => row.mindMs), 0.95),
     bm25P50: percentile(records.map((row) => row.bm25Ms), 0.5),
+    ...(ragComparison ? { mindRagOnP50: percentile(records.map(row => row.mindRagOnMs), 0.5) } : {}),
     ingestP50: percentile(records.map((row) => row.ingestMs), 0.5),
   },
   perQuestion: records,
@@ -219,6 +268,7 @@ console.log('BENCHMARK_RESULT ' + JSON.stringify({
   count: report.count,
   answerableCount: report.answerableCount,
   mind: report.mind,
+  ...(ragComparison ? { mindRagOn: report.mindRagOn, mindRagOff: report.mindRagOff, fullyEmbedded: report.fullyEmbedded, semanticInvocations: report.semanticInvocations } : {}),
   bm25: report.bm25,
   timingsMs: report.timingsMs,
 }));
