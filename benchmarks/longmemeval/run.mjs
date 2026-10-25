@@ -125,7 +125,7 @@ try {
           String(turn.role ?? 'unknown') + ': ' + String(turn.content ?? '')
         ).join('\n\n');
         const content = 'Session date: ' + String(dates[i]) + '\n' + body;
-        await store.addMemory('longmemeval', name, content, { tier: 3 });
+        await store.addMemory('longmemeval', name, content, { tier: 3, tags: ['benchmark'] });
       }
       const ingestMs = performance.now() - startIngest;
       const startSearch = performance.now();
