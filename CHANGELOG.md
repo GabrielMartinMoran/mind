@@ -27,6 +27,10 @@ Example:
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed natural-language searches losing partially matching memories whenever an exact match existed. Informative lexical matches now compete in the existing ranking, while common English/Spanish function words cannot seed a candidate and explicit search operators keep their previous meaning.
+
 ### Added
 
 - Added a default-off `--rag` switch to the agent-memory benchmark. When absent, every stage keeps `MIND_RAG=false` with no embedding-provider override; when passed, A1 ingest, the A1 search server, every A2 profile and every B scenario unit use `MIND_RAG=true` with the OpenRouter embedding provider, the run records `rag` in `meta.json`, and a post-ingest coverage gate aborts before A1 scoring if any ingested memory lacks an embedding.

@@ -244,6 +244,7 @@ const report = {
     : 'per-question isolated corpus; one memory per entire session; direct evidence session-id matching; lexical RAG OFF',
   datasetSha256: digest(Buffer.from(await Bun.file(input).arrayBuffer())),
   count: records.length,
+  sourceCommit: process.env.GITHUB_SHA ?? null,
   answerableCount: answerable.length,
   abstentionCount: records.length - answerable.length,
   topK,

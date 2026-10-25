@@ -44,6 +44,11 @@ export {
   type SearchConfidence,
 } from './search-fusion';
 export {
+  buildInformativeAnyMatch,
+  informativeSearchTokens,
+  isNaturalLanguageRecall,
+} from './natural-search';
+export {
   canBypassLexicalAdmission,
   selectSemanticAdmittedIds,
   SEMANTIC_ADMISSION_FLOOR,

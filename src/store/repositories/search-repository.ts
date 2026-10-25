@@ -27,6 +27,9 @@ import {
   fuseCandidates,
   isEmptyQuery,
   normalizeDateBound,
+  buildInformativeAnyMatch,
+  informativeSearchTokens,
+  isNaturalLanguageRecall,
   normalizeToken,
   parseQuery,
   selectSemanticAdmittedIds,
@@ -680,9 +683,12 @@ export function createSearchRepository(
     // channels (relaxed `any` for multi-word AND queries, trigram/fuzzy
     // substrings) from injecting unrelated documents; they are no longer
     // mutual-exclusion gates between stronger and weaker channels.
-    const queryTokens = eligibleTokens(ast);
-    const enforceCoverage = ast.groups.length === 1 && queryTokens.length >= 2;
-    const coverageFloorTokens = coverageFloor(queryTokens.length);
+    const broadRecall = isNaturalLanguageRecall(ast);
+    const originalTokens = eligibleTokens(ast);
+    const queryTokens = broadRecall ? informativeSearchTokens(originalTokens) : originalTokens;
+    if (broadRecall && queryTokens.length === 0) return [];
+    const enforceCoverage = !broadRecall && ast.groups.length === 1 && queryTokens.length >= 2;
+    const coverageFloorTokens = broadRecall ? 1 : coverageFloor(queryTokens.length);
 
     const diagnostics = activeDiagnosticsSink();
     const diagnosticsStart = diagnostics ? performance.now() : 0;
@@ -722,7 +728,10 @@ export function createSearchRepository(
     // Lexical rungs: phrase → all → any.
     for (const rung of rungs) {
       const channelStart = diagnostics ? performance.now() : 0;
-      let rows = runMatchQuery(rung.match, filter);
+      const match = broadRecall && rung.method === 'any'
+        ? buildInformativeAnyMatch(queryTokens)
+        : rung.match;
+      let rows = runMatchQuery(match, filter);
       if (rung.method === 'any' && enforceCoverage) {
         rows = rows.filter(
           row => matchedTokenCount(queryTokens, row.name, row.content) >= coverageFloorTokens
@@ -891,30 +900,25 @@ export function createSearchRepository(
       }
     }
 
-    // Relevance admission gate: keep only lexical candidates that satisfy the
-    // query's boolean structure under folded matching. The ladder runs on the
-    // lexical view so its `finalRows.size === 0` branches keep their meaning.
+    // Plain-language recall ranks all informative lexical matches. The older
+    // all-terms-first gate could silently discard complementary evidence.
+    // Explicit searches preserve their strict admission ladder.
     let finalRows = new Map<string, SearchRow>();
-    for (const [id, row] of lexicalRowsById) {
-      if (documentSatisfiesQuery(ast, row.name, row.content)) finalRows.set(id, row);
-    }
-
-    // Relaxed tier: when no candidate satisfies the full query (e.g. tokens are
-    // semantically paraphrased rather than literally present), admit candidates
-    // that cover a majority of the query tokens — the same coverage floor the
-    // legacy cascade used, which keeps the relaxed set small and precise.
-    if (finalRows.size === 0 && queryTokens.length >= 2) {
-      const floor = coverageFloor(queryTokens.length);
+    if (broadRecall) {
+      finalRows = new Map(lexicalRowsById);
+    } else {
       for (const [id, row] of lexicalRowsById) {
-        if (countCoveredQueryTokens(queryTokens, row.name, row.content) >= floor)
-          finalRows.set(id, row);
+        if (documentSatisfiesQuery(ast, row.name, row.content)) finalRows.set(id, row);
       }
+      if (finalRows.size === 0 && queryTokens.length >= 2) {
+        const floor = coverageFloor(queryTokens.length);
+        for (const [id, row] of lexicalRowsById) {
+          if (countCoveredQueryTokens(queryTokens, row.name, row.content) >= floor)
+            finalRows.set(id, row);
+        }
+      }
+      if (finalRows.size === 0) finalRows = new Map(lexicalRowsById);
     }
-
-    // Last resort: no coverage tier matched, keep every lexical channel
-    // candidate. Semantic candidates must not enter here: only the stricter
-    // post-ladder bypass below may admit them.
-    if (finalRows.size === 0) finalRows = new Map(lexicalRowsById);
 
     // Independent semantic admission: for natural-language queries (single
     // plain-term group, no NOT), a semantic candidate at/above the stricter
