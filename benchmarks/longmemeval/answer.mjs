@@ -214,6 +214,7 @@ for (const [index, row] of items.entries()) {
   result.cases.push(entry);
   for (const arm of arms) {
     const context = arm === 'no-memory' ? '' : contextFor(example, row[arm]);
+    console.log('QA_CALL ' + row.id + ' arm=' + arm + ' contextChars=' + context.length);
     const began = performance.now();
     try {
       const predicted = await chat(answerPrompt(example, context), 160);
