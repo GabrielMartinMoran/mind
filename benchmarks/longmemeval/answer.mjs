@@ -49,7 +49,7 @@ const result = {
   datasetSha256: retrieval.datasetSha256,
   selection: { count: items.length, offset },
   answerer: { provider, model, temperature: 0, reasoning: provider === 'openrouter' ? 'low' : null },
-  judge: { provider, model: judgeModel, temperature: 0, reasoning: provider === 'openrouter' ? 'low' : null, criterion: 'LongMemEval task-specific yes/no rubrics' },
+  judge: { provider, model: judgeModel, temperature: 0, reasoning: null, criterion: 'LongMemEval task-specific yes/no rubrics' },
   budget: { maxUsd: budgetUsd, spentUsd: 0, scope: 'reader+judge only; embedding costs are separate' },
   context: { maxSessions, charsPerSession, turnSelection: 'query-term overlap, identical for both retrieved arms' },
   cases: [],
@@ -115,7 +115,7 @@ async function chat(messages, maxTokens, role = 'answerer') {
   const requestModel = role === 'judge' ? judgeModel : model;
   const payload = provider === 'ollama'
     ? { model: requestModel, messages, stream: false, options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: maxTokens } }
-    : { model: requestModel, messages, temperature: 0, reasoning: { effort: 'low' }, max_tokens: maxTokens };
+    : { model: requestModel, messages, temperature: 0, ...(role === 'answerer' ? { reasoning: { effort: 'low' } } : {}), max_tokens: maxTokens };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 180000);
