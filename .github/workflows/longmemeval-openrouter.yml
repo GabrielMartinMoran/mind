@@ -1,6 +1,9 @@
-name: LongMemEval OpenRouter RAG A/B (manual, metered)
+name: LongMemEval OpenRouter RAG A/B (pilot)
 
 on:
+  push:
+    branches: [benchmark/longmemeval-20261025]
+    paths: [.github/workflows/longmemeval-openrouter.yml]
   workflow_dispatch:
     inputs:
       count:
@@ -34,7 +37,7 @@ jobs:
   qa:
     environment: Develop
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 60
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
     steps:
@@ -66,7 +69,7 @@ jobs:
           bun benchmarks/longmemeval/run.mjs \
             --rag=both \
             --input=/tmp/longmemeval_s_cleaned.json \
-            --count=${{ inputs.count }} \
+            --count=${{ inputs.count || '3' }} \
             --output=benchmarks/longmemeval/openrouter-retrieval.json
       - name: Run paired QA with DeepSeek Flash and independent mini judge
         run: |
@@ -78,8 +81,8 @@ jobs:
             --sessions=5 --session-chars=3000 \
             --input=/tmp/longmemeval_s_cleaned.json \
             --retrieval=benchmarks/longmemeval/openrouter-retrieval.json \
-            --count=${{ inputs.count }} \
-            --max-usd=${{ inputs.qa_budget_usd }} \
+            --count=${{ inputs.count || '3' }} \
+            --max-usd=${{ inputs.qa_budget_usd || '0.25' }} \
             --output=benchmarks/longmemeval/openrouter-qa.json
       - name: Upload reproducible inputs, retrieval, answers and judge decisions
         if: always()
