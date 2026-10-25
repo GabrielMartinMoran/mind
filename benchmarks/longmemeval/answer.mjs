@@ -21,8 +21,8 @@ const retrievalPath = opts.get('retrieval') ?? 'benchmarks/longmemeval/retrieval
 const output = opts.get('output') ?? 'benchmarks/longmemeval/qa.json';
 const provider = opts.get('provider') ?? 'opencode';
 const model = opts.get('model') ?? (provider === 'opencode' ? 'opencode/deepseek-v4.1-flash-free' : provider === 'openrouter' ? 'deepseek/deepseek-v4.1-flash' : 'llama3.2:3b');
-const maxSessions = Number(opts.get('sessions') ?? 5);
-const charsPerSession = Number(opts.get('session-chars') ?? 2800);
+const maxSessions = Number(opts.get('sessions') ?? 2);
+const charsPerSession = Number(opts.get('session-chars') ?? 500);
 const arms = ['mind', 'bm25', 'no-memory'];
 const dataset = await Bun.file(input).json();
 const retrieval = await Bun.file(retrievalPath).json();
