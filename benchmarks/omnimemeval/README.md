@@ -12,9 +12,11 @@ Search requests top-20 with `MIND_RAG=false`. No model participates in ingestion
 The index is erased between subjects through OmniMemEval's streaming mode.
 
 The initial smoke/pilot used the first 20 questions (all single-session-user),
-so 20/20 is not an overall score. Push runs use 120 deterministic, interleaved
-questions (20 per category). Select `sample_size=500` via workflow_dispatch
-for the official full 500-question benchmark; report smaller runs as pilots.
+so 20/20 is not an overall score. The first follow-up push evaluated 120 deterministic, interleaved questions
+(20 per category). This push runs the full 500 original questions;
+workflow_dispatch also supports 60/120 stratified pilots. Report smaller runs
+as pilots. At the observed ~47k answer input tokens/question, the full run
+could consume ~24 million GPT-4.1-mini tokens (~US$10 before judge/output).
 
 Answer and judge models match the published model families
 (`openai/gpt-4.1-mini` and `openai/gpt-4o-mini`), but here run through

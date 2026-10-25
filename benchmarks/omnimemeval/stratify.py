@@ -7,8 +7,8 @@ from pathlib import Path
 
 path = Path(sys.argv[1])
 count = int(sys.argv[2])
-if count not in {20, 60, 120, 500}:
-    raise SystemExit("sample_size must be 20, 60, 120 or 500")
+if count not in {60, 120, 500}:
+    raise SystemExit("sample_size must be 60, 120 or 500")
 questions = json.loads(path.read_text())
 if len(questions) != 500:
     raise RuntimeError("Expected 500 official LongMemEval-S questions")
