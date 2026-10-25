@@ -1,0 +1,73 @@
+name: LongMemEval 60 paired QA (Qwen 3B)
+on:
+  push:
+    branches: [benchmark/longmemeval-20261025]
+    paths: [.github/workflows/longmemeval-60-qa.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa-shards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Install local Qwen 2.5 3B
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          (ollama serve >/tmp/ollama.log 2>&1 &)
+          for n in $(seq 1 50); do curl -fsS http://localhost:11434/api/tags >/dev/null && break; sleep 1; done
+          ollama pull qwen2.5:3b
+      - name: Download LongMemEval-S
+        run: |
+          curl -fL --retry 4 --retry-delay 5 'https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json' -o /tmp/longmemeval_s_cleaned.json
+          test "$(stat -c%s /tmp/longmemeval_s_cleaned.json)" -gt 100000000
+      - name: Retrieve 60 questions
+        run: |
+          bun benchmarks/longmemeval/run.mjs --count=60 --input=/tmp/longmemeval_s_cleaned.json --output=/tmp/qa60-retrieval.json
+      - name: Answer one disjoint 12-question shard
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          OFFSET=$((SHARD * 12))
+          bun benchmarks/longmemeval/answer.mjs \
+            --input=/tmp/longmemeval_s_cleaned.json \
+            --retrieval=/tmp/qa60-retrieval.json \
+            --provider=ollama --model=qwen2.5:3b \
+            --sessions=5 --session-chars=3000 \
+            --offset="$OFFSET" --count=12 \
+            --output="benchmarks/longmemeval/qa60-shard-${SHARD}.json"
+      - name: Save QA shard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa60-shard-${{ matrix.shard }}
+          path: benchmarks/longmemeval/qa60-shard-${{ matrix.shard }}.json
+          if-no-files-found: warn
+  aggregate:
+    runs-on: ubuntu-latest
+    needs: qa-shards
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: qa60-shard-*
+          path: benchmarks/longmemeval/shards
+          merge-multiple: true
+      - name: Validate 60 complete, unique, judged questions
+        run: |
+          node benchmarks/longmemeval/aggregate.mjs \
+            benchmarks/longmemeval/shards \
+            benchmarks/longmemeval/qa60-aggregate.json 60
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa60-aggregate
+          path: benchmarks/longmemeval/qa60-aggregate.json
