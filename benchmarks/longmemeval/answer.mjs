@@ -62,7 +62,7 @@ async function opencodeCompletion(messages) {
         stderr: 'pipe',
         signal: controller.signal,
         stdin: 'ignore',
-        env: { ...process.env, OPENCODE_DISABLE_FREE_MODELS: '0' },
+        env: { ...process.env, OPENCODE_DISABLE_FREE_MODELS: '0', OPENCODE_CONFIG_CONTENT: JSON.stringify({ permission: 'deny' }) },
       });
       const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
