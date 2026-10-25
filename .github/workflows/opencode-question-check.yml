@@ -17,8 +17,9 @@ jobs:
           python3 -c "import json; a=json.load(open('/tmp/long.json')); q=next(x for x in a if x['question_id']=='3ba21379'); open('/tmp/question.txt','w').write(q['question']); print('Q_ID',q['question_id'],'LENGTH',len(q['question']))"
           mkdir -p /tmp/ocqa
           cd /tmp/ocqa
+          printf '%s\n' '{"permission":"deny","agent":{"qa":{"description":"Direct factual QA only","mode":"primary","prompt":"Answer the user's question based only on given text. Never use tools or access any files or system resources. Answer directly and briefly.","permission":"deny","tools":{"*":false},"steps":1}}}' > opencode.json
           set +e
-          timeout 35s opencode run --model opencode/deepseek-v4.1-flash-free --format json "$(cat /tmp/question.txt)" >/tmp/events.txt 2>/tmp/errors.txt
+          timeout 35s opencode run --agent qa --model opencode/deepseek-v4.1-flash-free --format json "$(cat /tmp/question.txt)" >/tmp/events.txt 2>/tmp/errors.txt
           result=$?
           set -e
           echo "RESULT=$result"
