@@ -27,12 +27,10 @@ Example:
 
 ## [Unreleased]
 
-### Changed
-
-- Changed bare `mind setup` to configure all supported agent integrations; moved the compatibility matrix to `mind setup compatibility` and kept `mind setup refresh` for detected integrations. A failing agent no longer aborts the run: its error is reported and the remaining agents still run, and the success summary is printed only when every agent succeeds.
-
 ### Added
 
+- Added a default-off `--rag` switch to the agent-memory benchmark. When absent, every stage keeps `MIND_RAG=false` with no embedding-provider override; when passed, A1 ingest, the A1 search server, every A2 profile and every B scenario unit use `MIND_RAG=true` with the OpenRouter embedding provider, the run records `rag` in `meta.json`, and a post-ingest coverage gate aborts before A1 scoring if any ingested memory lacks an embedding.
+- Added redacted execution evidence to agent-memory benchmark session results: each `result.json` keeps only ordered tool and skill names, nested code-mode tool names, parent/child session ids, recorded `memory_query` memory names with their `methods`, and the idle outcome. Prompts, message text, tool results, and memory contents are dropped before the file is written.
 - Added `CONTRIBUTING.md` and `docs/mind-philosophy.md` to document contribution standards and Mind's purpose and product principles, with entry points from the README, docs index, and `AGENTS.md`.
 - Added a self-hosted Lucide 0.547.0 icon sprite (`web/assets/icons.svg`) and a shared `createIcon` helper for web command actions, with no CDN or runtime icon package. The upstream ISC license and the MIT notice for Feather-derived portions are retained in `web/assets/vendor/LICENSE.lucide`.
 - Added `GET /api/spaces/:space/tags`, which returns a space's distinct normalized memory tags in alphabetical order (empty for an unknown space). The web filter bar now uses a native **All tags** select populated from it, covering every tier and excluding space tags; a URL tag that is missing from the latest list stays selected as a temporary option.
@@ -85,6 +83,7 @@ Example:
 
 ### Changed
 
+- Changed bare `mind setup` to configure all supported agent integrations; moved the compatibility matrix to `mind setup compatibility` and kept `mind setup refresh` for detected integrations. A failing agent no longer aborts the run: its error is reported and the remaining agents still run, and the success summary is printed only when every agent succeeds.
 - Changed the cognitive protocol to use recent memory changes as an on-demand fallback for vague continuity or recent-work questions, with limits on scope, promotion, and claims of completeness; bumped `instructions_version` to `2.2.0` for the updated fallback.
 - Changed web command actions to consistent Lucide icons with visible labels by default: Logs is a visible secondary topbar action, New space is quieter, New memory sits beside the space title in List and Neural Map, and icon-only mobile actions keep descriptive accessible names. Destructive triggers are outlined while only the final delete confirmation is solid, and tier, filter, pagination, and badge marks stay icon-free.
 - Changed search result tags to passive data chips outside the result anchor, made removable space and memory tags named buttons with decorative remove icons, and added decorative icons to list, search, panel, logs, graph, dialog, and toast commands.
@@ -144,8 +143,10 @@ Example:
 
 ### Fixed
 
+- Fixed agent-memory benchmark sessions sharing one OpenCode database. Each A2 answering unit and each B-scenario session now owns its own `opencode.db`, because the explicit `database.path` binding persists sessions into a shared store, so the next unit or session trips the fail-closed empty-session isolation gate and is rejected as contaminated. `MIND_DB_PATH` stays shared per unit, so scenario continuity is unchanged.
 - Fixed invalid `from`/`to` date bounds failing differently by path: every date-filtering surface now throws `Invalid date value: <raw>` instead of the MCP in-memory filters silently returning no rows, so store queries, `checkpoint_query`, and `memory_query` (with or without `search`) report the same error.
 - Fixed `checkpoint_query` and `memory_query` date-range filtering on hosts with non-UTC local timezones. Zone-less `changed_at` values are parsed as UTC, and every `from`/`to` bound resolves through one shared parser to the same whole-second UTC instant as `changed_at`, which is stored at second precision: a date-only bound covers the full UTC day (`from` at 00:00:00, `to` at 23:59:59), a time-bearing bound is honored at that instant instead of being widened (zone-less values such as `2026-10-24T12:00:00` are read as UTC, explicit offsets such as `2026-10-24 12:00:00+02:00` are converted to UTC, and fractional seconds floor to the whole second, so `12:00:00.500` resolves to `12:00:00`), and `from`/`to` are symmetric. The store SQL path and the MCP filter use the same parser and the same whole-second resolution, so the same bounds select the same rows on both paths whatever the host timezone. This is a deliberate semantic alignment: date-only bounds are UTC dates, not host-local days.
+- Fixed agent-memory benchmark B verdicts over unobservable evidence. B4 now reports "no child" only after a successful child-session capture (unavailable child evidence after a recorded `subagent` call is a harness error), B11 records unavailable or empty message evidence as a harness error instead of a skill-order failure, and B10 passes only when a recorded target `memory_query` result includes `semantic` in its `methods` rather than relying on embedding presence and a correct artifact. Harness errors are stored as `not_run` with a reason and excluded from failed counts.
 - Fixed the agent-memory benchmark isolation gate rejecting valid `mind-current` environments during a cold start. `verifyIsolation` now polls `/api/skill` a bounded number of times until the exact allowlisted surface appears, evaluates the skills allowlist and skill-first checks against that final listing, and saves it as evidence; a skill that never appears still fails closed with its id.
 - Fixed clearing an in-space query so stale search results are removed without another search request and a matching memory list is reused.
 - Fixed long in-space search result lists being clipped by the fixed-height space view: results now scroll inside their own region while the space header, shared filter bar, and result status stay visible, with no page scroll. At phone widths the tag select pairs with the tier chips and confidence pairs with embeddings, so the results body keeps at least 120 px at 320x700 instead of collapsing to 111 px.

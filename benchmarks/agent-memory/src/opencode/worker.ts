@@ -25,10 +25,21 @@ import { stripRedacted } from '../redact';
 import {
   DriverAuthError,
   DriverTimeoutError,
+  buildDriverEvidence,
   createSdkDriver,
+  isRunComplete,
   type DriverErrorWithPartial,
+  type DriverEvidence,
+  type DriverIdleOutcome,
   type DriverRunResult,
 } from './driver';
+
+/** A2 outcome plus the redacted execution evidence A2/B consume. */
+type A2OutcomeWithEvidence = A2UnitOutcome & {
+  readonly idleOutcome: DriverIdleOutcome | null;
+  readonly completion: 'complete' | 'incomplete';
+  readonly evidence: DriverEvidence;
+};
 
 function writeOutcome(unitDir: string, outcome: A2UnitOutcome): void {
   const path = join(unitDir, 'result.json');
@@ -39,9 +50,9 @@ function outcomeFromResult(
   status: A2UnitStatus,
   result: DriverRunResult,
   exactDriverError: string | null,
-  isolationOk: boolean,
-  children: readonly string[]
-): A2UnitOutcome {
+  isolationOk: boolean
+): A2OutcomeWithEvidence {
+  const idleOutcome = result.idleOutcome ?? null;
   return {
     status,
     answer: result.finalText,
@@ -53,10 +64,21 @@ function outcomeFromResult(
     latencyMs: result.latencyMs,
     steps: result.steps,
     finish: result.finish,
-    children,
+    children: result.childSessionIds ?? [],
     error: exactDriverError,
     errorType: status === 'ok' ? null : status,
     isolationOk,
+    idleOutcome,
+    completion: isRunComplete({ idleOutcome }) ? 'complete' : 'incomplete',
+    evidence:
+      result.evidence ??
+      buildDriverEvidence({
+        sessionId: result.sessionId,
+        messages: null,
+        childSessionIds: null,
+        idleOutcome,
+        reason: 'driver returned no evidence',
+      }),
   };
 }
 
@@ -64,7 +86,7 @@ function emptyOutcome(
   status: A2UnitStatus,
   error: string | null,
   isolationOk = true
-): A2UnitOutcome {
+): A2OutcomeWithEvidence {
   return {
     status,
     answer: '',
@@ -80,6 +102,15 @@ function emptyOutcome(
     error,
     errorType: status === 'ok' ? null : status,
     isolationOk,
+    idleOutcome: null,
+    completion: 'incomplete',
+    evidence: buildDriverEvidence({
+      sessionId: '',
+      messages: null,
+      childSessionIds: null,
+      idleOutcome: null,
+      reason: error ?? 'no session evidence',
+    }),
   };
 }
 
@@ -102,11 +133,16 @@ async function main(): Promise<number> {
 
   // 1. Fail-closed isolation gate (FREE) — no prompt until it passes.
   const dir = isolationDirs(job.conditionDir);
+  // Unit-owned databases live under the unit directory while HOME/XDG stay in
+  // the shared condition tree, so the narrowest root containing every resolved
+  // path is the run directory. Legacy jobs without a root keep the strict
+  // condition directory.
+  const verifyDir = job.isolationRootDir ? { ...dir, conditionDir: job.isolationRootDir } : dir;
   ensureIsolationDirs(dir);
   try {
     await verifyIsolation({
       condition: job.condition,
-      dir,
+      dir: verifyDir,
       env: runtimeEnv,
       runner: runCommand,
       evidenceDir: job.evidenceDir,
@@ -129,13 +165,7 @@ async function main(): Promise<number> {
       prompt: job.prompt,
       limits: job.limits,
     });
-    let children: readonly string[] = [];
-    try {
-      children = await driver.children(result.sessionId);
-    } catch {
-      children = [];
-    }
-    writeOutcome(job.unitDir, outcomeFromResult('ok', result, null, true, children));
+    writeOutcome(job.unitDir, outcomeFromResult('ok', result, null, true));
     return 0;
   } catch (error) {
     const partial = (error as DriverErrorWithPartial).partial ?? null;
@@ -147,7 +177,7 @@ async function main(): Promise<number> {
           : 'error';
     const message = error instanceof Error ? error.message : String(error);
     if (partial) {
-      writeOutcome(job.unitDir, outcomeFromResult(status, partial, message, true, []));
+      writeOutcome(job.unitDir, outcomeFromResult(status, partial, message, true));
     } else {
       writeOutcome(job.unitDir, emptyOutcome(status, message));
     }

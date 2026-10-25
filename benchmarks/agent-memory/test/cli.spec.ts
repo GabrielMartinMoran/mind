@@ -78,7 +78,15 @@ describe('parseCliArgs', () => {
       reps: 1,
       scenarios: [],
       outPath: null,
+      rag: false,
     });
+  });
+
+  test('parses --rag as a run-level embedding switch', () => {
+    expect(parseCliArgs(['locomo']).rag).toBe(false);
+    expect(parseCliArgs(['locomo', '--rag']).rag).toBe(true);
+    expect(parseCliArgs(['scenarios', '--rag']).rag).toBe(true);
+    expect(parseCliArgs(['locomo', '--answers', '--rag']).rag).toBe(true);
   });
 
   test('parses locomo-specific flags', () => {
@@ -145,6 +153,44 @@ describe('dispatch paid-stage refusal', () => {
     const options = parseCliArgs(['locomo', '--subset', 'pilot']);
     expect(await dispatch(options, withRunner)).toBe(0);
     expect(d.out.join('\n')).toContain('ran locomo subset=pilot');
+  });
+
+  test('forwards --rag to the locomo runner', async () => {
+    const d = deps();
+    const withRunner: DispatchDeps = {
+      ...d,
+      locomoRunner: async (options, dd) => {
+        dd.stdout(`rag=${options.rag}`);
+        return 0;
+      },
+    };
+    expect(await dispatch(parseCliArgs(['locomo', '--rag']), withRunner)).toBe(0);
+    expect(d.out.join('\n')).toContain('rag=true');
+  });
+
+  test('forwards --rag to the scenarios and a2 runners', async () => {
+    const d = deps();
+    const withRunner: DispatchDeps = {
+      ...d,
+      a2Runner: async (options, dd) => {
+        dd.stdout(`a2-rag=${options.rag}`);
+        return 0;
+      },
+      scenariosRunner: async (options, dd) => {
+        dd.stdout(`scenarios-rag=${options.rag}`);
+        return 0;
+      },
+    };
+    const paid = ['--budget', '5', '--confirm'] as const;
+    expect(
+      await dispatch(
+        parseCliArgs(['locomo', '--answers', '--run-id', 'run-x', '--rag', ...paid]),
+        withRunner
+      )
+    ).toBe(0);
+    expect(await dispatch(parseCliArgs(['scenarios', '--rag', ...paid]), withRunner)).toBe(0);
+    expect(d.out.join('\n')).toContain('a2-rag=true');
+    expect(d.out.join('\n')).toContain('scenarios-rag=true');
   });
 
   test('locomo refuses when no runner is wired', async () => {

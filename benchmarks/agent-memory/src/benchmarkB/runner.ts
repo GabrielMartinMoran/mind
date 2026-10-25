@@ -6,7 +6,8 @@
 //      the agent populates it through MCP if it chooses);
 //   3. copies the scenario fixture into the unit workspace;
 //   4. runs the scenario sessions SEQUENTIALLY, one new session (and one worker
-//      process) per session, with the same isolated env for the whole unit;
+//      process) per session, with the same isolated env for the whole unit
+//      except for a per-session OpenCode database;
 //   5. captures the final text, tool/memory calls, tokens, cost, latency,
 //      finish/error and child (sub-agent) sessions per session;
 //   6. runs the scenario assertion over the resulting workspace state.
@@ -33,6 +34,7 @@ import {
   type IsolationDirs,
 } from '../isolation/opencode';
 import { buildMindEnv, type MindPaths } from '../mind/cli';
+import type { DriverEvidence } from '../opencode/driver';
 import { prepareSkillFirst } from '../opencode/skill-first';
 
 import type {
@@ -75,6 +77,48 @@ export interface BSessionJob {
 }
 
 export type BSessionExecutor = (job: BSessionJob) => Promise<BSessionOutcome>;
+
+/**
+ * Prefix for an assertion detail that reports a harness error: the run could
+ * not observe the behavior, so it is not a model/scenario failure.
+ */
+export const HARNESS_ERROR_PREFIX = 'harness error:';
+
+/**
+ * One redacted `memory_query` result recorded from the agent's tool output.
+ * Only the memory name and the fused `methods` provenance are retained.
+ */
+export interface SearchProvenanceResult {
+  readonly name: string;
+  readonly methods: readonly string[];
+}
+
+/**
+ * Runtime-only fields the B worker adds to a session outcome (Contract 1).
+ * `scenario.ts` is the shared type owner and does not declare them, so the
+ * runner reads them through this narrow shape instead of widening that file.
+ */
+interface BSessionRuntimeFields {
+  readonly evidence?: DriverEvidence;
+  readonly searchProvenance?: readonly SearchProvenanceResult[];
+}
+
+/** Redacted execution evidence for a session, or `null` when none was recorded. */
+export function sessionEvidence(session: BSessionResult): DriverEvidence | null {
+  return (session as BSessionResult & BSessionRuntimeFields).evidence ?? null;
+}
+
+/** Recorded `memory_query` provenance for a session (empty when none was captured). */
+export function sessionSearchProvenance(
+  session: BSessionResult
+): readonly SearchProvenanceResult[] {
+  return (session as BSessionResult & BSessionRuntimeFields).searchProvenance ?? [];
+}
+
+/** Harness-error details carried by an assertion result, if any. */
+export function harnessErrorDetails(assertion: Pick<ScenarioAssertionResult, 'details'>): string[] {
+  return assertion.details.filter(detail => detail.startsWith(HARNESS_ERROR_PREFIX));
+}
 
 export function emptyBSessionOutcome(
   status: BSessionStatus,
@@ -119,6 +163,13 @@ export interface ScenarioConditionResult {
   /** `not_run` scenarios carry a reason and are excluded from failed counts. */
   readonly status: ScenarioRunStatus;
   readonly notRunReason: string | null;
+  /**
+   * Explicit capture/harness diagnostic. A non-null value means the run could
+   * not observe the behavior; the result is excluded from failed counts instead
+   * of being reported as a model failure. Optional so existing stored results
+   * and fixtures remain valid.
+   */
+  readonly harnessError?: string | null;
 }
 
 export interface ScenarioAggregate {
@@ -148,6 +199,11 @@ export interface RunScenariosOptions {
    * Empty for offline/dry runs; never written to result artifacts.
    */
   readonly credentialEnv?: Record<string, string>;
+  /**
+   * Run-level embeddings override. `undefined` keeps each scenario's own
+   * `rag` flag; `true` enables RAG for every unit; `false` disables it.
+   */
+  readonly rag?: boolean;
 }
 
 export interface InitMindDbInput {
@@ -248,10 +304,11 @@ export function scenarioRunStatus(
 export function scenarioGateReason(
   scenario: Pick<Scenario, 'rag' | 'requires'>,
   condition: ConditionId,
-  credentialEnv: Record<string, string>
+  credentialEnv: Record<string, string>,
+  ragOverride?: boolean
 ): string | null {
   const isMind = engineForCondition(condition) !== null;
-  const rag = scenario.rag === true;
+  const rag = ragOverride ?? scenario.rag === true;
   if (rag && !isMind) {
     return 'RAG requires a Mind condition';
   }
@@ -298,6 +355,7 @@ export function notRunScenarioResult(
     error: null,
     status: 'not_run',
     notRunReason: reason,
+    harnessError: null,
   };
 }
 
@@ -341,13 +399,14 @@ async function runUnit(
   }
 
   const mindBin = engine === null ? null : join(deps.worktrees[engine]!, 'mind');
+  const effectiveRag = options.rag ?? scenario.rag === true;
   let env: Record<string, string> = {
     ...buildOpenCodeEnv({
       condition,
       dir: dirs,
       mindBin,
-      rag: scenario.rag === true,
-      embeddingProvider: scenario.rag === true ? RAG_EMBEDDING_PROVIDER : undefined,
+      rag: effectiveRag,
+      embeddingProvider: effectiveRag ? RAG_EMBEDDING_PROVIDER : undefined,
     }),
     ...(options.credentialEnv ?? {}),
   };
@@ -386,6 +445,13 @@ async function runUnit(
     const sessionDir = join(unitDir, 'sessions', String(index));
     mkdirSync(sessionDir, { recursive: true });
 
+    // Each session owns its OpenCode database. Sharing the unit-level store let
+    // session 0 persist there and trip the next session's fail-closed
+    // empty-session isolation check. The path stays under the unit directory so
+    // the existing path-containment check holds without widening it. Scenario
+    // continuity still runs through the shared per-unit Mind database.
+    const sessionOpencodeDb = join(sessionDir, 'opencode.db');
+
     const job: BSessionJob = {
       runId: options.runId,
       scenarioId: scenario.id,
@@ -397,7 +463,7 @@ async function runUnit(
       sessionDir,
       evidenceDir: join(unitDir, 'isolation-evidence', String(index)),
       limits: options.limits,
-      env,
+      env: { ...env, OPENCODE_DB: sessionOpencodeDb },
       mindDbPath: mindDb,
       mindBin,
     };
@@ -423,6 +489,7 @@ async function runUnit(
   });
 
   const failedSession = sessions.find(session => session.status !== 'ok');
+  const harnessError = harnessErrorDetails(assertion)[0] ?? null;
   const result: ScenarioConditionResult = {
     scenarioId: scenario.id,
     title: scenario.title,
@@ -436,8 +503,9 @@ async function runUnit(
     assertion,
     mindDb,
     error: failedSession?.error ?? null,
-    status: assertion.pass ? 'passed' : 'failed',
-    notRunReason: null,
+    status: harnessError ? 'not_run' : assertion.pass ? 'passed' : 'failed',
+    notRunReason: harnessError,
+    harnessError,
   };
   writeJson(join(unitDir, 'assertion.json'), assertion);
   return result;
@@ -462,7 +530,12 @@ export async function runScenarioRun(
         options.stderr(`scenarios: fixture missing for '${scenario.id}'; skipping`);
         continue;
       }
-      const gateReason = scenarioGateReason(scenario, condition, options.credentialEnv ?? {});
+      const gateReason = scenarioGateReason(
+        scenario,
+        condition,
+        options.credentialEnv ?? {},
+        options.rag
+      );
       const result =
         gateReason === null
           ? await runUnit(options, deps, scenario, condition, runner)

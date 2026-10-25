@@ -17,7 +17,14 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { CONDITIONS, type ConditionId, type Limits, type ModelRef } from './config';
+import {
+  CONDITIONS,
+  RAG_EMBEDDING_PROVIDER,
+  type ConditionId,
+  type EmbeddingProviderId,
+  type Limits,
+  type ModelRef,
+} from './config';
 import { readSchemaInfo } from './mind/worktree';
 
 export type StageStatus =
@@ -79,6 +86,19 @@ export interface RunStage {
   readonly note?: string;
 }
 
+/** Run-level embeddings mode, recorded so a stored run is self-describing. */
+export interface RagMeta {
+  readonly enabled: boolean;
+  readonly provider: EmbeddingProviderId | null;
+}
+
+/** The metadata fragment for a run-level RAG switch. */
+export function ragMeta(enabled: boolean): RagMeta {
+  return enabled
+    ? { enabled: true, provider: RAG_EMBEDDING_PROVIDER }
+    : { enabled: false, provider: null };
+}
+
 export interface RunMeta {
   readonly runId: string;
   readonly createdAt: string;
@@ -90,6 +110,8 @@ export interface RunMeta {
   readonly subset: { readonly seed: number; readonly count: number; readonly conversation: string };
   readonly limits: Limits;
   readonly budget: { readonly maxCostUsd: number | null; readonly spentUsd: number };
+  /** Run-level embeddings mode (absent on runs created before this field). */
+  readonly rag?: RagMeta;
   readonly stages: Record<string, RunStage>;
   /** Conditions that actually ran in this run, in canonical order. */
   readonly activeConditions?: readonly ConditionId[];
@@ -270,6 +292,8 @@ export interface CreateRunMetaInput {
   readonly subset: { readonly seed: number; readonly count: number; readonly conversation: string };
   readonly limits: Limits;
   readonly budget: { readonly maxCostUsd: number | null; readonly spentUsd: number };
+  /** Run-level embeddings mode; defaults to disabled. */
+  readonly rag?: RagMeta;
   readonly stages?: Record<string, RunStage>;
   /** Defaults to the conditions present in the layout. */
   readonly activeConditions?: readonly ConditionId[];
@@ -291,6 +315,7 @@ export function createRunMeta(input: CreateRunMetaInput): RunMeta {
     subset: input.subset,
     limits: input.limits,
     budget: input.budget,
+    rag: input.rag ?? ragMeta(false),
     stages: input.stages ?? {},
     activeConditions: [...(input.activeConditions ?? layoutConditions)],
     ...(input.current ? { current: input.current } : {}),

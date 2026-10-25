@@ -30,6 +30,7 @@ import { createProcessExecutor } from '../opencode/executor';
 import { prepareSkillFirst } from '../opencode/skill-first';
 import {
   mergeActiveConditions,
+  ragMeta,
   readRunMeta,
   withStage,
   writeRunMeta,
@@ -42,6 +43,7 @@ import { runA2, type A2UnitExecutor } from './a2';
 import {
   aggregateCondition,
   buildBlindPayloads,
+  isJudgeableResult,
   questionRepRows,
   measurementKey,
   runBlindJudge,
@@ -63,6 +65,8 @@ export interface A2CommandOptions {
   readonly reps?: number;
   /** Re-judge stored answers only; skip the paid answering stage. */
   readonly judgeOnly: boolean;
+  /** Run-level embeddings switch for every A2 condition profile. */
+  readonly rag?: boolean;
 }
 
 export interface A2CommandDeps {
@@ -180,6 +184,12 @@ export function groupCandidates(
       const key = `${item.id}::rep${rep}`;
       const group = byKey.get(key);
       if (!group || group.length === 0) continue;
+      // Empty and incomplete answers stay in the artifacts but never reach the
+      // blind judge: there is no answer text to evaluate.
+      const candidates = group
+        .filter(isJudgeableResult)
+        .map(result => ({ condition: result.condition, text: result.answer }));
+      if (candidates.length === 0) continue;
       questions.push({
         id: item.id,
         key,
@@ -187,7 +197,7 @@ export function groupCandidates(
         question: item.question,
         reference: item.answer,
         adversarial: item.adversarial,
-        candidates: group.map(result => ({ condition: result.condition, text: result.answer })),
+        candidates,
       });
     }
   }
@@ -232,6 +242,11 @@ export async function runJudgeStage(
   });
 
   const judged = results.map(result => {
+    // A defensive guard: an empty or incomplete answer must never carry a judge
+    // verdict, including a stale one from a previously judged artifact.
+    if (!isJudgeableResult(result)) {
+      return result.judge === null ? result : { ...result, judge: null };
+    }
     const key = measurementKey(result);
     const order = orderById.get(key);
     const verdicts = judge.verdicts[key];
@@ -419,6 +434,11 @@ export async function runA2Command(
     },
   };
 
+  // A RAG A2 run records its mode even when the free A1 stage predated it.
+  if (options.rag === true && meta.rag?.enabled !== true) {
+    writer.set({ ...meta, rag: ragMeta(true) });
+  }
+
   // Backfill tool versions on a run prepared before version capture existed
   // (e.g. the T7b pilot), so the report never shows `n/a` for OpenCode/SDK.
   const existingVersions = meta.versions ?? { opencode: null, sdk: null, bun: null };
@@ -482,6 +502,7 @@ export async function runA2Command(
     conditions: options.conditions,
     worktrees,
     credentialEnv: resolveCredentialEnv(deps),
+    rag: options.rag === true,
   });
   const profileMap: Partial<Record<ConditionId, ConditionProfile>> = {};
   const prepareCondition = deps.prepareCondition ?? defaultPrepareCondition;

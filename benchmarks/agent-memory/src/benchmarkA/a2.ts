@@ -21,7 +21,12 @@ import type { ConditionId } from '../config';
 import { TEMPERATURE_REQUESTED, applyMindDatabase } from '../isolation/opencode';
 import type { SubsetItem } from '../locomo/subset';
 import { copyMindDatabaseForQuestion, type ConditionProfile } from '../opencode/conditions';
-import type { DriverModelRef, DriverTokenUsage } from '../opencode/driver';
+import type {
+  DriverEvidence,
+  DriverIdleOutcome,
+  DriverModelRef,
+  DriverTokenUsage,
+} from '../opencode/driver';
 import { redactEnv } from '../redact';
 
 import {
@@ -30,6 +35,7 @@ import {
   questionRepRows,
   scoreDeterministic,
   type A2Class,
+  type A2Completion,
   type A2QuestionResult,
   type ConditionAggregate,
 } from './judge';
@@ -73,6 +79,14 @@ export interface A2UnitJob {
   readonly prompt: string;
   readonly workspaceDir: string;
   readonly conditionDir: string;
+  /**
+   * Narrowest root the fail-closed path check validates every resolved OpenCode
+   * path against. A2 unit databases live under the unit directory, so the run
+   * directory is the root that still contains both the shared condition
+   * environment and each unit. Absent on legacy fixtures/jobs, where the
+   * condition directory remains the root.
+   */
+  readonly isolationRootDir?: string;
   readonly unitDir: string;
   readonly evidenceDir: string;
   readonly limits: A2Limits;
@@ -99,9 +113,32 @@ export interface A2UnitOutcome {
   readonly error: string | null;
   readonly errorType: string | null;
   readonly isolationOk: boolean;
+  /**
+   * Terminal session outcome. The real worker always records these fields;
+   * legacy executors may omit them, in which case the status decides.
+   */
+  readonly idleOutcome?: DriverIdleOutcome | null;
+  readonly completion?: A2Completion;
+  /** Redacted execution evidence captured by the driver. */
+  readonly evidence?: DriverEvidence;
 }
 
 export type A2UnitExecutor = (job: A2UnitJob) => Promise<A2UnitOutcome>;
+
+/**
+ * Resolve whether a unit completed. An explicit `completion` wins, then an
+ * explicit idle outcome (from the outcome or its evidence), then the legacy
+ * status. A non-successful idle outcome is never a completed answer.
+ */
+export function resolveA2Completion(
+  outcome: Pick<A2UnitOutcome, 'status' | 'completion' | 'idleOutcome' | 'evidence'>
+): A2Completion {
+  if (outcome.completion) return outcome.completion;
+  const idleOutcome =
+    outcome.idleOutcome !== undefined ? outcome.idleOutcome : outcome.evidence?.idleOutcome;
+  if (idleOutcome !== undefined) return idleOutcome === 'succeeded' ? 'complete' : 'incomplete';
+  return outcome.status === 'ok' ? 'complete' : 'incomplete';
+}
 
 export function emptyA2Outcome(status: A2UnitStatus, error: string | null): A2UnitOutcome {
   return {
@@ -207,6 +244,15 @@ export async function runA2(options: RunA2Options, deps: RunA2Deps): Promise<A2R
           });
         }
 
+        // Each unit owns its OpenCode database. The condition-level database is
+        // left untouched as the shared template; it is never copied because
+        // every unit must start with an empty session list for the fail-closed
+        // isolation check. Sharing it let the first unit's session contaminate
+        // every later unit.
+        const opencodeDbPath = join(unitDir, 'opencode.db');
+        mkdirSync(unitDir, { recursive: true });
+        env = { ...env, OPENCODE_DB: opencodeDbPath };
+
         const job: A2UnitJob = {
           runId: options.runId,
           condition,
@@ -216,6 +262,7 @@ export async function runA2(options: RunA2Options, deps: RunA2Deps): Promise<A2R
           prompt: buildA2Prompt(item.question),
           workspaceDir: unitWorkspace,
           conditionDir: profile.dirs.conditionDir,
+          isolationRootDir: options.runDir,
           unitDir,
           evidenceDir: join(unitDir, 'isolation-evidence'),
           limits: options.limits,
@@ -231,11 +278,13 @@ export async function runA2(options: RunA2Options, deps: RunA2Deps): Promise<A2R
         });
         options.budget.addCost(outcome.costUsd, `a2:${condition}:${item.id}:rep${rep}`);
 
+        const completion = resolveA2Completion(outcome);
         const deterministic = scoreDeterministic({
           answer: outcome.answer,
           reference: item.answer,
           adversarial: item.adversarial,
           error: outcome.status !== 'ok',
+          completion,
         });
 
         const result: A2QuestionResult = {
@@ -248,6 +297,7 @@ export async function runA2(options: RunA2Options, deps: RunA2Deps): Promise<A2R
           answer: outcome.answer,
           reference: item.answer,
           deterministic,
+          completion,
           judge: null,
           memoryCalls: outcome.memoryCalls,
           tokens: outcome.tokens,
@@ -284,7 +334,9 @@ export async function runA2(options: RunA2Options, deps: RunA2Deps): Promise<A2R
       `a2 ${condition}: ${conditionResults.length} measurements (${options.subset.length}Q × ${reps}rep), ` +
         `correct=${aggregate.classes.correct} partial=${aggregate.classes.partial} ` +
         `incorrect=${aggregate.classes.incorrect} ` +
-        `abstention=${aggregate.classes.correct_abstention} ` +
+        `abstention=${aggregate.classes.abstention} ` +
+        `abstention_adversarial=${aggregate.classes.correct_abstention} ` +
+        `empty=${aggregate.classes.empty_answer} incomplete=${aggregate.classes.incomplete} ` +
         `hallucination=${aggregate.classes.hallucination} error=${aggregate.classes.error} ` +
         `memoryCalls=${aggregate.memoryCalls}`
     );
@@ -314,7 +366,7 @@ function defaultCopyDb(source: string, target: string): { sha256: string } {
 }
 
 // Re-exported so callers can build a busy class count without importing judge.
-export type { A2Class, ConditionAggregate, A2QuestionResult };
+export type { A2Class, A2Completion, ConditionAggregate, A2QuestionResult };
 
 // Kept exported here for callers that already import it from this module.
 export { redactEnv };

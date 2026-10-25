@@ -1,6 +1,6 @@
 import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
@@ -12,6 +12,7 @@ import {
   runA2,
   type A2UnitExecutor,
   type A2UnitJob,
+  type A2UnitOutcome,
 } from '../src/benchmarkA/a2';
 import { BudgetExceededError, BudgetGuard } from '../src/budget';
 import type { ConditionId } from '../src/config';
@@ -254,5 +255,204 @@ describe('runA2 dry-run with the fake driver', () => {
         }
       )
     ).rejects.toBeInstanceOf(BudgetExceededError);
+  });
+});
+
+describe('per-unit OpenCode database', () => {
+  function profilesWithConditionDb(
+    conditions: readonly ConditionId[],
+    runDir: string
+  ): Partial<Record<ConditionId, ConditionProfile>> {
+    return Object.fromEntries(
+      conditions.map(condition => {
+        const base = profile(condition, runDir);
+        return [
+          condition,
+          {
+            ...base,
+            // Mirrors `buildOpenCodeEnv`: the condition-level database is the
+            // shared parent that every unit inherited before this fix.
+            env: {
+              ...base.env,
+              OPENCODE_DB: join(runDir, condition, 'opencode', 'data', 'opencode.db'),
+            },
+          },
+        ];
+      })
+    );
+  }
+
+  test('gives every (condition, question, rep) its own OpenCode database path', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-a2-ocdb-'));
+    const conditions: ConditionId[] = ['no-memory', 'mind-v10'];
+    for (const c of conditions) mkdirSync(join(runDir, c), { recursive: true });
+
+    const seenJobs: A2UnitJob[] = [];
+    await runA2(
+      {
+        runId: 'run-ocdb',
+        runDir,
+        conditions,
+        subset,
+        limits: { steps: 3, timeoutMs: 1000 },
+        reps: 2,
+        budget: new BudgetGuard({ maxCostUsd: 5 }),
+        stdout: () => undefined,
+        stderr: () => undefined,
+      },
+      {
+        profiles: profilesWithConditionDb(conditions, runDir),
+        sourceDb: { 'mind-v10': '/fake/v10.db' },
+        executor: async job => {
+          seenJobs.push(job);
+          return { ...emptyA2Outcome('ok', null), answer: 'a' };
+        },
+        copyDb: () => ({ sha256: 'deadbeef' }),
+      }
+    );
+
+    // 2 conditions × 3 questions × 2 reps = 12 independent units.
+    expect(seenJobs).toHaveLength(12);
+    const dbPaths = seenJobs.map(job => job.env.OPENCODE_DB);
+    expect(new Set(dbPaths).size).toBe(seenJobs.length);
+
+    for (const job of seenJobs) {
+      // Each unit's database lives in its own unit directory, never in the
+      // shared condition-level OpenCode tree where a prior session would leak.
+      expect(job.env.OPENCODE_DB).toBe(join(job.unitDir, 'opencode.db'));
+      expect(dirname(job.env.OPENCODE_DB!)).toBe(job.unitDir);
+      expect(job.env.OPENCODE_DB).not.toBe(
+        join(runDir, job.condition, 'opencode', 'data', 'opencode.db')
+      );
+      // The fail-closed path check still needs every resolved path inside the
+      // run directory, so the worker receives the unit's isolation root.
+      expect(job.isolationRootDir).toBe(runDir);
+    }
+
+    // Consecutive units no longer share the path that leaked the first session.
+    const [first, second] = seenJobs;
+    expect(first!.env.OPENCODE_DB).not.toBe(second!.env.OPENCODE_DB);
+  });
+
+  test('keeps the per-unit database distinct across repetitions of one question', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-a2-ocdb-rep-'));
+    mkdirSync(join(runDir, 'mind-v10'), { recursive: true });
+
+    const seenJobs: A2UnitJob[] = [];
+    await runA2(
+      {
+        runId: 'run-ocdb-rep',
+        runDir,
+        conditions: ['mind-v10'],
+        subset: [subset[0]!],
+        limits: { steps: 1, timeoutMs: 1000 },
+        reps: 3,
+        budget: new BudgetGuard({ maxCostUsd: 5 }),
+        stdout: () => undefined,
+        stderr: () => undefined,
+      },
+      {
+        profiles: profilesWithConditionDb(['mind-v10'], runDir),
+        sourceDb: { 'mind-v10': '/fake/v10.db' },
+        executor: async job => {
+          seenJobs.push(job);
+          return { ...emptyA2Outcome('ok', null), answer: 'a' };
+        },
+        copyDb: () => ({ sha256: 'deadbeef' }),
+      }
+    );
+
+    expect(seenJobs).toHaveLength(3);
+    expect(new Set(seenJobs.map(job => job.env.OPENCODE_DB)).size).toBe(3);
+    for (const job of seenJobs) {
+      expect(job.env.OPENCODE_DB).toBe(join(job.unitDir, 'opencode.db'));
+      expect(dirname(job.env.OPENCODE_DB!)).toBe(job.unitDir);
+    }
+  });
+});
+
+describe('A2 outcome semantics', () => {
+  async function runOne(
+    item: (typeof subset)[number],
+    overrides: Partial<A2UnitOutcome>
+  ): Promise<{
+    result: Awaited<ReturnType<typeof runA2>>['results'][number];
+    run: Awaited<ReturnType<typeof runA2>>;
+  }> {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-a2-sem-'));
+    mkdirSync(join(runDir, 'mind-v10'), { recursive: true });
+    const executor: A2UnitExecutor = async () => ({
+      ...emptyA2Outcome('ok', null),
+      ...overrides,
+    });
+    const run = await runA2(
+      {
+        runId: 'run-sem',
+        runDir,
+        conditions: ['mind-v10'],
+        subset: [item],
+        limits: { steps: 1, timeoutMs: 1000 },
+        budget: new BudgetGuard({ maxCostUsd: 5 }),
+        stdout: () => undefined,
+        stderr: () => undefined,
+      },
+      {
+        profiles: { 'mind-v10': profile('mind-v10', runDir) },
+        sourceDb: { 'mind-v10': '/fake.db' },
+        executor,
+        copyDb: () => ({ sha256: 'x' }),
+      }
+    );
+    return { result: run.results[0]!, run };
+  }
+
+  test('an idle outcome without success is incomplete and never judged', async () => {
+    const { result } = await runOne(subset[0]!, {
+      answer: 'a red hat',
+      idleOutcome: null,
+    });
+    expect(result.deterministic.klass).toBe('incomplete');
+    expect(result.deterministic.f1).toBeNull();
+    expect(result.judge).toBeNull();
+    expect(result.completion).toBe('incomplete');
+  });
+
+  test('an empty answer with a successful idle outcome is an explicit empty answer', async () => {
+    const { result } = await runOne(subset[0]!, {
+      answer: '   ',
+      idleOutcome: 'succeeded',
+    });
+    expect(result.deterministic.klass).toBe('empty_answer');
+    expect(result.deterministic.f1).toBeNull();
+    expect(result.judge).toBeNull();
+    expect(result.completion).toBe('complete');
+  });
+
+  test('an empty answer without a successful idle outcome stays incomplete', async () => {
+    const { result } = await runOne(subset[0]!, {
+      answer: '',
+      idleOutcome: 'interrupted',
+    });
+    expect(result.deterministic.klass).toBe('incomplete');
+  });
+
+  test('a completed answer is still scored and adversarial semantics are preserved', async () => {
+    const correct = await runOne(subset[0]!, {
+      answer: 'a red hat',
+      idleOutcome: 'succeeded',
+    });
+    expect(correct.result.deterministic.klass).toBe('correct');
+
+    const abstained = await runOne(subset[2]!, {
+      answer: 'no information available',
+      idleOutcome: 'succeeded',
+    });
+    expect(abstained.result.deterministic.klass).toBe('correct_abstention');
+
+    const invented = await runOne(subset[2]!, {
+      answer: 'the code is 42',
+      idleOutcome: 'succeeded',
+    });
+    expect(invented.result.deterministic.klass).toBe('hallucination');
   });
 });

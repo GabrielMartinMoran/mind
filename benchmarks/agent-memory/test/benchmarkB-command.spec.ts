@@ -440,6 +440,95 @@ describe('runScenariosCommand dry-run', () => {
   });
 });
 
+describe('run-level RAG override', () => {
+  test('a RAG run enables embeddings for every scenario unit, not just B10', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-b-rag-'));
+    const envs: Record<string, string>[] = [];
+    const base = fakeExecutor();
+    const executor: BSessionExecutor = async job => {
+      envs.push(job.env);
+      return base(job);
+    };
+
+    const code = await runScenariosCommand(
+      {
+        runId: 'run-rag',
+        runsRoot: runDir,
+        workRoot: runDir,
+        conditions: ['mind-current'],
+        scenarios: ['b1'],
+        budgetUsd: 5,
+        rag: true,
+      },
+      {
+        repoRoot: REPO_ROOT,
+        runner: okRunner(),
+        stdout: () => undefined,
+        stderr: () => undefined,
+        executor,
+        credentialEnv: { OPENROUTER_API_KEY: 'test-key' },
+        prepareUnit: async ({ env }) => env,
+        initMindDb: initEmptyMindDb,
+      }
+    );
+
+    expect(code).toBe(0);
+    // b1 has two sessions; both units share the same run-level environment.
+    expect(envs).toHaveLength(2);
+    for (const env of envs) {
+      expect(env.MIND_RAG).toBe('true');
+      expect(env.MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+      expect(env.OPENROUTER_API_KEY).toBe('test-key');
+    }
+    const meta = JSON.parse(readFileSync(join(runDir, 'run-rag', 'meta.json'), 'utf8')) as {
+      rag?: { enabled: boolean; provider: string | null };
+    };
+    expect(meta.rag).toEqual({ enabled: true, provider: 'openrouter' });
+  });
+
+  test('keeps scenario units and the run metadata RAG-off without the flag', async () => {
+    const runDir = mkdtempSync(join(tmpdir(), 'bench-b-rag-off-'));
+    const envs: Record<string, string>[] = [];
+    const base = fakeExecutor();
+    const executor: BSessionExecutor = async job => {
+      envs.push(job.env);
+      return base(job);
+    };
+
+    const code = await runScenariosCommand(
+      {
+        runId: 'run-no-rag',
+        runsRoot: runDir,
+        workRoot: runDir,
+        conditions: ['mind-current'],
+        scenarios: ['b1'],
+        budgetUsd: 5,
+      },
+      {
+        repoRoot: REPO_ROOT,
+        runner: okRunner(),
+        stdout: () => undefined,
+        stderr: () => undefined,
+        executor,
+        credentialEnv: {},
+        prepareUnit: async ({ env }) => env,
+        initMindDb: initEmptyMindDb,
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(envs).toHaveLength(2);
+    for (const env of envs) {
+      expect(env.MIND_RAG).toBe('false');
+      expect(env.MIND_EMBEDDING_PROVIDER).toBeUndefined();
+    }
+    const meta = JSON.parse(readFileSync(join(runDir, 'run-no-rag', 'meta.json'), 'utf8')) as {
+      rag?: { enabled: boolean; provider: string | null };
+    };
+    expect(meta.rag).toEqual({ enabled: false, provider: null });
+  });
+});
+
 describe('Makefile scenarios target', () => {
   test('forwards BUDGET and CONFIRM to the paid command', () => {
     const result = spawnSync(

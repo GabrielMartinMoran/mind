@@ -22,20 +22,270 @@ import { ContaminationError, verifyIsolation } from '../isolation/verify';
 import {
   DriverAuthError,
   DriverTimeoutError,
+  buildDriverEvidence,
   createSdkDriver,
+  isRunComplete,
   summarizeMessages,
   toList,
   type DriverErrorWithPartial,
+  type DriverEvidence,
+  type DriverIdleOutcome,
   type DriverRunResult,
 } from '../opencode/driver';
 import { stripRedacted } from '../redact';
 
-import type { BSessionJob } from './runner';
+import type { BSessionJob, SearchProvenanceResult } from './runner';
 import type { BChildResult, BSessionOutcome, BSessionStatus } from './scenario';
 
 function writeOutcome(sessionDir: string, outcome: BSessionOutcome): void {
   mkdirSync(sessionDir, { recursive: true });
-  writeFileSync(join(sessionDir, 'result.json'), `${JSON.stringify(outcome, null, 2)}\n`, 'utf8');
+  // Persist only the redacted projection: ordered tool/skill events survive,
+  // prompts and memory contents do not.
+  const persisted = { ...outcome, rawMessages: redactTranscript(outcome.rawMessages) };
+  writeFileSync(join(sessionDir, 'result.json'), `${JSON.stringify(persisted, null, 2)}\n`, 'utf8');
+}
+
+// ── Redacted transcript projection ───────────────────────────────────────────
+
+type JsonRecord = Record<string, unknown>;
+
+function asRecord(value: unknown): JsonRecord | null {
+  return value !== null && typeof value === 'object' ? (value as JsonRecord) : null;
+}
+
+/** Messages from either `{ data: [...] }` or a bare array; never throws. */
+export function messageList(rawMessages: unknown): unknown[] {
+  const record = asRecord(rawMessages);
+  if (record && Array.isArray(record.data)) return record.data;
+  return Array.isArray(rawMessages) ? rawMessages : [];
+}
+
+const SKILL_INPUT_KEYS = ['id', 'skill', 'name'] as const;
+
+function isSkillToolName(name: string): boolean {
+  return name === 'skill' || name === 'mcp.skill' || name.endsWith('.skill');
+}
+
+/** Keep only the keys that can prove a skill id; all other arguments are dropped. */
+function sanitizeSkillInput(input: unknown): JsonRecord {
+  const record = asRecord(input);
+  const kept: JsonRecord = {};
+  if (!record) return kept;
+  for (const key of SKILL_INPUT_KEYS) {
+    if (typeof record[key] === 'string') kept[key] = record[key];
+  }
+  return kept;
+}
+
+function sanitizeNestedToolCalls(list: unknown): unknown[] {
+  if (!Array.isArray(list)) return [];
+  const sanitized: unknown[] = [];
+  for (const entry of list) {
+    const record = asRecord(entry);
+    if (!record || typeof record.tool !== 'string') continue;
+    sanitized.push({
+      tool: record.tool,
+      args: isSkillToolName(record.tool) ? sanitizeSkillInput(record.args ?? record.input) : {},
+    });
+  }
+  return sanitized;
+}
+
+/** Replace code-mode source with bare `tools.server.tool` references. */
+function redactCode(code: string): string {
+  const references: string[] = [];
+  const pattern = /tools\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(code)) !== null) {
+    references.push(`tools.${match[1]}.${match[2]}({})`);
+  }
+  return references.join('; ');
+}
+
+function redactToolPart(part: JsonRecord): JsonRecord {
+  const name = typeof part.name === 'string' ? part.name : '';
+  const state = asRecord(part.state) ?? {};
+  const input = asRecord(state.input) ?? {};
+  const isSkill = isSkillToolName(name);
+  const sanitizedInput: JsonRecord = isSkill ? sanitizeSkillInput(input) : {};
+  if (!isSkill && typeof input.code === 'string' && input.code.length > 0) {
+    sanitizedInput.code = redactCode(input.code);
+  }
+  const metadata = asRecord(state.metadata);
+  const nested = sanitizeNestedToolCalls(metadata?.toolCalls);
+  const sanitizedState: JsonRecord = { input: sanitizedInput };
+  if (nested.length > 0) sanitizedState.metadata = { toolCalls: nested };
+  return {
+    type: 'tool',
+    name,
+    state: sanitizedState,
+  };
+}
+
+/**
+ * Keep only the ordered evidence B11 needs: tool names, skill ids and the
+ * ordering between them. Message text, tool results, prompts and memory
+ * contents are dropped.
+ */
+export function redactTranscript(rawMessages: unknown): unknown {
+  const redacted: unknown[] = [];
+  for (const value of messageList(rawMessages)) {
+    const message = asRecord(value);
+    if (!message) continue;
+    if (message.type === 'skill') {
+      const skill = typeof message.skill === 'string' ? message.skill : null;
+      const name = typeof message.name === 'string' ? message.name : null;
+      redacted.push({ type: 'skill', ...(skill ? { skill } : {}), ...(name ? { name } : {}) });
+      continue;
+    }
+    if (message.type !== 'assistant') continue;
+    const content = Array.isArray(message.content) ? message.content : [];
+    redacted.push({
+      type: 'assistant',
+      content: content.flatMap(part => {
+        const record = asRecord(part);
+        return record && record.type === 'tool' ? [redactToolPart(record)] : [];
+      }),
+    });
+  }
+  return { data: redacted };
+}
+
+// ── memory_query provenance (B10) ────────────────────────────────────────────
+
+const MEMORY_QUERY_TOOL = /(^|[._])memory_query$/;
+
+function isMemoryQueryPart(name: string, part: JsonRecord): boolean {
+  if (MEMORY_QUERY_TOOL.test(name)) return true;
+  const state = asRecord(part.state);
+  const metadata = state ? asRecord(state.metadata) : null;
+  const nested = metadata?.toolCalls;
+  if (!Array.isArray(nested)) return false;
+  return nested.some(entry => {
+    const record = asRecord(entry);
+    return (
+      record !== null && typeof record.tool === 'string' && MEMORY_QUERY_TOOL.test(record.tool)
+    );
+  });
+}
+
+function toolResultText(part: JsonRecord): string {
+  const state = asRecord(part.state) ?? {};
+  const chunks: string[] = [];
+  if (Array.isArray(state.content)) {
+    for (const item of state.content) {
+      const record = asRecord(item);
+      if (record && record.type === 'text' && typeof record.text === 'string') {
+        chunks.push(record.text);
+      }
+    }
+  }
+  if (typeof state.output === 'string') chunks.push(state.output);
+  return chunks.join('\n');
+}
+
+function methodsOf(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string')
+    : [];
+}
+
+function toProvenance(value: unknown): SearchProvenanceResult | null {
+  const record = asRecord(value);
+  if (!record || typeof record.name !== 'string' || record.name.length === 0) return null;
+  return { name: record.name, methods: methodsOf(record.methods) };
+}
+
+function stripQuotes(value: string): string {
+  return value.trim().replace(/^['"]|['"]$/g, '');
+}
+
+function splitInlineMethods(value: string): string[] {
+  return value
+    .split(',')
+    .map(item => stripQuotes(item))
+    .filter(item => item.length > 0);
+}
+
+/** Best-effort line parser for tool outputs that are not a single YAML document. */
+function parseProvenanceLines(text: string): SearchProvenanceResult[] {
+  const results: SearchProvenanceResult[] = [];
+  let current: { name: string; methods: string[] } | null = null;
+  let insideMethods = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const nameMatch = /^(?:-\s+)?name:\s*(.+)$/.exec(line);
+    if (nameMatch) {
+      if (current) results.push(current);
+      current = { name: stripQuotes(nameMatch[1]!), methods: [] };
+      insideMethods = false;
+      continue;
+    }
+    if (!current) continue;
+    const inlineMethods = /^methods:\s*\[(.*)\]$/.exec(line);
+    if (inlineMethods) {
+      current.methods.push(...splitInlineMethods(inlineMethods[1]!));
+      insideMethods = false;
+      continue;
+    }
+    if (/^methods:\s*$/.test(line)) {
+      insideMethods = true;
+      continue;
+    }
+    if (insideMethods) {
+      const item = /^-\s*(.+)$/.exec(line);
+      if (item) current.methods.push(stripQuotes(item[1]!));
+      else insideMethods = false;
+    }
+  }
+  if (current) results.push(current);
+  return results.filter(result => result.name.length > 0);
+}
+
+function parseSearchResults(text: string): SearchProvenanceResult[] {
+  const yaml = (Bun as unknown as { YAML?: { parse(input: string): unknown } }).YAML;
+  if (yaml) {
+    try {
+      const parsed = yaml.parse(text);
+      const memories = asRecord(parsed)?.memories;
+      if (Array.isArray(memories)) {
+        return memories
+          .map(toProvenance)
+          .filter((result): result is SearchProvenanceResult => result !== null);
+      }
+    } catch {
+      // Fall through to the line parser for combined/code-mode output.
+    }
+  }
+  return parseProvenanceLines(text);
+}
+
+/**
+ * Extract only the memory name and fused `methods` from a recorded
+ * `memory_query` tool result. Content and vectors are never retained.
+ */
+export function extractSearchProvenance(rawMessages: unknown): SearchProvenanceResult[] {
+  const collected: SearchProvenanceResult[] = [];
+  for (const value of messageList(rawMessages)) {
+    const message = asRecord(value);
+    if (!message || message.type !== 'assistant') continue;
+    const content = Array.isArray(message.content) ? message.content : [];
+    for (const partValue of content) {
+      const part = asRecord(partValue);
+      if (!part || part.type !== 'tool') continue;
+      const name = typeof part.name === 'string' ? part.name : '';
+      if (!isMemoryQueryPart(name, part)) continue;
+      const text = toolResultText(part);
+      if (text.length > 0) collected.push(...parseSearchResults(text));
+    }
+  }
+  const seen = new Set<string>();
+  return collected.filter(result => {
+    const key = `${result.name}\u0000${result.methods.join(',')}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function summarizeChild(childId: string, raw: unknown): BChildResult {
@@ -54,21 +304,43 @@ function summarizeChild(childId: string, raw: unknown): BChildResult {
   };
 }
 
-async function captureChildren(
-  driver: ReturnType<typeof createSdkDriver>,
-  sessionId: string
-): Promise<BChildResult[]> {
-  let ids: readonly string[] = [];
-  try {
-    ids = await driver.children(sessionId);
-  } catch {
-    ids = [];
-  }
+/** B outcome plus the redacted execution evidence A2/B consume. */
+type BOutcomeWithEvidence = BSessionOutcome & {
+  readonly idleOutcome: DriverIdleOutcome | null;
+  readonly completion: 'complete' | 'incomplete';
+  readonly evidence: DriverEvidence;
+  readonly searchProvenance: readonly SearchProvenanceResult[];
+};
+
+/** Minimal driver surface needed to recover a failed turn's transcript. */
+export interface RawMessagesSource {
+  rawMessages(sessionId: string): Promise<unknown>;
+}
+
+export interface ChildCaptureResult {
+  readonly children: BChildResult[];
+  readonly evidence: DriverEvidence;
+}
+
+/**
+ * Capture child transcripts for a parent's already-captured child ids.
+ *
+ * A failed child-list read (`children: 'unavailable'`) never becomes a valid
+ * empty list. A failed transcript keeps the child entry but marks the evidence
+ * unavailable with a reason, so B4 cannot mistake it for "no child behavior".
+ */
+export async function captureChildren(
+  driver: RawMessagesSource,
+  base: DriverEvidence
+): Promise<ChildCaptureResult> {
+  if (base.children === 'unavailable') return { children: [], evidence: base };
   const children: BChildResult[] = [];
-  for (const childId of ids) {
+  let failureReason: string | null = null;
+  for (const childId of base.childSessionIds) {
     try {
       children.push(summarizeChild(childId, await driver.rawMessages(childId)));
-    } catch {
+    } catch (error) {
+      failureReason = `child transcript unavailable: ${childId}: ${errorText(error)}`;
       children.push({
         sessionId: childId,
         finalText: '',
@@ -83,7 +355,19 @@ async function captureChildren(
       });
     }
   }
-  return children;
+  const evidence: DriverEvidence = failureReason
+    ? { ...base, status: 'unavailable', reason: joinReason(base.reason, failureReason) }
+    : base;
+  return { children, evidence };
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function joinReason(...parts: readonly (string | null)[]): string | null {
+  const joined = parts.filter(Boolean).join('; ');
+  return joined.length > 0 ? joined : null;
 }
 
 function outcomeFromResult(
@@ -92,8 +376,10 @@ function outcomeFromResult(
   exactDriverError: string | null,
   isolationOk: boolean,
   children: readonly BChildResult[],
-  rawMessages: unknown
-): BSessionOutcome {
+  rawMessages: unknown,
+  evidence?: DriverEvidence
+): BOutcomeWithEvidence {
+  const idleOutcome = result.idleOutcome ?? null;
   return {
     status,
     sessionId: result.sessionId,
@@ -111,6 +397,19 @@ function outcomeFromResult(
     isolationOk,
     children,
     rawMessages,
+    idleOutcome,
+    completion: isRunComplete({ idleOutcome }) ? 'complete' : 'incomplete',
+    searchProvenance: extractSearchProvenance(rawMessages),
+    evidence:
+      evidence ??
+      result.evidence ??
+      buildDriverEvidence({
+        sessionId: result.sessionId,
+        messages: null,
+        childSessionIds: null,
+        idleOutcome,
+        reason: 'driver returned no evidence',
+      }),
   };
 }
 
@@ -118,7 +417,7 @@ function emptyOutcome(
   status: BSessionStatus,
   error: string | null,
   isolationOk = true
-): BSessionOutcome {
+): BOutcomeWithEvidence {
   return {
     status,
     sessionId: '',
@@ -136,12 +435,17 @@ function emptyOutcome(
     isolationOk,
     children: [],
     rawMessages: { data: [] },
+    idleOutcome: null,
+    completion: 'incomplete',
+    searchProvenance: [],
+    evidence: buildDriverEvidence({
+      sessionId: '',
+      messages: null,
+      childSessionIds: null,
+      idleOutcome: null,
+      reason: error ?? 'no session evidence',
+    }),
   };
-}
-
-/** Minimal driver surface needed to recover a failed turn's transcript. */
-export interface RawMessagesSource {
-  rawMessages(sessionId: string): Promise<unknown>;
 }
 
 /**
@@ -164,12 +468,30 @@ export async function buildErrorOutcome(
   if (!partial) return emptyOutcome(status, message);
 
   let raw: unknown = { data: [] };
+  let evidence = partial.evidence;
   try {
     if (partial.sessionId) raw = await driver.rawMessages(partial.sessionId);
-  } catch {
-    raw = { data: [] };
+  } catch (error) {
+    const reason = `message capture failed: ${errorText(error)}`;
+    evidence = buildDriverEvidence({
+      sessionId: partial.sessionId,
+      messages: null,
+      childSessionIds:
+        partial.evidence?.children === 'captured' ? partial.evidence.childSessionIds : null,
+      idleOutcome: partial.idleOutcome ?? null,
+      reason,
+    });
   }
-  return outcomeFromResult(status, partial, message, true, [], raw);
+  if (!evidence) {
+    evidence = buildDriverEvidence({
+      sessionId: partial.sessionId,
+      messages: null,
+      childSessionIds: null,
+      idleOutcome: partial.idleOutcome ?? null,
+      reason: 'partial transcript evidence unavailable',
+    });
+  }
+  return outcomeFromResult(status, partial, message, true, [], raw, evidence);
 }
 
 async function main(): Promise<number> {
@@ -219,14 +541,32 @@ async function main(): Promise<number> {
       prompt: job.prompt,
       limits: job.limits,
     });
-    const children = await captureChildren(driver, result.sessionId);
-    let raw: unknown = { data: [] };
+    const baseEvidence =
+      result.evidence ??
+      buildDriverEvidence({
+        sessionId: result.sessionId,
+        messages: null,
+        childSessionIds: result.childSessionIds ?? null,
+        idleOutcome: result.idleOutcome ?? null,
+        reason: 'driver returned no evidence',
+      });
+    const captured = await captureChildren(driver, baseEvidence);
+    let raw: unknown = null;
+    let evidence = captured.evidence;
     try {
       raw = await driver.rawMessages(result.sessionId);
-    } catch {
-      raw = { data: [] };
+    } catch (error) {
+      const reason = `message capture failed: ${errorText(error)}`;
+      evidence = {
+        ...captured.evidence,
+        status: 'unavailable',
+        reason: joinReason(evidence.reason, reason),
+      };
     }
-    writeOutcome(job.sessionDir, outcomeFromResult('ok', result, null, true, children, raw));
+    writeOutcome(
+      job.sessionDir,
+      outcomeFromResult('ok', result, null, true, captured.children, raw, evidence)
+    );
     return 0;
   } catch (error) {
     writeOutcome(job.sessionDir, await buildErrorOutcome(error, driver));

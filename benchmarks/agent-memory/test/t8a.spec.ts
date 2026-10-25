@@ -18,6 +18,7 @@ import { applyMindDatabase, buildOpenCodeEnv, isolationDirs } from '../src/isola
 import { aggregateA2, buildSummary } from '../src/metrics/aggregate';
 import type { ConditionProfile } from '../src/opencode/conditions';
 import { copyMindDatabaseForQuestion } from '../src/opencode/conditions';
+import { hostCreateOptions } from '../src/opencode/driver';
 
 import { makeA2, makeMeta } from './fixtures/bench-run';
 
@@ -48,6 +49,18 @@ describe('applyMindDatabase', () => {
     expect(cfg.mcp.servers.mind.environment.MIND_DATA_DIR).toBe(dataDir);
     // The pinned model is preserved.
     expect(applied.OPENCODE_CONFIG_CONTENT).toContain('"model"');
+  });
+
+  test('binds the embedded SDK host to the unit own OPENCODE_DB path', () => {
+    const unitA = isolationDirs('/run/mind-v10/a2/conv-26_1/rep-0');
+    const unitB = isolationDirs('/run/mind-v10/a2/conv-26_1/rep-1');
+    const envA = buildOpenCodeEnv({ condition: 'mind-v10', dir: unitA, mindBin: '/wt/mind' });
+    const envB = buildOpenCodeEnv({ condition: 'mind-v10', dir: unitB, mindBin: '/wt/mind' });
+
+    expect(envA.OPENCODE_DB).toBe(unitA.opencodeDb);
+    expect(hostCreateOptions(envA)?.database?.path).toBe(unitA.opencodeDb);
+    expect(hostCreateOptions(envB)?.database?.path).toBe(unitB.opencodeDb);
+    expect(unitA.opencodeDb).not.toBe(unitB.opencodeDb);
   });
 
   test('leaves a no-memory config without a mind server intact', () => {

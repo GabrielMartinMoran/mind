@@ -79,6 +79,25 @@ describe('groupCandidates', () => {
     expect(questions[0]!.candidates.map(c => c.condition)).toEqual(['mind-v9', 'mind-v10']);
     expect(questions[1]!.adversarial).toBe(true);
   });
+
+  test('never sends incomplete or empty answers to the blind judge', () => {
+    const incomplete = {
+      ...result('q1', 'mind-v9', '', false),
+      deterministic: { klass: 'incomplete' as const, f1: null, abstained: false },
+    };
+    const empty = {
+      ...result('q1', 'mind-v10', '   ', false),
+      deterministic: { klass: 'empty_answer' as const, f1: null, abstained: false },
+    };
+    const answered = result('q1', 'no-memory', 'red', false);
+
+    const questions = groupCandidates([incomplete, empty, answered], subset);
+    expect(questions).toHaveLength(1);
+    expect(questions[0]!.candidates.map(c => c.condition)).toEqual(['no-memory']);
+
+    const onlyUnscored = groupCandidates([incomplete, empty], subset);
+    expect(onlyUnscored).toHaveLength(0);
+  });
 });
 
 describe('runJudgeStage', () => {
@@ -107,6 +126,41 @@ describe('runJudgeStage', () => {
     expect(stage.results.every(r => r.judge !== null)).toBe(true);
     // Every judged result now carries a verdict; aggregates are per condition.
     expect(stage.aggregates.map(a => a.condition).sort()).toEqual(['mind-v10', 'mind-v9']);
+  });
+
+  test('clears a stale judge verdict from empty and incomplete results', async () => {
+    const driver = createFakeSessionDriver([
+      { text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}' },
+    ]);
+    const stale = { candidate: 1, klass: 'correct', score: 1 };
+    const incomplete: A2QuestionResult = {
+      ...result('q1', 'mind-v9', '', false),
+      deterministic: { klass: 'incomplete', f1: null, abstained: false },
+      judge: stale,
+    };
+    const empty: A2QuestionResult = {
+      ...result('q1', 'mind-v10', '   ', false),
+      deterministic: { klass: 'empty_answer', f1: null, abstained: false },
+      judge: stale,
+    };
+    const answered = result('q1', 'no-memory', 'red', false);
+
+    const stage = await runJudgeStage([incomplete, empty, answered], subset, {
+      driver,
+      workspaceDir: '/tmp/ws',
+      limits: { steps: 1, timeoutMs: 1000 },
+    });
+
+    for (const judged of stage.results) {
+      if (judged.condition === 'no-memory') expect(judged.judge?.score).toBe(1);
+      else expect(judged.judge).toBeNull();
+    }
+    // A non-judgeable result never enters the answer-quality mean.
+    const byCondition = new Map(
+      stage.aggregates.map(aggregate => [aggregate.condition, aggregate])
+    );
+    expect(byCondition.get('mind-v9')!.judgeScoreMean).toBeNull();
+    expect(byCondition.get('mind-v10')!.judgeScoreMean).toBeNull();
   });
 });
 
@@ -558,6 +612,54 @@ describe('A2 skill-first preparation', () => {
     expect(code).toBe(0);
     expect(prepared).toBe(0);
     expect(executed).toBe(subset.length * 2);
+  });
+
+  test('a RAG run enables embeddings in every A2 unit environment', async () => {
+    const { repoRoot, runsRoot } = setupRun(['mind-current']);
+    const jobEnvs: Record<string, string>[] = [];
+    const executor: A2UnitExecutor = async job => {
+      jobEnvs.push(job.env);
+      return { ...emptyA2Outcome('ok', null), answer: 'red' };
+    };
+    const driver = createFakeSessionDriver([
+      { text: '{"verdicts":[{"candidate":1,"class":"correct","score":1}]}' },
+      { text: '{"verdicts":[{"candidate":1,"class":"correct_abstention","score":1}]}' },
+    ]);
+
+    const code = await runA2Command(
+      {
+        runId: 'run-prep',
+        runsRoot,
+        workRoot: 'work',
+        conditions: ['mind-current'],
+        budgetUsd: 5,
+        judgeOnly: false,
+        rag: true,
+      },
+      {
+        repoRoot,
+        runner: okRunner,
+        stdout: () => undefined,
+        stderr: () => undefined,
+        executor,
+        judgeDriver: driver,
+        judgeProfile: { workspaceDir: '/tmp/ws', env: {} },
+        credentialEnv: {},
+        prepareCondition: async ({ profile }) => profile,
+      }
+    );
+
+    expect(code).toBe(0);
+    expect(jobEnvs).toHaveLength(subset.length);
+    for (const env of jobEnvs) {
+      expect(env.MIND_RAG).toBe('true');
+      expect(env.MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+      const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as {
+        mcp?: { servers: Record<string, { environment: Record<string, string> }> };
+      };
+      expect(config.mcp!.servers.mind!.environment.MIND_RAG).toBe('true');
+      expect(config.mcp!.servers.mind!.environment.MIND_EMBEDDING_PROVIDER).toBe('openrouter');
+    }
   });
 });
 

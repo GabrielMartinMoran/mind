@@ -1,0 +1,1082 @@
+[
+  {
+    "id": "conv-26#117",
+    "category": 4,
+    "categoryName": "single-hop",
+    "adversarial": false,
+    "reference": "once or twice a year",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "correct",
+          "f1": 1,
+          "judgeScore": 1,
+          "memoryCalls": 12,
+          "costUsd": 0.00462354
+        },
+        {
+          "rep": 1,
+          "class": "correct",
+          "f1": 0.8,
+          "judgeScore": 1,
+          "memoryCalls": 5,
+          "costUsd": 0.00332638
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0004944
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#119",
+    "category": 4,
+    "categoryName": "single-hop",
+    "adversarial": false,
+    "reference": "in awe of the universe",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "partial",
+          "f1": 0.25,
+          "judgeScore": 1,
+          "memoryCalls": 2,
+          "costUsd": 0.0032199399999999993
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.3333333333333333,
+          "judgeScore": 0.9,
+          "memoryCalls": 5,
+          "costUsd": 0.0037825299999999992
+        },
+        {
+          "rep": 2,
+          "class": "partial",
+          "f1": 0.3,
+          "judgeScore": 1,
+          "memoryCalls": 3,
+          "costUsd": 0.0034262400000000005
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#125",
+    "category": 4,
+    "categoryName": "single-hop",
+    "adversarial": false,
+    "reference": "In Melanie's slipper",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "correct",
+          "f1": 1,
+          "judgeScore": 1,
+          "memoryCalls": 2,
+          "costUsd": 0.00383786
+        },
+        {
+          "rep": 1,
+          "class": "correct",
+          "f1": 1,
+          "judgeScore": 1,
+          "memoryCalls": 2,
+          "costUsd": 0.00302506
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00049898
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#13",
+    "category": 1,
+    "categoryName": "multi-hop",
+    "adversarial": false,
+    "reference": "counseling or mental health for Transgender people",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "correct",
+          "f1": 0.5454545454545454,
+          "judgeScore": 0.6,
+          "memoryCalls": 14,
+          "costUsd": 0.0047932
+        },
+        {
+          "rep": 1,
+          "class": "correct",
+          "f1": 0.5454545454545454,
+          "judgeScore": 0.6,
+          "memoryCalls": 11,
+          "costUsd": 0.00325206
+        },
+        {
+          "rep": 2,
+          "class": "partial",
+          "f1": 0.47058823529411764,
+          "judgeScore": 0.6,
+          "memoryCalls": 0,
+          "costUsd": 0.0031525599999999996
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#133",
+    "category": 4,
+    "categoryName": "single-hop",
+    "adversarial": false,
+    "reference": "A sign stating that someone is not being able to leave",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00052916
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00049938
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00048437
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#143",
+    "category": 4,
+    "categoryName": "single-hop",
+    "adversarial": false,
+    "reference": "He got into an accident",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "partial",
+          "f1": 0.4210526315789474,
+          "judgeScore": 1,
+          "memoryCalls": 2,
+          "costUsd": 0.00321438
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.47058823529411764,
+          "judgeScore": 1,
+          "memoryCalls": 2,
+          "costUsd": 0.0031808
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0013051199999999999
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#158",
+    "category": 5,
+    "categoryName": "adversarial",
+    "adversarial": true,
+    "reference": "Sweden",
+    "referenceKind": "adversarial_answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 106,
+          "costUsd": 0.01665406
+        },
+        {
+          "rep": 1,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 1,
+          "costUsd": 0.00440006
+        },
+        {
+          "rep": 2,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 11,
+          "costUsd": 0.01518072
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#160",
+    "category": 5,
+    "categoryName": "adversarial",
+    "adversarial": true,
+    "reference": "necklace",
+    "referenceKind": "adversarial_answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 8,
+          "costUsd": 0.004889859999999999
+        },
+        {
+          "rep": 1,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 14,
+          "costUsd": 0.00666312
+        },
+        {
+          "rep": 2,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 0,
+          "costUsd": 0.0043656400000000005
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#177",
+    "category": 5,
+    "categoryName": "adversarial",
+    "adversarial": true,
+    "reference": "She wanted to catch the eye and make people smile.",
+    "referenceKind": "adversarial_answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "hallucination",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 48,
+          "costUsd": 0.010734630000000002
+        },
+        {
+          "rep": 1,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 33,
+          "costUsd": 0.012159419999999999
+        },
+        {
+          "rep": 2,
+          "class": "hallucination",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 37,
+          "costUsd": 0.0073424399999999996
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#189",
+    "category": 5,
+    "categoryName": "adversarial",
+    "adversarial": true,
+    "reference": "Read a book and paint.",
+    "referenceKind": "adversarial_answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "hallucination",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 30,
+          "costUsd": 0.01194272
+        },
+        {
+          "rep": 1,
+          "class": "hallucination",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 35,
+          "costUsd": 0.018401749999999998
+        },
+        {
+          "rep": 2,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 62,
+          "costUsd": 0.02312882
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#192",
+    "category": 5,
+    "categoryName": "adversarial",
+    "adversarial": true,
+    "reference": "He was scared but reassured by his family",
+    "referenceKind": "adversarial_answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 0,
+          "costUsd": 0.0005614299999999999
+        },
+        {
+          "rep": 1,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 11,
+          "costUsd": 0.00626534
+        },
+        {
+          "rep": 2,
+          "class": "correct_abstention",
+          "f1": null,
+          "judgeScore": 1,
+          "memoryCalls": 63,
+          "costUsd": 0.018782399999999998
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#196",
+    "category": 5,
+    "categoryName": "adversarial",
+    "adversarial": true,
+    "reference": "She was happy and thankful",
+    "referenceKind": "adversarial_answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "hallucination",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 35,
+          "costUsd": 0.009715979999999999
+        },
+        {
+          "rep": 1,
+          "class": "hallucination",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0043424299999999996
+        },
+        {
+          "rep": 2,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 11,
+          "costUsd": 0.005817840000000001
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#2",
+    "category": 3,
+    "categoryName": "open-domain",
+    "adversarial": false,
+    "reference": "Psychology, counseling certification",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0004852
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.15384615384615383,
+          "judgeScore": 0.5,
+          "memoryCalls": 37,
+          "costUsd": 0.0076018000000000014
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00048241999999999995
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#27",
+    "category": 3,
+    "categoryName": "open-domain",
+    "adversarial": false,
+    "reference": "LIkely no; though she likes reading, she wants to be a counselor",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 30,
+          "costUsd": 0.007309899999999999
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00047574
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00127094
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#29",
+    "category": 2,
+    "categoryName": "temporal",
+    "adversarial": false,
+    "reference": "The Friday before 15 July 2023",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00062234
+        },
+        {
+          "rep": 1,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 3,
+          "costUsd": 0.00307114
+        },
+        {
+          "rep": 2,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 3,
+          "costUsd": 0.0029168199999999997
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#30",
+    "category": 3,
+    "categoryName": "open-domain",
+    "adversarial": false,
+    "reference": "Likely no, she does not refer to herself as part of it",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00060108
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0005057799999999999
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0004923799999999999
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#35",
+    "category": 2,
+    "categoryName": "temporal",
+    "adversarial": false,
+    "reference": "two weekends before 17 July 2023",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "partial",
+          "f1": 0.37037037037037035,
+          "judgeScore": 1,
+          "memoryCalls": 25,
+          "costUsd": 0.00913586
+        },
+        {
+          "rep": 1,
+          "class": "correct",
+          "f1": 0.631578947368421,
+          "judgeScore": 1,
+          "memoryCalls": 16,
+          "costUsd": 0.008455240000000001
+        },
+        {
+          "rep": 2,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 14,
+          "costUsd": 0.010871639999999998
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#40",
+    "category": 1,
+    "categoryName": "multi-hop",
+    "adversarial": false,
+    "reference": "2",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00048244
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00060314
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00048384
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#44",
+    "category": 2,
+    "categoryName": "temporal",
+    "adversarial": false,
+    "reference": "13 August",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "partial",
+          "f1": 0.33333333333333337,
+          "judgeScore": 1,
+          "memoryCalls": 5,
+          "costUsd": 0.005214519999999999
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.1818181818181818,
+          "judgeScore": 1,
+          "memoryCalls": 22,
+          "costUsd": 0.01016732
+        },
+        {
+          "rep": 2,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 8,
+          "costUsd": 0.00684532
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#50",
+    "category": 3,
+    "categoryName": "open-domain",
+    "adversarial": false,
+    "reference": "Liberal",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00048533999999999996
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0006450399999999999
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0012186200000000001
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#52",
+    "category": 1,
+    "categoryName": "multi-hop",
+    "adversarial": false,
+    "reference": "Oliver, Luna, Bailey",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "correct",
+          "f1": 0.5,
+          "judgeScore": 1,
+          "memoryCalls": 22,
+          "costUsd": 0.0055617999999999996
+        },
+        {
+          "rep": 1,
+          "class": "correct",
+          "f1": 0.5454545454545454,
+          "judgeScore": 1,
+          "memoryCalls": 28,
+          "costUsd": 0.00737249
+        },
+        {
+          "rep": 2,
+          "class": "correct",
+          "f1": 0.8571428571428571,
+          "judgeScore": 1,
+          "memoryCalls": 22,
+          "costUsd": 0.00641598
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#56",
+    "category": 1,
+    "categoryName": "multi-hop",
+    "adversarial": false,
+    "reference": "Rainbow flag, transgender symbol",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 6,
+          "costUsd": 0.0049545399999999995
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.30769230769230765,
+          "judgeScore": 0.5,
+          "memoryCalls": 5,
+          "costUsd": 0.00423912
+        },
+        {
+          "rep": 2,
+          "class": "partial",
+          "f1": 0.4444444444444445,
+          "judgeScore": 0.5,
+          "memoryCalls": 6,
+          "costUsd": 0.005990959999999999
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#58",
+    "category": 2,
+    "categoryName": "temporal",
+    "adversarial": false,
+    "reference": "24 August 2023",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "partial",
+          "f1": 0.3,
+          "judgeScore": 1,
+          "memoryCalls": 11,
+          "costUsd": 0.0032739600000000002
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.3,
+          "judgeScore": 1,
+          "memoryCalls": 7,
+          "costUsd": 0.0031795599999999997
+        },
+        {
+          "rep": 2,
+          "class": "partial",
+          "f1": 0.33333333333333337,
+          "judgeScore": 1,
+          "memoryCalls": 5,
+          "costUsd": 0.00357812
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#64",
+    "category": 3,
+    "categoryName": "open-domain",
+    "adversarial": false,
+    "reference": "Yes; it's classical music",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00050376
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.3478260869565218,
+          "judgeScore": 1,
+          "memoryCalls": 10,
+          "costUsd": 0.00406176
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00048248
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#65",
+    "category": 1,
+    "categoryName": "multi-hop",
+    "adversarial": false,
+    "reference": "Changes to her body, losing unsupportive friends",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "partial",
+          "f1": 0.2222222222222222,
+          "judgeScore": 0.5,
+          "memoryCalls": 24,
+          "costUsd": 0.00850113
+        },
+        {
+          "rep": 1,
+          "class": "partial",
+          "f1": 0.2222222222222222,
+          "judgeScore": 1,
+          "memoryCalls": 94,
+          "costUsd": 0.01353728
+        },
+        {
+          "rep": 2,
+          "class": "partial",
+          "f1": 0.23076923076923078,
+          "judgeScore": 1,
+          "memoryCalls": 38,
+          "costUsd": 0.008244469999999999
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#66",
+    "category": 1,
+    "categoryName": "multi-hop",
+    "adversarial": false,
+    "reference": "Roast marshmallows, tell stories",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "incorrect",
+          "f1": 0,
+          "judgeScore": 0,
+          "memoryCalls": 23,
+          "costUsd": 0.007367240000000001
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00047776
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00060314
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#74",
+    "category": 2,
+    "categoryName": "temporal",
+    "adversarial": false,
+    "reference": "The weekend before 20 October 2023",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "partial",
+          "f1": 0.47619047619047616,
+          "judgeScore": 1,
+          "memoryCalls": 3,
+          "costUsd": 0.0040104599999999995
+        },
+        {
+          "rep": 1,
+          "class": "correct",
+          "f1": 0.9090909090909091,
+          "judgeScore": 1,
+          "memoryCalls": 9,
+          "costUsd": 0.00676726
+        },
+        {
+          "rep": 2,
+          "class": "partial",
+          "f1": 0.45454545454545453,
+          "judgeScore": 1,
+          "memoryCalls": 3,
+          "costUsd": 0.0038588600000000004
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#81",
+    "category": 3,
+    "categoryName": "open-domain",
+    "adversarial": false,
+    "reference": "No; she's in the process of adopting children.",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0004923999999999999
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.0004964
+        },
+        {
+          "rep": 2,
+          "class": "empty_answer",
+          "f1": null,
+          "judgeScore": null,
+          "memoryCalls": 45,
+          "costUsd": 0.00846218
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#9",
+    "category": 2,
+    "categoryName": "temporal",
+    "adversarial": false,
+    "reference": "The week before 9 June 2023",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.002184736
+        },
+        {
+          "rep": 1,
+          "class": "correct",
+          "f1": 1,
+          "judgeScore": 1,
+          "memoryCalls": 7,
+          "costUsd": 0.00393686
+        },
+        {
+          "rep": 2,
+          "class": "partial",
+          "f1": 0.45454545454545453,
+          "judgeScore": 1,
+          "memoryCalls": 15,
+          "costUsd": 0.00538664
+        }
+      ]
+    }
+  },
+  {
+    "id": "conv-26#93",
+    "category": 4,
+    "categoryName": "single-hop",
+    "adversarial": false,
+    "reference": "necklace",
+    "referenceKind": "answer",
+    "conditions": {
+      "mind-current": [
+        {
+          "rep": 0,
+          "class": "correct",
+          "f1": 1,
+          "judgeScore": 1,
+          "memoryCalls": 3,
+          "costUsd": 0.0028610400000000005
+        },
+        {
+          "rep": 1,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00049932
+        },
+        {
+          "rep": 2,
+          "class": "abstention",
+          "f1": null,
+          "judgeScore": 0,
+          "memoryCalls": 0,
+          "costUsd": 0.00048209999999999995
+        }
+      ]
+    }
+  }
+]

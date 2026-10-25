@@ -67,6 +67,8 @@ export interface CliOptions {
   readonly judgeOnly: boolean;
   /** Independent repetitions per (condition, question) for A2. Default 1. */
   readonly reps: number;
+  /** Run-level embeddings switch for A1 ingest/search, A2 and every B unit. */
+  readonly rag: boolean;
   /** Explicit scenario ids for the `scenarios` command (empty = all). */
   readonly scenarios: readonly string[];
   /** `report`/`full` output path (relative to repo root); null = default. */
@@ -94,6 +96,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
   let answers = false;
   let judgeOnly = false;
   let reps = 1;
+  let rag = false;
   const scenarios: string[] = [];
   let outPath: string | null = null;
 
@@ -175,6 +178,10 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
       }
       continue;
     }
+    if (arg === '--rag') {
+      rag = true;
+      continue;
+    }
     if (arg === '--confirm') {
       confirm = true;
       continue;
@@ -206,6 +213,7 @@ export function parseCliArgs(argv: readonly string[]): CliOptions {
     answers,
     judgeOnly,
     reps,
+    rag,
     scenarios,
     outPath,
   };
@@ -243,6 +251,7 @@ export function usage(): string {
     '                       (needs --budget --confirm --run-id of a prepared run)',
     '  --judge-only         With locomo: re-judge stored answers (needs --budget --run-id)',
     '  --reps <n>           With locomo --answers / full: repetitions per (condition, question) (default 1)',
+    '  --rag                Enable embeddings (OpenRouter) for A1 ingest/search, A2 and all B units',
     '  --scenarios <a,b>    With scenarios: scenario ids to run (default: all)',
     '  --out <path>         With report/full: output path (default benchmarks/agent-memory/REPORT.md)',
     '  --confirm            Explicitly acknowledge a paid run',
@@ -504,6 +513,7 @@ if (import.meta.main) {
             runId: opts.runId,
             runsRoot: opts.runsRoot,
             workRoot: opts.workRoot,
+            rag: opts.rag,
           },
           {
             repoRoot: deps.repoRoot,
@@ -529,6 +539,7 @@ if (import.meta.main) {
             budgetUsd: opts.budgetUsd,
             reps: opts.reps,
             judgeOnly: opts.judgeOnly,
+            rag: opts.rag,
           },
           {
             repoRoot: deps.repoRoot,
@@ -547,6 +558,7 @@ if (import.meta.main) {
             conditions: opts.conditions,
             scenarios: opts.scenarios,
             budgetUsd: opts.budgetUsd,
+            rag: opts.rag,
           },
           {
             repoRoot: deps.repoRoot,

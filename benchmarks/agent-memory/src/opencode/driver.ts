@@ -43,6 +43,47 @@ export interface DriverModelRef {
   readonly variant: string | null;
 }
 
+/** Terminal outcome recorded by OpenCode when a run reaches idle. */
+export type DriverIdleOutcome = 'succeeded' | 'failed' | 'interrupted';
+
+/** Whether one evidence read succeeded or was unavailable. */
+export type DriverCaptureStatus = 'captured' | 'unavailable';
+
+/** A redacted tool event: the tool name and its server prefix only. */
+export interface DriverToolEvent {
+  readonly name: string;
+  readonly server: string | null;
+}
+
+/**
+ * Minimal, redacted execution evidence. It never carries prompts, memory
+ * contents, credentials, tool arguments, or transcript text.
+ */
+export interface DriverEvidence {
+  /** `captured` only when the message and child reads both succeeded. */
+  readonly status: DriverCaptureStatus;
+  readonly reason: string | null;
+  readonly messages: DriverCaptureStatus;
+  readonly children: DriverCaptureStatus;
+  readonly idle: DriverCaptureStatus;
+  readonly sessionId: string;
+  readonly childSessionIds: readonly string[];
+  readonly tools: readonly DriverToolEvent[];
+  readonly skillIds: readonly string[];
+  readonly assistantFinish: string | null;
+  readonly idleOutcome: DriverIdleOutcome | null;
+}
+
+export interface DriverEvidenceInput {
+  readonly sessionId: string;
+  /** `null` means the message read failed; `[]` is a valid empty transcript. */
+  readonly messages: readonly unknown[] | null;
+  /** `null` means the child-list read failed; `[]` is a valid no-child result. */
+  readonly childSessionIds: readonly string[] | null;
+  readonly idleOutcome: DriverIdleOutcome | null;
+  readonly reason?: string | null;
+}
+
 /** A minimal, provider-agnostic view of the assistant turn(s). */
 export interface DriverRunResult {
   readonly sessionId: string;
@@ -59,6 +100,12 @@ export interface DriverRunResult {
   readonly latencyMs: number;
   readonly finish: string | null;
   readonly error: DriverErrorInfo | null;
+  /** Session idle outcome; absent means completion is unknown. */
+  readonly idleOutcome?: DriverIdleOutcome | null;
+  /** Ordered child (sub-agent) session ids. */
+  readonly childSessionIds?: readonly string[];
+  /** Redacted capture evidence, or explicit unavailability. */
+  readonly evidence?: DriverEvidence;
 }
 
 export interface DriverErrorInfo {
@@ -207,6 +254,74 @@ export function extractToolCalls(messages: readonly unknown[]): DriverToolCall[]
 
 export function countMemoryCalls(messages: readonly unknown[]): number {
   return extractToolCalls(messages).filter(call => call.server === MIND_SERVER_PREFIX).length;
+}
+
+/** Normalize the SDK `outcome` field; anything unexpected means unknown. */
+export function normalizeIdleOutcome(value: unknown): DriverIdleOutcome | null {
+  return value === 'succeeded' || value === 'failed' || value === 'interrupted' ? value : null;
+}
+
+/** Ordered skill ids activated in the session (`type: 'skill'` messages). */
+export function extractSkillIds(messages: readonly unknown[]): string[] {
+  const ids: string[] = [];
+  for (const message of messages) {
+    const record = asRecord(message);
+    if (!record || record.type !== 'skill') continue;
+    const id = record.skill;
+    if (typeof id === 'string' && id.length > 0) ids.push(id);
+  }
+  return ids;
+}
+
+function lastAssistantFinish(messages: readonly unknown[]): string | null {
+  let finish: string | null = null;
+  for (const message of messages) {
+    const record = asRecord(message);
+    if (!record || record.type !== 'assistant') continue;
+    finish = typeof record.finish === 'string' ? record.finish : null;
+  }
+  return finish;
+}
+
+/**
+ * Build minimal redacted evidence from reads that may have failed. A failed
+ * read is `unavailable`; it is never converted into valid empty evidence.
+ */
+export function buildDriverEvidence(input: DriverEvidenceInput): DriverEvidence {
+  const messagesCaptured = input.messages !== null;
+  const childrenCaptured = input.childSessionIds !== null;
+  const idleCaptured = input.idleOutcome !== null;
+  const tools = messagesCaptured
+    ? extractToolCalls(input.messages!).map(call => ({ name: call.name, server: call.server }))
+    : [];
+  const status: DriverCaptureStatus =
+    messagesCaptured && childrenCaptured ? 'captured' : 'unavailable';
+  const reasons: string[] = [];
+  if (!messagesCaptured) reasons.push('message capture failed');
+  if (!childrenCaptured) reasons.push('child capture failed');
+  const reason = input.reason ?? (reasons.length > 0 ? reasons.join('; ') : null);
+
+  return {
+    status,
+    reason,
+    messages: messagesCaptured ? 'captured' : 'unavailable',
+    children: childrenCaptured ? 'captured' : 'unavailable',
+    idle: idleCaptured ? 'captured' : 'unavailable',
+    sessionId: input.sessionId,
+    childSessionIds: input.childSessionIds ?? [],
+    tools,
+    skillIds: messagesCaptured ? extractSkillIds(input.messages!) : [],
+    assistantFinish: messagesCaptured ? lastAssistantFinish(input.messages!) : null,
+    idleOutcome: input.idleOutcome,
+  };
+}
+
+/**
+ * Completion requires a successful session idle outcome. A resolved `wait`
+ * (204) or a per-message `finish: "tool-calls"` is not proof of completion.
+ */
+export function isRunComplete(result: { idleOutcome?: DriverIdleOutcome | null }): boolean {
+  return result.idleOutcome === 'succeeded';
 }
 
 function extractAssistantTexts(messages: readonly unknown[]): string[] {
@@ -378,6 +493,13 @@ function extractCode(text: string): string | null {
 interface SdkSession {
   readonly id: string;
 }
+interface SdkSessionInfo {
+  readonly id?: string;
+  readonly parentID?: string;
+  readonly outcome?: unknown;
+  readonly time?: { readonly idle?: unknown };
+}
+
 interface SdkInstance {
   readonly sessions: {
     create(input: {
@@ -386,7 +508,8 @@ interface SdkInstance {
     }): Promise<SdkSession>;
     prompt(input: { sessionID: string; text: string }): Promise<unknown>;
     wait(input: { sessionID: string }): Promise<unknown>;
-    list(input?: { parentID?: string }): Promise<{ data?: SdkSession[] } | SdkSession[]>;
+    get(input: { sessionID: string }): Promise<SdkSessionInfo>;
+    list(input?: { parentID?: string }): Promise<{ data?: SdkSessionInfo[] } | SdkSessionInfo[]>;
   };
   readonly message: {
     list(input: { sessionID: string }): Promise<unknown>;
@@ -398,8 +521,15 @@ interface SdkInstance {
 export interface SdkDriverOptions {
   /** Environment for the embedded host (defaults to `process.env`). */
   readonly env?: Record<string, string | undefined>;
+  /** Explicit per-unit database file; falls back to `OPENCODE_DB`. */
+  readonly databasePath?: string;
   /** Injectable for tests: bypasses the real `@opencode/sdk` import. */
   readonly createInstance?: () => Promise<SdkInstance>;
+}
+
+export interface HostCreateOptions {
+  readonly config?: { readonly content?: string; readonly directory?: string };
+  readonly database?: { readonly path: string };
 }
 
 /**
@@ -407,23 +537,40 @@ export interface SdkDriverOptions {
  * NOT read `OPENCODE_CONFIG_CONTENT` on its own — it must be handed the inline
  * config explicitly via `config.content` (and the config directory), otherwise
  * the pinned MCP servers are never registered (observed on SDK 2.0.28).
+ *
+ * The embedded host also ignores the `OPENCODE_DB` environment variable and
+ * defaults to `:memory:`, so the isolated database path must be passed
+ * explicitly through `database.path`.
  */
 export function hostCreateOptions(
-  env: Record<string, string | undefined> = process.env
-): { config: { content?: string; directory?: string } } | undefined {
+  env: Record<string, string | undefined> = process.env,
+  databasePath?: string
+): HostCreateOptions | undefined {
   const content = env.OPENCODE_CONFIG_CONTENT;
   const configHome = env.XDG_CONFIG_HOME;
   const config: { content?: string; directory?: string } = {};
   if (content) config.content = content;
   if (configHome) config.directory = join(configHome, 'opencode');
-  return Object.keys(config).length > 0 ? { config } : undefined;
+  const path = databasePath ?? env.OPENCODE_DB;
+  const hasConfig = Object.keys(config).length > 0;
+  if (!hasConfig && !path) return undefined;
+  const options: {
+    config?: { content?: string; directory?: string };
+    database?: { path: string };
+  } = {};
+  if (hasConfig) options.config = config;
+  if (path) options.database = { path };
+  return options;
 }
 
-async function defaultCreateInstance(): Promise<SdkInstance> {
+async function defaultCreateInstance(
+  env: Record<string, string | undefined>,
+  databasePath?: string
+): Promise<SdkInstance> {
   const sdk = (await import('@opencode/sdk')) as {
     OpenCode: { create: (options?: unknown) => Promise<SdkInstance> };
   };
-  return sdk.OpenCode.create(hostCreateOptions());
+  return sdk.OpenCode.create(hostCreateOptions(env, databasePath));
 }
 
 function variantFor(model: ModelRef): string | undefined {
@@ -449,17 +596,109 @@ export function createSdkDriver(options: SdkDriverOptions = {}): SessionDriver {
       if (value !== undefined) process.env[key] = value;
     }
   };
-  const createInstance = options.createInstance ?? defaultCreateInstance;
+  const resolveEnv = (): Record<string, string | undefined> => options.env ?? process.env;
+  let instance: SdkInstance | null = null;
+
+  // One host per driver, kept alive through prompt and evidence capture. The
+  // embedded host's database is bound explicitly so a later host (or the same
+  // host after idle) reads the unit's own file, never `:memory:`.
+  const openInstance = async (): Promise<SdkInstance> => {
+    if (instance) return instance;
+    applyEnv();
+    instance = options.createInstance
+      ? await options.createInstance()
+      : await defaultCreateInstance(resolveEnv(), options.databasePath);
+    return instance;
+  };
+
+  const readMessages = async (
+    host: SdkInstance,
+    sessionId: string
+  ): Promise<{ messages: unknown[] | null; reason: string | null }> => {
+    try {
+      return { messages: toList(await host.message.list({ sessionID: sessionId })), reason: null };
+    } catch (error) {
+      return { messages: null, reason: `message capture failed: ${errorText(error)}` };
+    }
+  };
+
+  const readChildren = async (
+    host: SdkInstance,
+    sessionId: string
+  ): Promise<{ ids: string[] | null; reason: string | null }> => {
+    try {
+      const list = toList(await host.sessions.list({ parentID: sessionId }));
+      return {
+        ids: list
+          .map(entry => (asRecord(entry)?.id as string | undefined) ?? null)
+          .filter((id): id is string => typeof id === 'string'),
+        reason: null,
+      };
+    } catch (error) {
+      return { ids: null, reason: `child capture failed: ${errorText(error)}` };
+    }
+  };
+
+  const readIdleOutcome = async (
+    host: SdkInstance,
+    sessionId: string
+  ): Promise<{ outcome: DriverIdleOutcome | null; reason: string | null }> => {
+    try {
+      const info = asRecord(await host.sessions.get({ sessionID: sessionId }));
+      return { outcome: normalizeIdleOutcome(info?.outcome), reason: null };
+    } catch (error) {
+      return { outcome: null, reason: `idle outcome capture failed: ${errorText(error)}` };
+    }
+  };
+
+  const capture = async (
+    host: SdkInstance,
+    sessionId: string
+  ): Promise<{
+    messages: unknown[] | null;
+    childSessionIds: string[] | null;
+    idleOutcome: DriverIdleOutcome | null;
+    evidence: DriverEvidence;
+  }> => {
+    const messages = await readMessages(host, sessionId);
+    const children = await readChildren(host, sessionId);
+    const idle = await readIdleOutcome(host, sessionId);
+    const reason =
+      [messages.reason, children.reason, idle.reason].filter(Boolean).join('; ') || null;
+    const evidence = buildDriverEvidence({
+      sessionId,
+      messages: messages.messages,
+      childSessionIds: children.ids,
+      idleOutcome: idle.outcome,
+      reason,
+    });
+    return {
+      messages: messages.messages,
+      childSessionIds: children.ids,
+      idleOutcome: idle.outcome,
+      evidence,
+    };
+  };
+
+  const closeInstance = async (): Promise<void> => {
+    if (!instance) return;
+    const current = instance;
+    instance = null;
+    if (current.close) await current.close().catch(() => undefined);
+    else {
+      const dispose = current[Symbol.asyncDispose];
+      if (dispose) await dispose().catch(() => undefined);
+    }
+  };
 
   return {
     async runPrompt(input: RunPromptInput): Promise<DriverRunResult> {
-      applyEnv();
       const model = input.model ?? MODEL;
-      const instance = await createInstance();
+      const host = await openInstance();
       const started = Date.now();
       let sessionId = '';
       try {
-        const session = await instance.sessions.create({
+        const session = await host.sessions.create({
           location: { directory: input.workspaceDir },
           model: {
             id: model.id,
@@ -468,68 +707,76 @@ export function createSdkDriver(options: SdkDriverOptions = {}): SessionDriver {
           },
         });
         sessionId = session.id;
-        await instance.sessions.prompt({ sessionID: session.id, text: input.prompt });
+        await host.sessions.prompt({ sessionID: session.id, text: input.prompt });
         await withTimeout(
-          instance.sessions.wait({ sessionID: session.id }),
+          host.sessions.wait({ sessionID: session.id }),
           input.limits.timeoutMs,
           `session ${session.id}`
         );
-        const list = toList(await instance.message.list({ sessionID: session.id }));
-        const result = summarizeMessages(list, {
-          sessionId: session.id,
-          latencyMs: Date.now() - started,
-        });
+        const captured = await capture(host, session.id);
+        const result: DriverRunResult = {
+          ...summarizeMessages(captured.messages ?? [], {
+            sessionId: session.id,
+            latencyMs: Date.now() - started,
+          }),
+          idleOutcome: captured.idleOutcome,
+          childSessionIds: captured.childSessionIds ?? [],
+          evidence: captured.evidence,
+        };
         throwIfTerminalDriverError(result);
         return result;
       } catch (error) {
         const classified = classifyDriverError(error);
-        // Preserve whatever transcript exists so the caller can still score it.
-        let list: unknown[] = [];
-        try {
-          if (sessionId) list = toList(await instance.message.list({ sessionID: sessionId }));
-        } catch {
-          list = [];
-        }
-        const result = summarizeMessages(list, {
-          sessionId,
-          latencyMs: Date.now() - started,
-        });
+        // Preserve whatever evidence exists so the caller can still classify it.
+        const captured = sessionId
+          ? await capture(host, sessionId)
+          : {
+              messages: null,
+              childSessionIds: null,
+              idleOutcome: null,
+              evidence: buildDriverEvidence({
+                sessionId,
+                messages: null,
+                childSessionIds: null,
+                idleOutcome: null,
+                reason: 'session was not created',
+              }),
+            };
+        const result: DriverRunResult = {
+          ...summarizeMessages(captured.messages ?? [], {
+            sessionId,
+            latencyMs: Date.now() - started,
+          }),
+          idleOutcome: captured.idleOutcome,
+          childSessionIds: captured.childSessionIds ?? [],
+          evidence: captured.evidence,
+        };
         const info = classified.info;
         throw createTypedError(classified, info, result);
-      } finally {
-        if (instance.close) await instance.close().catch(() => undefined);
       }
     },
 
     async children(sessionId: string): Promise<readonly string[]> {
-      applyEnv();
-      const instance = await createInstance();
-      try {
-        const list = toList(
-          await instance.sessions.list({ parentID: sessionId }).catch(() => [] as unknown)
-        );
-        return list
-          .map(entry => (asRecord(entry)?.id as string | undefined) ?? null)
-          .filter((id): id is string => typeof id === 'string');
-      } finally {
-        if (instance.close) await instance.close().catch(() => undefined);
-      }
+      const host = await openInstance();
+      const list = toList(await host.sessions.list({ parentID: sessionId }));
+      return list
+        .map(entry => (asRecord(entry)?.id as string | undefined) ?? null)
+        .filter((id): id is string => typeof id === 'string');
     },
 
     async rawMessages(sessionId: string): Promise<unknown> {
-      applyEnv();
-      const instance = await createInstance();
-      try {
-        return await instance.message.list({ sessionID: sessionId });
-      } finally {
-        if (instance.close) await instance.close().catch(() => undefined);
-      }
+      const host = await openInstance();
+      return await host.message.list({ sessionID: sessionId });
     },
 
     async close(): Promise<void> {
-      // Each call creates and closes its own instance; nothing to release.
+      await closeInstance();
     },
   };
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function variantFields(variant: string | undefined): { variant?: string } {

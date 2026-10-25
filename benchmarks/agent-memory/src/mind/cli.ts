@@ -1,10 +1,12 @@
 // Thin wrapper around a pinned worktree's `mind` CLI.
 //
 // Every call runs the pinned binary under an explicit, non-shared environment
-// (its own MIND_DATA_DIR / MIND_DB_PATH / MIND_SYNC_ROOT and MIND_RAG=false) so
-// the benchmark never touches the user's live database, and captures
+// (its own MIND_DATA_DIR / MIND_DB_PATH / MIND_SYNC_ROOT and an explicit
+// MIND_RAG that follows the engine's `rag` option, off by default) so the
+// benchmark never touches the user's live database, and captures
 // stdout/stderr/exit code for evidence.
 
+import { RAG_EMBEDDING_PROVIDER, type EmbeddingProviderId } from '../config';
 import { runCommand, type CommandInvocation, type CommandRunner } from '../exec';
 
 export interface MindPaths {
@@ -53,7 +55,8 @@ export interface MindCliResult {
 export function buildMindEnv(
   paths: MindPaths,
   baseEnv: Record<string, string | undefined> = process.env,
-  rag = false
+  rag = false,
+  embeddingProvider: EmbeddingProviderId = RAG_EMBEDDING_PROVIDER
 ): Record<string, string | undefined> {
   return {
     ...baseEnv,
@@ -61,6 +64,7 @@ export function buildMindEnv(
     MIND_DB_PATH: paths.dbPath,
     MIND_SYNC_ROOT: paths.syncRoot,
     MIND_RAG: rag ? 'true' : 'false',
+    ...(rag ? { MIND_EMBEDDING_PROVIDER: embeddingProvider } : {}),
   };
 }
 

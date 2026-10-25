@@ -1,0 +1,781 @@
+{
+  "runId": "run-ragon-20261024-2110",
+  "generatedFrom": "results",
+  "meta": {
+    "runId": "run-ragon-20261024-2110",
+    "createdAt": "2026-10-24T23:57:00.230Z",
+    "updatedAt": "2026-10-25T10:39:45.476Z",
+    "shas": {
+      "v9": null,
+      "v10": null
+    },
+    "versions": {
+      "opencode": "2.1.4",
+      "sdk": "2.0.28",
+      "bun": "1.3.14"
+    },
+    "model": {
+      "providerID": "openrouter",
+      "id": "deepseek/deepseek-v4.1-flash",
+      "variant": "default"
+    },
+    "dataset": {
+      "url": "https://raw.githubusercontent.com/snap-research/locomo/main/data/locomo10.json",
+      "sha256": "79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4"
+    },
+    "subset": {
+      "seed": 20261018,
+      "count": 30,
+      "conversation": "conv-26"
+    },
+    "limits": {
+      "sessionSteps": 30,
+      "timeoutMs": 600000,
+      "maxCostUsd": null
+    },
+    "budget": {
+      "maxCostUsd": 0.7,
+      "spentUsd": 0.209301446
+    },
+    "rag": {
+      "enabled": true,
+      "provider": "openrouter"
+    },
+    "stages": {
+      "locomo:start": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T00:03:39.839Z",
+        "note": "1 condition(s)"
+      },
+      "embeddings:credentials": {
+        "status": "passed",
+        "updatedAt": "2026-10-24T23:57:00.232Z"
+      },
+      "ensure-worktrees": {
+        "status": "passed",
+        "updatedAt": "2026-10-24T23:57:00.232Z"
+      },
+      "fetch": {
+        "status": "passed",
+        "updatedAt": "2026-10-24T23:57:00.244Z",
+        "note": "sha256=79fa87e90f04081343b8c8debecb80a9a6842b76a7aa537dc9fdf651ea698ff4"
+      },
+      "subset": {
+        "status": "passed",
+        "updatedAt": "2026-10-24T23:57:00.245Z",
+        "note": "30 questions"
+      },
+      "mind-current:ingest": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T00:03:16.464Z",
+        "note": "419 turns in 376068ms"
+      },
+      "mind-current:embeddings": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T00:03:16.468Z",
+        "note": "419/419 memories embedded"
+      },
+      "mind-current:a1": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T00:03:39.827Z"
+      },
+      "locomo:done": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T00:03:39.839Z"
+      },
+      "a2:start": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:17:43.307Z",
+        "note": "$0.2924"
+      },
+      "a2:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:17:43.306Z",
+        "note": "90 questions"
+      },
+      "judge:start": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:19:51.312Z",
+        "note": "82 prompts, $0.0492, 0 manual"
+      },
+      "scenarios:start": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z"
+      },
+      "scenarios:b1:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "2 sessions, 0 children"
+      },
+      "scenarios:b4:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "2 sessions, 1 children"
+      },
+      "scenarios:b5:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "2 sessions, 0 children"
+      },
+      "scenarios:b6:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "2 sessions, 0 children"
+      },
+      "scenarios:b7:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "2 sessions, 0 children"
+      },
+      "scenarios:b9:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "3 sessions, 0 children"
+      },
+      "scenarios:b8:mind-current": {
+        "status": "passed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "2 sessions, 0 children"
+      },
+      "scenarios:b10:mind-current": {
+        "status": "failed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "1 sessions, 0 children"
+      },
+      "scenarios:b11:mind-current": {
+        "status": "failed",
+        "updatedAt": "2026-10-25T10:39:45.476Z",
+        "note": "2 sessions, 0 children"
+      }
+    },
+    "activeConditions": [
+      "mind-current"
+    ],
+    "current": {
+      "branch": "feature/00037-benchmark-execution-validity",
+      "headSha": "366277d30ee4c9c84ec2487f1130442e1e500128",
+      "dirty": false,
+      "packageVersion": "1.6.0",
+      "schemaVersion": 10,
+      "mindBinary": "~/.local/share/opencode/worktree/109505/benchmark-execution-validity/mind"
+    },
+    "artifacts": {
+      "root": "<run>",
+      "results": "<run>/results",
+      "conditions": {
+        "mind-current": "<run>/mind-current"
+      }
+    }
+  },
+  "conditions": {
+    "no-memory": {
+      "condition": "no-memory",
+      "a1": null,
+      "a2": null,
+      "b": null
+    },
+    "mind-v9": {
+      "condition": "mind-v9",
+      "a1": null,
+      "a2": null,
+      "b": null
+    },
+    "mind-v10": {
+      "condition": "mind-v10",
+      "a1": null,
+      "a2": null,
+      "b": null
+    },
+    "mind-current": {
+      "condition": "mind-current",
+      "a1": {
+        "cat1To4": {
+          "count": 24,
+          "evidenceCount": 23,
+          "hitAt5": 0.43478260869565216,
+          "hitAt10": 0.4782608695652174,
+          "evidenceRecallAt10": 0.5217391304347826,
+          "mrr": 0.4705753184014054,
+          "precisionAt10": 0.09565217391304348,
+          "contextTokensAt25": 1116.8333333333333,
+          "latencyP50Ms": 709.9488220000057
+        },
+        "cat5Adversarial": {
+          "count": 6,
+          "evidenceCount": 6,
+          "hitAt5": 0.5,
+          "hitAt10": 0.5,
+          "evidenceRecallAt10": 0.5833333333333334,
+          "mrr": 0.6666666666666666,
+          "precisionAt10": 0.06666666666666667,
+          "contextTokensAt25": 1040.8333333333333,
+          "latencyP50Ms": 690.8681099999812
+        },
+        "perCategory": {
+          "1": {
+            "count": 6,
+            "evidenceCount": 6,
+            "hitAt5": 0,
+            "hitAt10": 0,
+            "evidenceRecallAt10": 0.16666666666666666,
+            "mrr": 0.22979797979797978,
+            "precisionAt10": 0.03333333333333333,
+            "contextTokensAt25": 1010.1666666666666,
+            "latencyP50Ms": 715.1580140000442
+          },
+          "2": {
+            "count": 6,
+            "evidenceCount": 6,
+            "hitAt5": 0.8333333333333334,
+            "hitAt10": 1,
+            "evidenceRecallAt10": 1,
+            "mrr": 0.8518518518518517,
+            "precisionAt10": 0.09999999999999999,
+            "contextTokensAt25": 1273,
+            "latencyP50Ms": 709.9488220000057
+          },
+          "3": {
+            "count": 6,
+            "evidenceCount": 5,
+            "hitAt5": 0,
+            "hitAt10": 0,
+            "evidenceRecallAt10": 0,
+            "mrr": 0,
+            "precisionAt10": 0,
+            "contextTokensAt25": 1080.5,
+            "latencyP50Ms": 645.702249999973
+          },
+          "4": {
+            "count": 6,
+            "evidenceCount": 6,
+            "hitAt5": 0.8333333333333334,
+            "hitAt10": 0.8333333333333334,
+            "evidenceRecallAt10": 0.8333333333333334,
+            "mrr": 0.7222222222222222,
+            "precisionAt10": 0.23333333333333336,
+            "contextTokensAt25": 1103.6666666666667,
+            "latencyP50Ms": 851.1120109999902
+          },
+          "5": {
+            "count": 6,
+            "evidenceCount": 6,
+            "hitAt5": 0.5,
+            "hitAt10": 0.5,
+            "evidenceRecallAt10": 0.5833333333333334,
+            "mrr": 0.6666666666666666,
+            "precisionAt10": 0.06666666666666667,
+            "contextTokensAt25": 1040.8333333333333,
+            "latencyP50Ms": 690.8681099999812
+          }
+        },
+        "searchCount": 30,
+        "resultCountMean": 19
+      },
+      "a2": {
+        "count": 90,
+        "reps": 3,
+        "classes": {
+          "correct": 14,
+          "partial": 17,
+          "incorrect": 2,
+          "correct_abstention": 13,
+          "abstention": 34,
+          "empty_answer": 7,
+          "incomplete": 1,
+          "hallucination": 2,
+          "error": 0
+        },
+        "f1Mean": 0.4526627904134971,
+        "judgeScoreMean": 0.5073170731707317,
+        "correctAbstentions": 13,
+        "hallucinations": 2,
+        "memoryCalls": 678,
+        "tokensInput": 1659032,
+        "tokensOutput": 30309,
+        "costUsd": 0.2924384499999999,
+        "latencyP50Ms": 9262,
+        "perCategory": {
+          "1": {
+            "category": 1,
+            "categoryName": "multi-hop",
+            "count": 18,
+            "classes": {
+              "correct": 2,
+              "partial": 3,
+              "incorrect": 2,
+              "correct_abstention": 0,
+              "abstention": 8,
+              "empty_answer": 2,
+              "incomplete": 1,
+              "hallucination": 0,
+              "error": 0
+            },
+            "f1Mean": 0.32354788069073775,
+            "judgeScoreMean": 0.24000000000000002,
+            "correctAbstentions": 0,
+            "hallucinations": 0,
+            "memoryCalls": 170,
+            "costUsd": 0.05500516
+          },
+          "2": {
+            "category": 2,
+            "categoryName": "temporal",
+            "count": 18,
+            "classes": {
+              "correct": 7,
+              "partial": 3,
+              "incorrect": 0,
+              "correct_abstention": 0,
+              "abstention": 8,
+              "empty_answer": 0,
+              "incomplete": 0,
+              "hallucination": 0,
+              "error": 0
+            },
+            "f1Mean": 0.5057781709174899,
+            "judgeScoreMean": 0.5555555555555556,
+            "correctAbstentions": 0,
+            "hallucinations": 0,
+            "memoryCalls": 77,
+            "costUsd": 0.0589927
+          },
+          "3": {
+            "category": 3,
+            "categoryName": "open-domain",
+            "count": 18,
+            "classes": {
+              "correct": 0,
+              "partial": 6,
+              "incorrect": 0,
+              "correct_abstention": 0,
+              "abstention": 11,
+              "empty_answer": 1,
+              "incomplete": 0,
+              "hallucination": 0,
+              "error": 0
+            },
+            "f1Mean": 0.18304239570224226,
+            "judgeScoreMean": 0.29411764705882354,
+            "correctAbstentions": 0,
+            "hallucinations": 0,
+            "memoryCalls": 216,
+            "costUsd": 0.05000788
+          },
+          "4": {
+            "category": 4,
+            "categoryName": "single-hop",
+            "count": 18,
+            "classes": {
+              "correct": 5,
+              "partial": 5,
+              "incorrect": 0,
+              "correct_abstention": 0,
+              "abstention": 7,
+              "empty_answer": 1,
+              "incomplete": 0,
+              "hallucination": 0,
+              "error": 0
+            },
+            "f1Mean": 0.6517000835421889,
+            "judgeScoreMean": 0.5882352941176471,
+            "correctAbstentions": 0,
+            "hallucinations": 0,
+            "memoryCalls": 40,
+            "costUsd": 0.05109621
+          },
+          "5": {
+            "category": 5,
+            "categoryName": "adversarial",
+            "count": 18,
+            "classes": {
+              "correct": 0,
+              "partial": 0,
+              "incorrect": 0,
+              "correct_abstention": 13,
+              "abstention": 0,
+              "empty_answer": 3,
+              "incomplete": 0,
+              "hallucination": 2,
+              "error": 0
+            },
+            "f1Mean": null,
+            "judgeScoreMean": 0.8666666666666667,
+            "correctAbstentions": 13,
+            "hallucinations": 2,
+            "memoryCalls": 175,
+            "costUsd": 0.07733649999999999
+          }
+        }
+      },
+      "b": {
+        "scenarios": [
+          {
+            "scenarioId": "b1",
+            "title": "Persistent architectural decision",
+            "pass": true,
+            "status": "passed",
+            "notRunReason": null,
+            "details": [
+              "no dependencies added",
+              "export command ran successfully",
+              "1 persistence file(s) found under data/",
+              "1 UTC ISO-8601 timestamp(s) verified"
+            ],
+            "sessionCount": 2,
+            "childCount": 0,
+            "memoryCalls": 17,
+            "costUsd": 0.03963808
+          },
+          {
+            "scenarioId": "b4",
+            "title": "Sub-agent transfer",
+            "pass": true,
+            "status": "passed",
+            "notRunReason": null,
+            "details": [
+              "test suite passed",
+              "1 child session(s) captured",
+              "child used memory tools: no"
+            ],
+            "sessionCount": 2,
+            "childCount": 1,
+            "memoryCalls": 6,
+            "costUsd": 0.018003819999999997
+          },
+          {
+            "scenarioId": "b5",
+            "title": "Durable writing",
+            "pass": true,
+            "status": "passed",
+            "notRunReason": null,
+            "details": [
+              "durable decision/pattern memory found: projects/tasklog/task-persistence-jsonl",
+              "no duplicate memory names in project spaces",
+              "links touching the decision memory: 1 (optional)",
+              "applied.txt reflects the stored decision"
+            ],
+            "sessionCount": 2,
+            "childCount": 0,
+            "memoryCalls": 15,
+            "costUsd": 0.06724053999999999
+          },
+          {
+            "scenarioId": "b6",
+            "title": "Relinking",
+            "pass": true,
+            "status": "passed",
+            "notRunReason": null,
+            "details": [
+              "expected link stored: checkout-implementation → checkout-strategy [implements]",
+              "old related label is gone",
+              "answer.txt names the related memory"
+            ],
+            "sessionCount": 2,
+            "childCount": 0,
+            "memoryCalls": 12,
+            "costUsd": 0.010470255999999997
+          },
+          {
+            "scenarioId": "b7",
+            "title": "Decision change / supersession",
+            "pass": true,
+            "status": "passed",
+            "notRunReason": null,
+            "details": [
+              "historical memory kept 'cat:decision'",
+              "historical memory marked 'status:superseded'",
+              "historical memory content preserved",
+              "replacement decision memory found: task-storage-jsonl-decision",
+              "expected link stored: task-storage-jsonl-decision → task-storage-decision [contradicts]",
+              "no duplicate memory names in project spaces",
+              "decision.txt names the new decision"
+            ],
+            "sessionCount": 2,
+            "childCount": 0,
+            "memoryCalls": 15,
+            "costUsd": 0.014745480000000002
+          },
+          {
+            "scenarioId": "b9",
+            "title": "Cross-session continuity",
+            "pass": true,
+            "status": "passed",
+            "notRunReason": null,
+            "details": [
+              "session summaries found: projects/buildpipeline/session-2026-10-25T10-36-38Z (T3), projects/buildpipeline/session-2026-10-25T10-37-17Z (T3)",
+              "fact-bearing session summary found: projects/buildpipeline/session-2026-10-25T10-36-38Z (T3), projects/buildpipeline/session-2026-10-25T10-37-17Z (T3)",
+              "no duplicate session summary names",
+              "continuity.txt carries the preserved fact"
+            ],
+            "sessionCount": 3,
+            "childCount": 0,
+            "memoryCalls": 19,
+            "costUsd": 0.03167235
+          },
+          {
+            "scenarioId": "b8",
+            "title": "Tier maintenance (pinning and promotion)",
+            "pass": true,
+            "status": "passed",
+            "notRunReason": null,
+            "details": [
+              "release checklist is at the active tier (T1)",
+              "release checklist is pinned",
+              "background notes remain at tier 2",
+              "background notes are not pinned",
+              "no duplicate memory names in project spaces",
+              "tier-plan.txt names the release checklist"
+            ],
+            "sessionCount": 2,
+            "childCount": 0,
+            "memoryCalls": 12,
+            "costUsd": 0.010850039999999998
+          },
+          {
+            "scenarioId": "b10",
+            "title": "Semantic recall (paraphrase-only)",
+            "pass": false,
+            "status": "failed",
+            "notRunReason": null,
+            "details": [
+              "target memory 'release-key-rotation' contains the seeded fact",
+              "target memory 'release-key-rotation' has an embedding",
+              "no duplicate memory names in project spaces",
+              "no recorded memory_query result for 'release-key-rotation' with semantic provenance",
+              "recall.txt carries the paraphrase recall"
+            ],
+            "sessionCount": 1,
+            "childCount": 0,
+            "memoryCalls": 6,
+            "costUsd": 0.00565202
+          },
+          {
+            "scenarioId": "b11",
+            "title": "Skill-first activation and pending-work continuity",
+            "pass": false,
+            "status": "failed",
+            "notRunReason": null,
+            "details": [
+              "session 1: status ok, evidence captured, transcript present, first skill event #12, first Mind call #1, not ordered, 4 Mind call(s)",
+              "session 1: called Mind before loading the 'mind-management' skill",
+              "session 2: status ok, evidence captured, transcript present, first skill event #7, first Mind call #2, not ordered, 4 Mind call(s)",
+              "session 2: called Mind before loading the 'mind-management' skill",
+              "active checkpoint 'checkpoint-2026-10-25T10-39-24-225Z' still carries pending work",
+              "checkpoint provenance: survival across both sessions (results carry no timestamps)",
+              "resume.txt reflects the pending release-checklist item"
+            ],
+            "sessionCount": 2,
+            "childCount": 0,
+            "memoryCalls": 8,
+            "costUsd": 0.011028859999999998
+          }
+        ],
+        "taskSuccess": {
+          "passed": 7,
+          "failed": 2,
+          "total": 9,
+          "notRun": 0,
+          "rate": 0.7777777777777778
+        },
+        "subagent": {
+          "expected": true,
+          "childCaptured": true,
+          "childCount": 1,
+          "pass": true
+        },
+        "memoryCalls": 110,
+        "tokensInput": 368626,
+        "tokensOutput": 31793,
+        "costUsd": 0.209301446,
+        "latencyP50Ms": 18131
+      }
+    }
+  },
+  "diffs": {
+    "a1": [],
+    "a2": [],
+    "b": [],
+    "mindVsNoMemory": [],
+    "mindVsNoMemoryByCondition": [
+      {
+        "metric": "a2.judgeScoreMean",
+        "baseline": null,
+        "conditions": {
+          "mind-current": 0.5073170731707317
+        }
+      },
+      {
+        "metric": "a2.f1Mean",
+        "baseline": null,
+        "conditions": {
+          "mind-current": 0.4526627904134971
+        }
+      },
+      {
+        "metric": "a2.correctAbstentions",
+        "baseline": null,
+        "conditions": {
+          "mind-current": 13
+        }
+      },
+      {
+        "metric": "a2.memoryCalls",
+        "baseline": null,
+        "conditions": {
+          "mind-current": 678
+        }
+      },
+      {
+        "metric": "b.taskSuccessRate",
+        "baseline": null,
+        "conditions": {
+          "mind-current": 0.7777777777777778
+        }
+      },
+      {
+        "metric": "b.memoryCalls",
+        "baseline": null,
+        "conditions": {
+          "mind-current": 110
+        }
+      },
+      {
+        "metric": "b.costUsd",
+        "baseline": null,
+        "conditions": {
+          "mind-current": 0.209301446
+        }
+      }
+    ],
+    "a2Baseline": [
+      {
+        "condition": "mind-current",
+        "scope": "overall",
+        "metric": "judgeScoreMean",
+        "baseline": null,
+        "value": 0.5073170731707317,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "overall",
+        "metric": "f1Mean",
+        "baseline": null,
+        "value": 0.4526627904134971,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "overall",
+        "metric": "correctAbstentions",
+        "baseline": null,
+        "value": 13,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "overall",
+        "metric": "hallucinations",
+        "baseline": null,
+        "value": 2,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "overall",
+        "metric": "memoryCalls",
+        "baseline": null,
+        "value": 678,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "multi-hop",
+        "metric": "f1Mean",
+        "baseline": null,
+        "value": 0.32354788069073775,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "multi-hop",
+        "metric": "judgeScoreMean",
+        "baseline": null,
+        "value": 0.24000000000000002,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "temporal",
+        "metric": "f1Mean",
+        "baseline": null,
+        "value": 0.5057781709174899,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "temporal",
+        "metric": "judgeScoreMean",
+        "baseline": null,
+        "value": 0.5555555555555556,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "open-domain",
+        "metric": "f1Mean",
+        "baseline": null,
+        "value": 0.18304239570224226,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "open-domain",
+        "metric": "judgeScoreMean",
+        "baseline": null,
+        "value": 0.29411764705882354,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "single-hop",
+        "metric": "f1Mean",
+        "baseline": null,
+        "value": 0.6517000835421889,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "single-hop",
+        "metric": "judgeScoreMean",
+        "baseline": null,
+        "value": 0.5882352941176471,
+        "absolute": null,
+        "relative": null
+      },
+      {
+        "condition": "mind-current",
+        "scope": "adversarial",
+        "metric": "judgeScoreMean",
+        "baseline": null,
+        "value": 0.8666666666666667,
+        "absolute": null,
+        "relative": null
+      }
+    ],
+    "pairwise": []
+  },
+  "notes": []
+}

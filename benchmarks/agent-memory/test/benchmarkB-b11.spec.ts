@@ -30,11 +30,13 @@ import {
   analyzeTranscripts,
   extractToolInvocations,
   makeAssertion as b11MakeAssertion,
+  type SessionEvidenceView,
 } from '../src/benchmarkB/scenarios/b11/index';
 import { SCENARIO_IDS } from '../src/benchmarkB/scenarios/registry';
 import { BudgetGuard } from '../src/budget';
 import type { ConditionId } from '../src/config';
 import type { CommandRunner } from '../src/exec';
+import { buildDriverEvidence, type DriverEvidence } from '../src/opencode/driver';
 
 const HARNESS_ROOT = join(import.meta.dir, '..');
 
@@ -57,11 +59,32 @@ function assistant(...parts: unknown[]): unknown {
   return { type: 'assistant', content: parts };
 }
 
+function messageList(rawMessages: unknown): unknown[] {
+  const record =
+    rawMessages && typeof rawMessages === 'object'
+      ? (rawMessages as { data?: unknown }).data
+      : undefined;
+  return Array.isArray(record) ? record : Array.isArray(rawMessages) ? rawMessages : [];
+}
+
+function capturedEvidence(rawMessages: unknown, sessionId: string): DriverEvidence {
+  return buildDriverEvidence({
+    sessionId,
+    messages: messageList(rawMessages),
+    childSessionIds: [],
+    idleOutcome: 'succeeded',
+  });
+}
+
 function session(
   rawMessages: unknown,
   status: BSessionStatus = 'ok'
-): Pick<BSessionResult, 'rawMessages' | 'status'> {
-  return { rawMessages, status };
+): SessionEvidenceView & Pick<BSessionResult, 'rawMessages' | 'status'> {
+  return {
+    rawMessages,
+    status,
+    evidence: capturedEvidence(rawMessages, 'ses_analysis'),
+  };
 }
 
 function skillMessage(id: string = B11_SKILL_ID, name: string = B11_SKILL_ID): unknown {
@@ -72,7 +95,7 @@ function sessionResult(
   rawMessages: unknown,
   sessionIndex: number,
   status: BSessionStatus = 'ok'
-): BSessionResult {
+): BSessionResult & { evidence: DriverEvidence } {
   return {
     status,
     sessionId: `ses_${sessionIndex + 1}`,
@@ -92,6 +115,23 @@ function sessionResult(
     rawMessages,
     sessionIndex,
     prompt: B11_PROMPTS[sessionIndex] ?? B11_PROMPTS[0]!,
+    evidence: capturedEvidence(rawMessages, `ses_${sessionIndex + 1}`),
+  };
+}
+
+function unavailableSessionResult(sessionIndex: number): BSessionResult & {
+  evidence: DriverEvidence;
+} {
+  const rawMessages = { data: [] };
+  return {
+    ...sessionResult(rawMessages, sessionIndex),
+    evidence: buildDriverEvidence({
+      sessionId: `ses_${sessionIndex + 1}`,
+      messages: null,
+      childSessionIds: [],
+      idleOutcome: 'succeeded',
+      reason: 'message capture failed',
+    }),
   };
 }
 
@@ -436,6 +476,21 @@ describe('B11 assertion', () => {
     expect(details).toContain('still carries pending work');
   });
 
+  test('Incomplete B11 evidence is not a skill-order failure', async () => {
+    const result = await b11MakeAssertion(
+      ctx(passWorkspace(), {
+        mindDb: createCheckpointDb(B11_PENDING_ITEM),
+        sessionResults: [unavailableSessionResult(0), unavailableSessionResult(1)],
+      })
+    );
+    const details = result.details.join('\n');
+    expect(result.pass).toBe(false);
+    expect(details).toContain('harness error');
+    expect(details).toContain('message evidence unavailable');
+    expect(details).not.toContain('did not load');
+    expect(details).not.toContain('called Mind before loading');
+  });
+
   test('fails when session 1 calls Mind before loading the skill', async () => {
     const first = {
       data: [
@@ -453,6 +508,7 @@ describe('B11 assertion', () => {
     expect(result.pass).toBe(false);
     expect(details).toContain('session 1:');
     expect(details).toContain('called Mind before loading');
+    expect(details).not.toContain('harness error');
   });
 
   test('fails when only session 1 loaded the skill and session 2 is Mind-only', async () => {
@@ -599,7 +655,7 @@ describe('B11 assertion', () => {
     expect(details).toContain("session 2: status is 'error'");
   });
 
-  test('fails when a session transcript is empty', async () => {
+  test('fails with a harness error when a captured transcript has no usable events', async () => {
     const result = await b11MakeAssertion(
       ctx(passWorkspace(), {
         mindDb: createCheckpointDb(B11_PENDING_ITEM),
@@ -608,7 +664,9 @@ describe('B11 assertion', () => {
     );
     const details = result.details.join('\n');
     expect(result.pass).toBe(false);
-    expect(details).toContain('session 2: transcript is empty');
+    expect(details).toContain('harness error: session 2');
+    expect(details).toContain('no usable events');
+    expect(details).not.toContain('did not load');
   });
 
   test('fails when the checkpoint was completed or deleted', async () => {

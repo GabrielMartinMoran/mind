@@ -28,8 +28,9 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { inspectAllMemories } from '../../../mind/inspect';
-import { toolServerPrefix } from '../../../opencode/driver';
+import { toolServerPrefix, type DriverEvidence } from '../../../opencode/driver';
 import { MIND_MANAGEMENT_SKILL } from '../../../opencode/skill-first';
+import { HARNESS_ERROR_PREFIX } from '../../runner';
 import type {
   BSessionResult,
   Scenario,
@@ -219,6 +220,8 @@ export interface SessionTranscriptAnalysis {
   readonly sessionIndex: number;
   readonly status: BSessionResult['status'];
   readonly transcriptPresent: boolean;
+  /** Message capture status; `missing` means a legacy result with no evidence field. */
+  readonly evidenceStatus: 'captured' | 'unavailable' | 'missing';
   /** Event index of the first exact `mind-management` skill event, or -1. */
   readonly firstSkillIndex: number;
   /** Event index of the first Mind call (any `mind.*`, including system_instructions), or -1. */
@@ -230,13 +233,45 @@ export interface SessionTranscriptAnalysis {
   readonly systemInstructionsAfterSkill: boolean;
   /** Explicit, human-readable reasons this session cannot pass. */
   readonly missingEvidence: readonly string[];
+  /** Capture failures: the run could not observe the behavior at all. */
+  readonly harnessErrorReasons: readonly string[];
+}
+
+/**
+ * The session fields B11 reads. Contract 1 exposes `evidence` at runtime but the
+ * shared `BSessionOutcome` type does not declare it, so it is optional here.
+ */
+export interface SessionEvidenceView {
+  readonly rawMessages: unknown;
+  readonly status: BSessionResult['status'];
+  readonly evidence?: DriverEvidence;
 }
 
 export function analyzeSession(
-  session: Pick<BSessionResult, 'rawMessages' | 'status'>,
+  session: SessionEvidenceView,
   sessionIndex: number
 ): SessionTranscriptAnalysis {
   const transcriptPresent = rawMessageList(session.rawMessages).length > 0;
+  const evidence = session.evidence ?? null;
+  const evidenceStatus: SessionTranscriptAnalysis['evidenceStatus'] = !evidence
+    ? 'missing'
+    : evidence.messages === 'captured'
+      ? 'captured'
+      : 'unavailable';
+  const harnessErrorReasons: string[] = [];
+  // A legacy/fixture session without a recorded evidence field keeps the
+  // transcript-only judgment below; only a capture that was attempted and
+  // failed (or produced no usable events) is a harness error.
+  if (evidenceStatus === 'unavailable') {
+    harnessErrorReasons.push(
+      evidence?.reason
+        ? `message evidence unavailable (${evidence.reason})`
+        : 'message evidence unavailable'
+    );
+  } else if (evidenceStatus === 'captured' && !transcriptPresent) {
+    harnessErrorReasons.push('captured transcript has no usable events');
+  }
+
   const events = transcriptPresent ? extractOrderedEvents(session.rawMessages) : [];
   let firstSkillIndex = -1;
   let firstMindIndex = -1;
@@ -274,24 +309,28 @@ export function analyzeSession(
   if (session.status !== 'ok') {
     missingEvidence.push(`status is '${session.status}' instead of 'ok'`);
   }
-  if (!transcriptPresent) {
-    missingEvidence.push('transcript is empty');
-  } else {
-    if (firstSkillIndex === -1) {
-      missingEvidence.push(
-        skillArgsUnavailable
-          ? `skill tool call had no usable id, so the '${B11_SKILL_ID}' load is unproven`
-          : `did not load the '${B11_SKILL_ID}' skill`
-      );
-    }
-    if (firstMindIndex === -1) {
-      missingEvidence.push('made no Mind call');
-    }
-    if (firstSkillIndex !== -1 && firstMindIndex !== -1 && !ordered) {
-      missingEvidence.push(`called Mind before loading the '${B11_SKILL_ID}' skill`);
-    }
-    if (systemInstructionsAfterSkill) {
-      missingEvidence.push('called system_instructions after loading the skill');
+  // Ordering can only be judged from captured evidence; a capture failure is not
+  // a model failure and must not be reported as a missing skill.
+  if (harnessErrorReasons.length === 0) {
+    if (!transcriptPresent) {
+      missingEvidence.push('transcript is empty');
+    } else {
+      if (firstSkillIndex === -1) {
+        missingEvidence.push(
+          skillArgsUnavailable
+            ? `skill tool call had no usable id, so the '${B11_SKILL_ID}' load is unproven`
+            : `did not load the '${B11_SKILL_ID}' skill`
+        );
+      }
+      if (firstMindIndex === -1) {
+        missingEvidence.push('made no Mind call');
+      }
+      if (firstSkillIndex !== -1 && firstMindIndex !== -1 && !ordered) {
+        missingEvidence.push(`called Mind before loading the '${B11_SKILL_ID}' skill`);
+      }
+      if (systemInstructionsAfterSkill) {
+        missingEvidence.push('called system_instructions after loading the skill');
+      }
     }
   }
 
@@ -299,6 +338,7 @@ export function analyzeSession(
     sessionIndex,
     status: session.status,
     transcriptPresent,
+    evidenceStatus,
     firstSkillIndex,
     firstMindIndex,
     ordered,
@@ -306,11 +346,12 @@ export function analyzeSession(
     skillArgsUnavailable,
     systemInstructionsAfterSkill,
     missingEvidence,
+    harnessErrorReasons,
   };
 }
 
 export function analyzeTranscripts(
-  sessionResults: readonly Pick<BSessionResult, 'rawMessages' | 'status'>[]
+  sessionResults: readonly SessionEvidenceView[]
 ): SessionTranscriptAnalysis[] {
   return sessionResults.map((session, index) => analyzeSession(session, index));
 }
@@ -363,6 +404,7 @@ export async function makeAssertion(
     details.push(
       [
         `${label}: status ${session.status}`,
+        `evidence ${session.evidenceStatus}`,
         session.transcriptPresent ? 'transcript present' : 'transcript is empty',
         session.firstSkillIndex === -1
           ? `no '${B11_SKILL_ID}' skill event`
@@ -374,13 +416,18 @@ export async function makeAssertion(
         `${session.mindCalls} Mind call(s)`,
       ].join(', ')
     );
+    for (const reason of session.harnessErrorReasons) {
+      details.push(`${HARNESS_ERROR_PREFIX} ${label}: ${reason}`);
+    }
     for (const reason of session.missingEvidence) {
       details.push(`${label}: ${reason}`);
     }
   }
 
+  const harnessError = sessions.some(session => session.harnessErrorReasons.length > 0);
   const sessionsOk =
     sessionCountOk &&
+    !harnessError &&
     sessions.every(
       session =>
         session.status === 'ok' &&

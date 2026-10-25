@@ -59,17 +59,53 @@ describe('adversarial scoring', () => {
     expect(score.f1).toBeNull();
   });
 
-  test('an empty adversarial answer is incorrect', () => {
+  test('an empty adversarial answer is an empty answer, not a hallucination', () => {
     expect(scoreDeterministic({ answer: '   ', reference: null, adversarial: true }).klass).toBe(
-      'incorrect'
+      'empty_answer'
     );
   });
 
-  test('a failed measurement is an error regardless of answer', () => {
+  test('a failed measurement is incomplete regardless of answer', () => {
     expect(
       scoreDeterministic({ answer: 'anything', reference: 'x', adversarial: false, error: true })
         .klass
-    ).toBe('error');
+    ).toBe('incomplete');
+  });
+});
+
+describe('completion semantics', () => {
+  test('an idle outcome that is not successful is incomplete', () => {
+    for (const idleOutcome of ['failed', 'interrupted', null] as const) {
+      const score = scoreDeterministic({
+        answer: 'a red hat',
+        reference: 'a red hat',
+        adversarial: false,
+        idleOutcome,
+      });
+      expect(score.klass).toBe('incomplete');
+      expect(score.f1).toBeNull();
+    }
+  });
+
+  test('an explicit incomplete completion wins even with answer text', () => {
+    const score = scoreDeterministic({
+      answer: 'a red hat',
+      reference: 'a red hat',
+      adversarial: false,
+      completion: 'incomplete',
+    });
+    expect(score.klass).toBe('incomplete');
+  });
+
+  test('a successful completion with empty text is an empty answer', () => {
+    const score = scoreDeterministic({
+      answer: '   ',
+      reference: 'a red hat',
+      adversarial: false,
+      idleOutcome: 'succeeded',
+    });
+    expect(score.klass).toBe('empty_answer');
+    expect(score.f1).toBeNull();
   });
 });
 
@@ -99,6 +135,17 @@ describe('non-adversarial scoring', () => {
     expect(scoreDeterministic({ answer: 'x', reference: null, adversarial: false }).klass).toBe(
       'incorrect'
     );
+  });
+
+  test('a non-adversarial abstention is not partial from a shared reference token', () => {
+    const score = scoreDeterministic({
+      answer: 'no information available',
+      reference: 'no preference was recorded',
+      adversarial: false,
+    });
+    expect(score.klass).toBe('abstention');
+    expect(score.f1).toBeNull();
+    expect(score.abstained).toBe(true);
   });
 });
 
@@ -255,5 +302,28 @@ describe('aggregateCondition', () => {
     expect(aggregate.classes.partial).toBe(1);
     expect(aggregate.classes.hallucination).toBe(1);
     expect(aggregate.f1Mean).toBeCloseTo(0.7, 6);
+  });
+
+  test('excludes empty and incomplete results from answer-quality means', () => {
+    const aggregate = aggregateCondition('mind-v10', [
+      result({
+        answer: 'a red hat',
+        deterministic: { klass: 'correct', f1: 1, abstained: false },
+        judge: { candidate: 1, klass: 'correct', score: 1 },
+      }),
+      result({
+        answer: '',
+        deterministic: { klass: 'empty_answer', f1: null, abstained: false },
+        judge: { candidate: 2, klass: 'correct', score: 1 },
+      }),
+      result({
+        deterministic: { klass: 'incomplete', f1: null, abstained: false },
+        judge: { candidate: 3, klass: 'correct', score: 1 },
+      }),
+    ]);
+    expect(aggregate.classes.empty_answer).toBe(1);
+    expect(aggregate.classes.incomplete).toBe(1);
+    expect(aggregate.f1Mean).toBe(1);
+    expect(aggregate.judgeScoreMean).toBe(1);
   });
 });

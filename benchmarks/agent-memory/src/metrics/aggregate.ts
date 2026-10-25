@@ -14,7 +14,12 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { A2_CLASSES, type A2Class, type A2QuestionResult } from '../benchmarkA/judge';
+import {
+  A2_CLASSES,
+  isJudgeableResult,
+  type A2Class,
+  type A2QuestionResult,
+} from '../benchmarkA/judge';
 import type { ScenarioConditionResult, ScenarioRunStatus } from '../benchmarkB/runner';
 import { CONDITIONS, isMindCondition, type ConditionId } from '../config';
 import type { A1Result } from '../locomo/a1';
@@ -286,6 +291,7 @@ export function aggregateA2ByCategory(
       ),
       judgeScoreMean: mean(
         group
+          .filter(isJudgeableResult)
           .map(result => result.judge?.score)
           .filter((value): value is number => typeof value === 'number')
       ),
@@ -311,6 +317,7 @@ export function aggregateA2(results: readonly A2QuestionResult[]): A2Summary {
     ),
     judgeScoreMean: mean(
       results
+        .filter(isJudgeableResult)
         .map(result => result.judge?.score)
         .filter((value): value is number => typeof value === 'number')
     ),

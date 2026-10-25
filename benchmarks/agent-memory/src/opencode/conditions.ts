@@ -15,7 +15,12 @@ import { dirname, join } from 'node:path';
 
 import { Database } from 'bun:sqlite';
 
-import { engineForCondition, type ConditionId, type EngineVersion } from '../config';
+import {
+  RAG_EMBEDDING_PROVIDER,
+  engineForCondition,
+  type ConditionId,
+  type EngineVersion,
+} from '../config';
 import {
   buildOpenCodeEnv,
   isolationDirs,
@@ -52,6 +57,8 @@ export interface BuildProfilesInput {
    * profile's environment for paid stages. Empty/none for free stages.
    */
   readonly credentialEnv?: Record<string, string>;
+  /** Run-level embeddings switch, applied to every condition profile. */
+  readonly rag?: boolean;
 }
 
 function conditionDir(runDir: string, condition: ConditionId): string {
@@ -62,7 +69,8 @@ export function buildConditionProfile(
   runDir: string,
   condition: ConditionId,
   worktrees: Partial<Record<EngineVersion, string>>,
-  credentialEnv: Record<string, string> = {}
+  credentialEnv: Record<string, string> = {},
+  rag = false
 ): ConditionProfile {
   const engine = engineForCondition(condition);
   const dir = isolationDirs(conditionDir(runDir, condition));
@@ -72,14 +80,29 @@ export function buildConditionProfile(
     id: condition,
     engine,
     dirs: dir,
-    env: { ...buildOpenCodeEnv({ condition, dir, mindBin }), ...credentialEnv },
+    env: {
+      ...buildOpenCodeEnv({
+        condition,
+        dir,
+        mindBin,
+        rag,
+        embeddingProvider: rag ? RAG_EMBEDDING_PROVIDER : undefined,
+      }),
+      ...credentialEnv,
+    },
     mindBin,
   };
 }
 
 export function buildConditionProfiles(input: BuildProfilesInput): ConditionProfile[] {
   return input.conditions.map(condition =>
-    buildConditionProfile(input.runDir, condition, input.worktrees, input.credentialEnv)
+    buildConditionProfile(
+      input.runDir,
+      condition,
+      input.worktrees,
+      input.credentialEnv,
+      input.rag === true
+    )
   );
 }
 

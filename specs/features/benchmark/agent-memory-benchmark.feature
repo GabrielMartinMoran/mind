@@ -29,6 +29,13 @@ Feature: Agent memory benchmark harness
       And the "no memory" condition defines no MCP server
       And each Mind condition defines exactly one local MCP server named "mind"
 
+    @integration
+    Scenario: Embedded SDK hosts share the unit database after the owner closes
+      Given a benchmark unit with one isolated OpenCode database path
+      When one embedded SDK host creates a session there and is closed
+      Then a fresh SDK host bound to that same path can read the session
+      And it can read the imported messages without a model request
+
   Rule: Mind and SQLite isolation
 
     @contract
@@ -73,8 +80,31 @@ Feature: Agent memory benchmark harness
       Then each database contains exactly one memory per dialogue turn named by its dia_id
       And no memory was evicted, deleted or summarized
 
-  Rule: Retrieval measurement (A1)
+  Rule: Embedding mode
+    @unit
+    Scenario: Embeddings stay disabled unless the run requests them
+      Given the benchmark runs without the RAG option
+      When the A1, A2 and scenario environments are built
+      Then every environment keeps MIND_RAG false
+      And no embedding provider override is injected
+      And the run metadata records embeddings as disabled
 
+    @unit
+    Scenario: A RAG run enables embeddings everywhere and records the mode
+      Given the benchmark runs with the RAG option
+      When the A1 ingest, A1 server, A2 profiles and scenario environments are built
+      Then each environment sets MIND_RAG true
+      And each environment selects the OpenRouter embedding provider
+      And the run metadata records embeddings as enabled with that provider
+
+    @integration
+    Scenario: Ingest aborts before answering when embeddings are incomplete
+      Given a RAG ingest leaves at least one memory without an embedding
+      When the post-ingest coverage check runs
+      Then the run aborts before any answering or scenario stage starts
+      And the failure names the missing embedding coverage
+
+  Rule: Retrieval measurement (A1)
     @unit
     Scenario: Retrieval metrics are computed correctly
       Given ranked results with known evidence positions
@@ -120,6 +150,28 @@ Feature: Agent memory benchmark harness
       And relative deltas are reported only when the baseline is non-zero
       And missing baselines are reported as not applicable
 
+    @unit
+    Scenario: An idle wait without a successful outcome is not a completed answer
+      Given a session whose wait returned idle without a successful idle outcome
+      When the answering result is classified
+      Then the result is incomplete rather than correct or incorrect
+      And its empty content is not sent to the blind judge
+
+    @unit
+    Scenario: A non-adversarial abstention stays distinct from a partial answer
+      Given a non-adversarial question
+      When the answer is the canonical no-information phrase
+      Then the result is classified as an abstention
+      And it is not counted as a partial answer because a reference happens to share a token
+
+    @unit
+    Scenario: A successful empty answer is visible but never correct
+      Given a session completed with a successful idle outcome and empty final text
+      When the answering result is classified
+      Then it is recorded as an empty answer
+      And it is excluded from correct and partial answer counts
+      And it does not receive a positive blind-judge score
+
   Rule: Scenario benchmark (B)
 
     @unit
@@ -134,6 +186,21 @@ Feature: Agent memory benchmark harness
       When the runner executes both phases for a condition
       Then the scenario uses a fresh database and workspace
       And child sessions spawned by the agent are captured and linked to their parent session
+
+    @unit
+    Scenario: Unavailable child evidence is not reported as no child behavior
+      Given a scenario recorded a subagent tool call
+      And its child-session evidence capture failed
+      When the B4 assertion evaluates the result
+      Then the result is a harness error, not a behavior failure
+      And only a successful capture that returns no children may fail as no child
+
+    @unit
+    Scenario: Incomplete B11 evidence is not a skill-order failure
+      Given B11 captured no usable transcript or ordered skill events
+      When its assertion evaluates the result
+      Then the result is a harness error, not a model failure
+      And a captured skill event after a Mind call is the behavior failure
 
     @e2e
     Scenario: Durable writing survives into a later session
@@ -189,6 +256,13 @@ Feature: Agent memory benchmark harness
       And the answer artifact contains the target fact (24 hours)
       And the answer artifact does not contain the distractor fact
       And no project memory name is stored twice
+
+    @unit
+    Scenario: B10 requires recorded semantic provenance for the target result
+      Given a recorded target memory query result with known methods
+      When the B10 assertion evaluates the result without a semantic-method target match
+      Then the scenario does not pass on embedding presence and answer text alone
+      And it passes only when the target result records the semantic provenance
 
     @unit
     Scenario: Semantic recall is gated on RAG and a Mind condition

@@ -91,8 +91,10 @@ Every condition gets its own isolated run tree under
 - the `OPENCODE_DISABLE_*` guards (project config, Claude Code, default plugins,
   model fetch, autocompact);
 - a fresh Mind database per condition/scenario
-  (`MIND_DB_PATH`/`MIND_DATA_DIR`/`MIND_SYNC_ROOT` under the run dir,
-  `MIND_RAG=false`). The user's live `data/mind.db` is never opened.
+  (`MIND_DB_PATH`/`MIND_DATA_DIR`/`MIND_SYNC_ROOT` under the run dir). RAG is
+  off (`MIND_RAG=false`) unless the run passes `--rag`; a RAG run sets
+  `MIND_RAG=true` and `MIND_EMBEDDING_PROVIDER=openrouter` instead. The user's
+  live `data/mind.db` is never opened.
 
 **Skill-first preparation (current only).** Every `mind-current` A2 condition
 and B1–B11 unit runs the real `<checkout>/mind setup opencode` once inside its
@@ -214,6 +216,36 @@ bun run cli scenarios --scenarios b1,b4 --budget 5 --confirm
 # Full orchestration: free A1 always, then paid A2 + scenarios + REPORT
 bun run full --budget 5 --confirm
 ```
+
+### Run-level RAG (`--rag`)
+
+`--rag` is a default-off, run-level embeddings switch. Without it, every stage
+keeps the existing behavior: `MIND_RAG=false`, no embedding-provider override,
+and no coverage gate. With it, the harness sets `MIND_RAG=true` and
+`MIND_EMBEDDING_PROVIDER=openrouter` for A1 ingest, the A1 search server, every
+A2 condition profile (including the MCP `environment` block) and every B
+scenario unit — not only the scenarios that declare `rag: true`. The OpenRouter
+credential (`OPENROUTER_API_KEY`) is read at runtime and injected into the A1
+children (A2/B already receive it) without being printed or persisted.
+
+```sh
+# Free A1 ingest + retrieval with embeddings on
+bun run cli locomo --subset full --rag --run-id <id>
+
+# Paid A2 answering, then all B scenarios, reusing the same run id
+bun run cli locomo --answers --run-id <id> --rag --budget 2.5 --confirm --reps 3
+bun run cli scenarios --run-id <id> --rag --budget 1.4 --confirm
+```
+
+After A1 ingest and only for a RAG run, the harness checks embedding coverage
+read-only and **aborts before A1 scoring** (and therefore before any A2 or B
+stage) when any ingested memory lacks an embedding. The failure names the
+expected and embedded counts. Every run records `rag: { enabled, provider }` in
+`meta.json`, where a default run stores `{ enabled: false, provider: null }`.
+Embedding-provider charges are excluded from the model-cost cap per the approved
+run instructions, but the embedding calls stay bounded to the single ingest plus
+query embeddings during the run. `--rag` is not forwarded by the `full`
+orchestrator.
 
 ### Standalone credential smoke
 
@@ -354,7 +386,11 @@ today:
 - **B4 — sub-agent transfer.** Session 1 investigates a failing test and reports
   the root cause + fix strategy. Session 2 explicitly delegates the fix to a
   sub-agent. The assertion checks the test suite passes and that a child session
-  was created; whether the child used memory tools is measured, not required.
+  was created. It reports "no child" only when the child-session read succeeded
+  and returned an empty list; unavailable child evidence, including a recorded
+  `subagent` call whose child list could not be read, is a harness error
+  (`not_run`) rather than a behavior failure. Whether the child used memory tools
+  is measured, not required.
 - **B5 — durable writing.** Session 1 makes a constrained persistence decision
   and must preserve it for later; session 2 applies it and writes `applied.txt`.
   The assertion reads the unit database: a project-space memory tagged
@@ -404,10 +440,16 @@ today:
   The assertion requires the target memory to exist with a non-null embedding
   (checked read-only, never exposing vectors), the artifact to contain `24` and
   `hours`, the distractor's `blue-green`/`rollout` fact to be absent from the
-  answer, and no duplicate target name. A free unit test verifies the prompt's
-  lexical overlap is empty, proving the scenario tests meaning rather than term
-  matching.
+  answer, and no duplicate target name. It also requires a recorded
+  `memory_query` result for the target memory whose `methods` include
+  `semantic`: embedding presence plus a correct artifact never passes on its
+  own. The worker keeps only the memory name and `methods` from that tool
+  output, so memory content is never retained. A free unit test verifies the
+  prompt's lexical overlap is empty, proving the scenario tests meaning rather
+  than term matching.
   B10 declares `rag: true` and `requires: ['mind-memory', 'semantic-recall']`.
+  A run-level `--rag` overrides every scenario's own flag, so it also enables
+  B10 (and every other unit) without changing the scenario definition.
   Without a Mind condition, the RAG embedding credential (currently
   `OPENROUTER_API_KEY` for the fixed `openrouter` provider) or an explicit RAG
   request, the runner records it **not_run** with a clear reason, zero sessions
@@ -416,11 +458,12 @@ today:
   provider: the two seed `mind add` calls make embedding requests billed by the
   provider, and the session itself is a normal paid OpenCode session. Offline
   dry-runs use synthetic DBs/workspaces and the gated integration test.
-  **B10 limitations.** B10 is outcome-only: a passing artifact shows the answer
-  was correct with RAG enabled, not that the semantic channel produced it. The
-  two seed `mind add` embedding requests are not counted in the reported session
-  cost, and one run per scenario measures feasibility rather than an improvement
-  over a baseline.
+  **B10 limitations.** The recorded provenance is the agent's own
+  `memory_query` output: a pass proves the target memory was returned by the
+  semantic channel during the unit, not that the final artifact was derived
+  from that result. The two seed `mind add` embedding requests are not counted
+  in the reported session cost, and one run per scenario measures feasibility
+  rather than an improvement over a baseline.
 - **B11 — skill-first activation and pending-work continuity (prepared, NOT
   run).** Two sessions share the unit environment. The shared current-only
   preparation (see “Isolation”) installs the canonical `mind-management` skill
@@ -428,11 +471,16 @@ today:
   activation helper of its own. Session 1 records an unresolved release-checklist
   item and
   leaves an active checkpoint with pending work; session 2 resumes that pending
-  item and writes `resume.txt`. The assertion reads the raw transcript and the
-  unit database and checks ordering **per session**, never in aggregate: each
-  session must be `ok`, carry a non-empty transcript, have at least one Mind
-  call, and load the exact `mind-management` skill before its first Mind call
-  (the first Mind call may be `system_instructions`). A skill load in one
+  item and writes `resume.txt`. The assertion reads the redacted transcript
+  evidence and the unit database and checks ordering **per session**, never in
+  aggregate: each session must be `ok`, carry captured message evidence with at
+  least one usable event, have at least one Mind call, and load the exact
+  `mind-management` skill before its first Mind call (the first Mind call may be
+  `system_instructions`). Unavailable message capture, or a captured transcript
+  with no usable events, is a **harness error** (`not_run`), not a skill-order
+  failure; ordering is judged only from captured evidence. A legacy or fixture
+  result with no evidence field keeps the transcript-only judgment. A skill load
+  in one
   session never covers another, and `system_instructions` after the skill load
   is rejected as redundant. Skill evidence is accepted either as a `skill` tool
   call whose arguments carry the id or as a `type: 'skill'` message whose
@@ -500,19 +548,31 @@ How a scenario runs:
   a NEW OpenCode session (one worker process) sharing the unit's isolated env
   and data dirs, under the same step/timeout limits for all conditions.
 - **Child capture.** Sub-agent sessions are captured via the driver
-  (`session.children`), stored with parent linkage, and counted per scenario.
+  (`session.children`), stored with parent linkage, and counted per scenario. A
+  failed child-list or child-transcript read is recorded as unavailable
+  evidence, so B4 can distinguish it from a genuine no-child result.
+- **Redacted execution evidence.** Each session's `result.json` keeps only
+  ordered tool names, skill ids, nested code-mode tool names, parent/child
+  session ids, `memory_query` memory names with their `methods`, and the idle
+  outcome. Prompts, message text, tool results, and memory contents are dropped
+  before the file is written.
 - **Assertions, not prose.** `makeAssertion(ctx)` inspects
   `{ workspaceDir, sessionResults, childResults, mindDb }` and returns
-  `{ pass, details }`; agent prose is never accepted as success.
+  `{ pass, details }`; agent prose is never accepted as success. An assertion
+  that cannot observe the behavior prefixes its detail with `harness error:`;
+  the runner stores that unit as `not_run` with the reason and excludes it from
+  passed and failed counts.
 - **Budget.** Paid stages refuse to run without `--budget`; spend accumulates and
   aborts at the cap; per-stage statuses (`scenarios:<id>:<condition>`) are
   written to `meta.json`.
 
 Offline coverage: scenario assertions are unit-tested on hand-crafted pass/fail
 workspaces; the runner is dry-run with a fake driver (fresh DB, sequential
-sessions, child capture, budget refusal/abort, byte-identical prompts); a gated
-integration test (`BENCH_INTEGRATION=1`) exercises real fixture copies + fresh
-DB init.
+sessions, child capture, harness-error `not_run` handling, budget
+refusal/abort, byte-identical prompts); B4/B11 evidence classification and the
+redacted transcript plus `memory_query` provenance extraction are unit-tested;
+a gated integration test (`BENCH_INTEGRATION=1`) exercises real fixture copies +
+fresh DB init.
 
 ## Report (`REPORT.md`, free)
 

@@ -12,6 +12,7 @@
 import { existsSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { HARNESS_ERROR_PREFIX, sessionEvidence } from '../../runner';
 import type { Scenario, ScenarioAssertionContext, ScenarioAssertionResult } from '../../scenario';
 
 /**
@@ -40,6 +41,39 @@ export const B4_PROMPTS = [
   ].join('\n'),
 ];
 
+const SUBAGENT_TOOL = /(^|[._])subagent$/;
+
+/**
+ * Reasons child evidence cannot be trusted. A recorded `subagent` call plus an
+ * unavailable child list is a harness error, never "the agent created no child".
+ * A result with captured children and no evidence field is a legacy/fixture
+ * result: it makes no "no child" claim, so it is not blocked.
+ */
+function childCaptureProblems(ctx: ScenarioAssertionContext): string[] {
+  const problems: string[] = [];
+  let anyEvidence = false;
+  ctx.sessionResults.forEach((session, index) => {
+    const evidence = sessionEvidence(session);
+    const label = `session ${index + 1}`;
+    if (!evidence) return;
+    anyEvidence = true;
+    if (evidence.children === 'captured') return;
+    const recordedSubagent = session.toolCalls.some(call => SUBAGENT_TOOL.test(call.name));
+    const suffix = evidence.reason ? ` (${evidence.reason})` : '';
+    problems.push(
+      `${label}: child evidence unavailable${recordedSubagent ? ' after a recorded subagent call' : ''}${suffix}`
+    );
+  });
+  for (const [index, child] of ctx.childResults.entries()) {
+    if (child.error === null) continue;
+    problems.push(`child ${index + 1}: transcript unavailable (${child.error})`);
+  }
+  if (problems.length === 0 && ctx.childResults.length === 0 && !anyEvidence) {
+    return ['no session evidence was recorded, so child capture cannot be verified'];
+  }
+  return problems;
+}
+
 export async function makeAssertion(
   ctx: ScenarioAssertionContext
 ): Promise<ScenarioAssertionResult> {
@@ -56,8 +90,14 @@ export async function makeAssertion(
     details.push('test suite passed');
   }
 
-  // 2. The work was delegated: at least one child session exists.
-  if (ctx.childResults.length === 0) {
+  // 2. Child capture must be trustworthy before "no child" can be a verdict.
+  const problems = childCaptureProblems(ctx);
+  if (problems.length > 0) {
+    pass = false;
+    for (const problem of problems) details.push(`${HARNESS_ERROR_PREFIX} ${problem}`);
+  } else if (ctx.childResults.length === 0) {
+    // 3. Delegation happened: a successful capture that returned no child is a
+    // genuine behavior failure.
     pass = false;
     details.push('no child (sub-agent) session was created');
   } else {
