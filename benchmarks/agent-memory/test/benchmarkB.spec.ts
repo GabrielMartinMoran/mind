@@ -21,6 +21,7 @@ import {
   runScenarioRun,
   scenarioGateReason,
   type BSessionExecutor,
+  type BSessionJob,
   type InitMindDbInput,
   type PrepareUnit,
   type ScenariosRunResult,
@@ -2151,6 +2152,39 @@ describe('current skill-first preparation', () => {
     for (const result of run.results) {
       expect(result.sessions).toHaveLength(0);
     }
+  });
+});
+
+describe('per-session OpenCode database', () => {
+  test('each session gets its own OpenCode DB while the Mind DB stays shared per unit', async () => {
+    const jobs: BSessionJob[] = [];
+    await runProbe(simpleScenario(), {
+      executor: async job => {
+        jobs.push(job);
+        return noopExecutor()(job);
+      },
+    });
+
+    expect(jobs).toHaveLength(2);
+    const [first, second] = jobs as [BSessionJob, BSessionJob];
+    const unitDir = dirname(dirname(first.sessionDir));
+
+    // Isolation leak regression: a shared OpenCode DB let session 0 persist and
+    // session 1's fail-closed empty-session check reject it as contamination.
+    expect(first.env.OPENCODE_DB).not.toBe(second.env.OPENCODE_DB);
+
+    for (const job of jobs) {
+      const dbPath = job.env.OPENCODE_DB!;
+      // Contained in the unit directory so the existing path gate stays as-is.
+      expect(dbPath.startsWith(unitDir)).toBe(true);
+      // Owned by its own session directory, not the unit-level OpenCode tree.
+      expect(dirname(dbPath)).toBe(job.sessionDir);
+    }
+
+    // Continuity is carried by the shared Mind DB, not the session store.
+    expect(first.env.MIND_DB_PATH).toBe(second.env.MIND_DB_PATH);
+    expect(first.mindDbPath).toBe(second.mindDbPath);
+    expect(first.env.MIND_DB_PATH).toBe(first.mindDbPath!);
   });
 });
 

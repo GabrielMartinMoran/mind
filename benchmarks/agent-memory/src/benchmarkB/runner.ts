@@ -6,7 +6,8 @@
 //      the agent populates it through MCP if it chooses);
 //   3. copies the scenario fixture into the unit workspace;
 //   4. runs the scenario sessions SEQUENTIALLY, one new session (and one worker
-//      process) per session, with the same isolated env for the whole unit;
+//      process) per session, with the same isolated env for the whole unit
+//      except for a per-session OpenCode database;
 //   5. captures the final text, tool/memory calls, tokens, cost, latency,
 //      finish/error and child (sub-agent) sessions per session;
 //   6. runs the scenario assertion over the resulting workspace state.
@@ -444,6 +445,13 @@ async function runUnit(
     const sessionDir = join(unitDir, 'sessions', String(index));
     mkdirSync(sessionDir, { recursive: true });
 
+    // Each session owns its OpenCode database. Sharing the unit-level store let
+    // session 0 persist there and trip the next session's fail-closed
+    // empty-session isolation check. The path stays under the unit directory so
+    // the existing path-containment check holds without widening it. Scenario
+    // continuity still runs through the shared per-unit Mind database.
+    const sessionOpencodeDb = join(sessionDir, 'opencode.db');
+
     const job: BSessionJob = {
       runId: options.runId,
       scenarioId: scenario.id,
@@ -455,7 +463,7 @@ async function runUnit(
       sessionDir,
       evidenceDir: join(unitDir, 'isolation-evidence', String(index)),
       limits: options.limits,
-      env,
+      env: { ...env, OPENCODE_DB: sessionOpencodeDb },
       mindDbPath: mindDb,
       mindBin,
     };
