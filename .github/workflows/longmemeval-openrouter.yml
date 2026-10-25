@@ -1,9 +1,6 @@
-name: LongMemEval OpenRouter RAG A/B (12-question pilot)
+name: LongMemEval OpenRouter RAG A/B (manual)
 
 on:
-  push:
-    branches: [benchmark/longmemeval-20261025]
-    paths: [.github/workflows/longmemeval-openrouter.yml]
   workflow_dispatch:
     inputs:
       count:
@@ -81,7 +78,7 @@ jobs:
             --sessions=5 --session-chars=3000 \
             --input=/tmp/longmemeval_s_cleaned.json \
             --retrieval=benchmarks/longmemeval/openrouter-retrieval.json \
-            --count=${{ inputs.count || '3' }} \
+            --count=${{ inputs.count || '12' }} \
             --max-usd=${{ inputs.qa_budget_usd || '0.25' }} \
             --output=benchmarks/longmemeval/openrouter-qa.json
       - name: Upload reproducible inputs, retrieval, answers and judge decisions
