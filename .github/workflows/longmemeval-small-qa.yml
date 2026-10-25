@@ -2,7 +2,7 @@ name: LongMemEval QA small local model
 on:
   push:
     branches: [benchmark/longmemeval-20261025]
-    paths: [.github/workflows/longmemeval-ollama-qa.yml]
+    paths: [.github/workflows/longmemeval-small-qa.yml]
   workflow_dispatch:
     inputs:
       count:
