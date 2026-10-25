@@ -7,6 +7,7 @@
  * bun benchmarks/longmemeval/run.mjs --input=/tmp/longmemeval_s_cleaned.json --count=60 --output=/tmp/results.json
  *
  * This is retrieval-only. Never report the scores as end-to-end answer accuracy.
+ * The production query classifier is exercised unchanged in every Mind arm.
  */
 import { createHash } from 'node:crypto';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';

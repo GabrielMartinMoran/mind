@@ -21,7 +21,8 @@ describe('natural search terms', () => {
   });
   test('does not broaden explicit syntax or short keyword queries', () => {
     expect(isNaturalLanguageRecall(parseQuery('what changed about cloudflare?'))).toBe(true);
-    expect(isNaturalLanguageRecall(parseQuery('how did cloudflare change'))).toBe(true);
+    expect(isNaturalLanguageRecall(parseQuery('how did cloudflare change'))).toBe(false);
+    expect(isNaturalLanguageRecall(parseQuery('cómo migran las aves entre continentes'))).toBe(false);
     expect(isNaturalLanguageRecall(parseQuery('glossary glosario bilingue'))).toBe(false);
     for (const query of [
       'auth token',
@@ -51,9 +52,13 @@ describe('natural recall admission (store integration)', () => {
   test('retains partial evidence even alongside a perfect match', async () => {
     store = createTestStore();
     store.createSpace('example', 'Example', ['test']);
-    await store.addMemory('example', 'complete', 'cloudflare tunnel latency investigation', { tags: ['test'] });
+    await store.addMemory('example', 'complete', 'cloudflare tunnel latency investigation', {
+      tags: ['test'],
+    });
     await store.addMemory('example', 'partial', 'cloudflare routing', { tags: ['test'] });
-    await store.addMemory('example', 'other', 'latency over the office network', { tags: ['test'] });
+    await store.addMemory('example', 'other', 'latency over the office network', {
+      tags: ['test'],
+    });
     await store.addMemory('example', 'noise', 'the and for de la para', { tags: ['test'] });
     const results = await store.search('What cloudflare tunnel latency investigation?', {
       space: 'example',

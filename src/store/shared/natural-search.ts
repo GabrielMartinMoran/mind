@@ -16,8 +16,7 @@ const STOPWORDS = new Set(
 /** Broaden sufficiently specific plain questions, not intentional keyword searches. */
 export function isNaturalLanguageRecall(ast: ParsedQuery): boolean {
   if (ast.degraded || !canBypassLexicalAdmission(ast) || /\bAND\b/i.test(ast.raw)) return false;
-  if (/[?¿]/.test(ast.raw)) return true;
-  return /^(?:what|when|where|which|who|why|how|cu[aá]l|qu[eé]|c[oó]mo|cu[aá]ndo|d[oó]nde)\b/i.test(ast.raw.trim());
+  return /[?¿]/.test(ast.raw);
 }
 
 /** Stopwords cannot independently qualify a memory for broad recall. */
