@@ -21,9 +21,17 @@ const retrievalPath = opts.get('retrieval') ?? 'benchmarks/longmemeval/retrieval
 const output = opts.get('output') ?? 'benchmarks/longmemeval/qa.json';
 const provider = opts.get('provider') ?? 'opencode';
 const model = opts.get('model') ?? (provider === 'opencode' ? 'opencode/deepseek-v4.1-flash-free' : provider === 'openrouter' ? 'deepseek/deepseek-v4.1-flash' : 'llama3.2:3b');
+const judgeModel = opts.get('judge-model') ?? model;
+const budgetUsd = Number(opts.get('max-usd') ?? '0.75');
+if (!Number.isFinite(budgetUsd) || budgetUsd <= 0 || budgetUsd > 10) throw new Error('max-usd must be between 0 and 10');
+let spentUsd = 0;
 const maxSessions = Number(opts.get('sessions') ?? 2);
 const charsPerSession = Number(opts.get('session-chars') ?? 500);
-const arms = ['mind', 'bm25', 'no-memory'];
+const arms = (opts.get('arms') ?? 'mind,bm25,no-memory').split(',').map(s => s.trim()).filter(Boolean);
+const allowedArms = new Set(['mind', 'mindRagOff', 'mindRagOn', 'bm25', 'no-memory']);
+if (!arms.length || new Set(arms).size !== arms.length || arms.some(arm => !allowedArms.has(arm))) {
+  throw new Error('Invalid or duplicate arm in --arms');
+}
 const dataset = await Bun.file(input).json();
 const retrieval = await Bun.file(retrievalPath).json();
 const byId = new Map(dataset.map((item) => [item.question_id, item]));
@@ -40,8 +48,9 @@ const result = {
   protocol: 'LongMemEval-S cleaned QA, forced retrieval, session-level memory (NOT autonomous write/use)',
   datasetSha256: retrieval.datasetSha256,
   selection: { count: items.length, offset },
-  answerer: { provider, model, temperature: 0 },
-  judge: { provider, model, temperature: 0, criterion: 'official task-specific LongMemEval yes/no rubrics' },
+  answerer: { provider, model, temperature: 0, reasoning: provider === 'openrouter' ? 'low' : null },
+  judge: { provider, model: judgeModel, temperature: 0, reasoning: provider === 'openrouter' ? 'low' : null, criterion: 'LongMemEval task-specific yes/no rubrics' },
+  budget: { maxUsd: budgetUsd, spentUsd: 0, scope: 'reader+judge only; embedding costs are separate' },
   context: { maxSessions, charsPerSession, turnSelection: 'query-term overlap, identical for both retrieved arms' },
   cases: [],
 };
@@ -98,14 +107,15 @@ async function opencodeCompletion(messages) {
   }
 }
 
-async function chat(messages, maxTokens) {
+async function chat(messages, maxTokens, role = 'answerer') {
   if (provider === 'opencode') return opencodeCompletion(messages);
   const endpoint = provider === 'ollama'
     ? 'http://127.0.0.1:11434/api/chat'
     : 'https://openrouter.ai/api/v1/chat/completions';
+  const requestModel = role === 'judge' ? judgeModel : model;
   const payload = provider === 'ollama'
-    ? { model, messages, stream: false, options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: maxTokens } }
-    : { model, messages, temperature: 0, max_tokens: maxTokens };
+    ? { model: requestModel, messages, stream: false, options: { temperature: 0, seed: 42, num_ctx: 8192, num_predict: maxTokens } }
+    : { model: requestModel, messages, temperature: 0, reasoning: { effort: 'low' }, max_tokens: maxTokens };
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 180000);
@@ -131,7 +141,25 @@ async function chat(messages, maxTokens) {
       const answer = provider === 'ollama'
         ? parsed.message?.content
         : parsed.choices?.[0]?.message?.content;
-      if (typeof answer !== 'string') throw new Error('Empty/nontext completion');
+      if (typeof answer !== 'string' || !answer.trim()) throw new Error('Empty/nontext completion');
+      if (provider === 'openrouter') {
+        const usage = parsed.usage;
+        if (!usage) throw new Error('OpenRouter usage missing; cannot enforce budget');
+        const reported = Number(usage.cost);
+        const inputTokens = Number(usage.prompt_tokens);
+        const outputTokens = Number(usage.completion_tokens);
+        // Conservative fallback when usage.cost is absent. Prices are $/M and
+        // this estimate is not a hard provider-side spending limit.
+        const cost = Number.isFinite(reported) && reported >= 0
+          ? reported
+          : Number.isFinite(inputTokens) && Number.isFinite(outputTokens)
+            ? (inputTokens * 0.15 + outputTokens * 0.60) / 1_000_000
+            : NaN;
+        if (!Number.isFinite(cost)) throw new Error('Missing OpenRouter cost and token usage');
+        spentUsd += cost;
+        result.budget.spentUsd = spentUsd;
+        if (spentUsd > budgetUsd) throw new Error('Soft OpenRouter QA budget exceeded (' + budgetUsd + ' USD)');
+      }
       return { text: answer.trim(), usage: parsed.usage ?? null };
     } finally {
       clearTimeout(timeout);
@@ -195,6 +223,7 @@ function accuracy(arm, filter = () => true) {
   return { judged: judged.length, correct: judged.filter((x) => x.correct).length, accuracy: judged.length ? judged.filter((x) => x.correct).length / judged.length : null };
 }
 function flush() {
+  result.budget.spentUsd = spentUsd;
   result.scores = Object.fromEntries(arms.map((arm) => [arm, accuracy(arm)]));
   result.categories = Object.fromEntries([...new Set(result.cases.map((x) => x.type))].sort().map((category) => [
     category,
@@ -220,8 +249,8 @@ for (const [index, row] of items.entries()) {
     console.log('QA_CALL ' + row.id + ' arm=' + arm + ' contextChars=' + context.length);
     const began = performance.now();
     try {
-      const predicted = await chat(answerPrompt(example, context), 160);
-      const verdict = await chat([{ role: 'user', content: judgePrompt(example, predicted.text) }], 12);
+      const predicted = await chat(answerPrompt(example, context), provider === 'openrouter' ? 512 : 160, 'answerer');
+      const verdict = await chat([{ role: 'user', content: judgePrompt(example, predicted.text) }], provider === 'openrouter' ? 192 : 12, 'judge');
       const label = /^(yes)\b/i.test(verdict.text.trim());
       const rejected = /^(no)\b/i.test(verdict.text.trim());
       entry[arm] = {
@@ -238,6 +267,7 @@ for (const [index, row] of items.entries()) {
       flush();
       throw error;
     }
+    if (entry[arm].correct === null) throw new Error('Unrecognized judge verdict for ' + row.id + ' arm ' + arm);
     flush();
   }
   console.log('QA_PROGRESS ' + (index + 1) + '/' + items.length
@@ -246,5 +276,5 @@ for (const [index, row] of items.entries()) {
 flush();
 console.log('QA_RESULT ' + JSON.stringify({
   count: result.cases.length,
-  model, provider, scores: result.scores, categories: result.categories,
+  model, judgeModel, provider, budget: result.budget, scores: result.scores, categories: result.categories,
 }));
