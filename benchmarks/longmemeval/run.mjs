@@ -115,7 +115,7 @@ try {
     }
 
     try {
-      store.createSpace('longmemeval', 'LongMemEval session memories');
+      store.createSpace('longmemeval', 'LongMemEval session memories', ['benchmark']);
       const keyToGold = new Map();
       const startIngest = performance.now();
       for (let i = 0; i < sessions.length; i += 1) {
