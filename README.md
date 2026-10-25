@@ -51,18 +51,18 @@ The preview shows Mind's web app for inspecting and maintaining saved memories.
 Mind was evaluated with its production SQLite search, **without embeddings**
 and with up to 20 session memories per question.
 
-| Memory system | Answer accuracy | Questions | Context tokens / question |
-| --- | ---: | ---: | ---: |
-| MemOS | 89.20% | 500 | 4,151 |
-| LCM-X | 87.00% | 500 | 5,164 |
-| **Mind (pilot, RAG off)** | **81.67%** | **120** | **50,882** |
-| EverOS | 80.40% | 500 | 12,379 |
-| Zep / Graphiti | 79.80% | 500 | 117,106 |
-| mem9 | 78.00% | 500 | 3,805 |
-| Letta | 77.67% | 500 | 49,431 |
-| Hindsight | 72.20% | 500 | 29,755 |
-| Supermemory | 66.07% | 500 | 6,635 |
-| Mem0 | 56.00% | 500 | 856 |
+| Memory system             | Answer accuracy | Questions | Context tokens / question |
+| ------------------------- | --------------: | --------: | ------------------------: |
+| MemOS                     |          89.20% |       500 |                     4,151 |
+| LCM-X                     |          87.00% |       500 |                     5,164 |
+| **Mind (pilot, RAG off)** |      **81.67%** |   **120** |                **50,882** |
+| EverOS                    |          80.40% |       500 |                    12,379 |
+| Zep / Graphiti            |          79.80% |       500 |                   117,106 |
+| mem9                      |          78.00% |       500 |                     3,805 |
+| Letta                     |          77.67% |       500 |                    49,431 |
+| Hindsight                 |          72.20% |       500 |                    29,755 |
+| Supermemory               |          66.07% |       500 |                     6,635 |
+| Mem0                      |          56.00% |       500 |                       856 |
 
 **How to read this:** Mind answered **98/120** questions correctly (20 selected
 from each of the six categories). Other rows are
