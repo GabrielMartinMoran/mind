@@ -48,9 +48,9 @@ async function opencodeCompletion(messages) {
   mkdirSync(dir, { recursive: true });
   // OpenCode CLI must be the caller: free-tier chat API cannot be used by other clients.
   const prompt = messages.map((msg) => msg.role.toUpperCase() + ':\n' + msg.content).join('\n\n') + '\n\nASSISTANT:';
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), 150000);
+    const deadline = setTimeout(() => controller.abort(), 60000);
     try {
       const proc = Bun.spawn([
         'opencode', 'run', '--model', model, '--format', 'json',
@@ -61,6 +61,7 @@ async function opencodeCompletion(messages) {
         stdout: 'pipe',
         stderr: 'pipe',
         signal: controller.signal,
+        stdin: 'ignore',
         env: { ...process.env, OPENCODE_DISABLE_FREE_MODELS: '0' },
       });
       const [stdout, stderr, exitCode] = await Promise.all([
@@ -85,7 +86,7 @@ async function opencodeCompletion(messages) {
       if (!text) throw new Error('OpenCode returned no text: ' + stdout.slice(-300));
       return { text, usage: null };
     } catch (error) {
-      if (attempt === 2) throw error;
+      if (attempt === 1) throw error;
       console.warn('OPENCODE_RETRY ' + (attempt + 1) + ': ' + String(error).slice(0, 300));
       await sleep(2500 * (attempt + 1));
     } finally {
