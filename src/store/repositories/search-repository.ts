@@ -728,9 +728,8 @@ export function createSearchRepository(
     // Lexical rungs: phrase → all → any.
     for (const rung of rungs) {
       const channelStart = diagnostics ? performance.now() : 0;
-      const match = broadRecall && rung.method === 'any'
-        ? buildInformativeAnyMatch(queryTokens)
-        : rung.match;
+      const match =
+        broadRecall && rung.method === 'any' ? buildInformativeAnyMatch(queryTokens) : rung.match;
       let rows = runMatchQuery(match, filter);
       if (rung.method === 'any' && enforceCoverage) {
         rows = rows.filter(

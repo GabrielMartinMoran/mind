@@ -1,17 +1,34 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { buildInformativeAnyMatch, informativeSearchTokens, isNaturalLanguageRecall } from '../src/store/shared/natural-search';
+import {
+  buildInformativeAnyMatch,
+  informativeSearchTokens,
+  isNaturalLanguageRecall,
+} from '../src/store/shared/natural-search';
 import { parseQuery } from '../src/store/shared/query-parser';
 import { createTestStore } from './mocks/test-store';
 
 describe('natural search terms', () => {
   test('ignores function words without losing domain words or identifiers', () => {
-    expect(informativeSearchTokens(['de', 'el', 'para', 'la', 'cloudflare', 'ip', '2026'])).toEqual(['cloudflare', 'ip', '2026']);
-    expect(informativeSearchTokens(['what', 'is', 'the', 'issue', 'with', 'jwt'])).toEqual(['issue', 'jwt']);
+    expect(informativeSearchTokens(['de', 'el', 'para', 'la', 'cloudflare', 'ip', '2026'])).toEqual(
+      ['cloudflare', 'ip', '2026']
+    );
+    expect(informativeSearchTokens(['what', 'is', 'the', 'issue', 'with', 'jwt'])).toEqual([
+      'issue',
+      'jwt',
+    ]);
   });
   test('does not broaden explicit syntax or short keyword queries', () => {
     expect(isNaturalLanguageRecall(parseQuery('what changed about cloudflare?'))).toBe(true);
-    for (const query of ['auth token', 'auth AND token details', 'auth OR token details', 'auth NOT token details', '"the project" last week', 'auth* token details', 'OR OR auth NOT']) {
+    for (const query of [
+      'auth token',
+      'auth AND token details',
+      'auth OR token details',
+      'auth NOT token details',
+      '"the project" last week',
+      'auth* token details',
+      'OR OR auth NOT',
+    ]) {
       expect(isNaturalLanguageRecall(parseQuery(query))).toBe(false);
     }
   });
@@ -23,7 +40,10 @@ describe('natural search terms', () => {
 
 describe('natural recall admission (store integration)', () => {
   let store: ReturnType<typeof createTestStore> | null = null;
-  afterEach(() => { store?.cleanup(); store = null; });
+  afterEach(() => {
+    store?.cleanup();
+    store = null;
+  });
 
   test('retains partial evidence even alongside a perfect match', async () => {
     store = createTestStore();
@@ -32,7 +52,11 @@ describe('natural recall admission (store integration)', () => {
     await store.addMemory('example', 'partial', 'cloudflare routing');
     await store.addMemory('example', 'other', 'latency over the office network');
     await store.addMemory('example', 'noise', 'the and for de la para');
-    const results = await store.search('What cloudflare tunnel latency investigation?', { space: 'example', semantic: false, limit: 20 });
+    const results = await store.search('What cloudflare tunnel latency investigation?', {
+      space: 'example',
+      semantic: false,
+      limit: 20,
+    });
     const names = results.map(result => result.name);
     expect(names).toContain('complete');
     expect(names).toContain('partial');
@@ -56,7 +80,10 @@ describe('natural recall admission (store integration)', () => {
     store.createSpace('example', 'Example', ['test']);
     await store.addMemory('example', 'noise', 'de el para la the for and');
     await store.addMemory('example', 'signal', 'cloudflare router');
-    const results = await store.search('Cuál es el router de cloudflare?', { space: 'example', semantic: false });
+    const results = await store.search('Cuál es el router de cloudflare?', {
+      space: 'example',
+      semantic: false,
+    });
     expect(results.map(row => row.name)).toEqual(['signal']);
   });
 });
