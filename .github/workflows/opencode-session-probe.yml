@@ -1,0 +1,70 @@
+name: OpenCode Session API QA probe
+on:
+  push:
+    branches: [benchmark/longmemeval-20261025]
+    paths: [.github/workflows/opencode-session-probe.yml]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - run: npm i -g opencode-ai@latest
+      - name: Start isolated server
+        run: |
+          mkdir -p /tmp/mind-qa
+          cd /tmp/mind-qa
+          cat > opencode.json <<'JSON'
+          {
+            "model": "opencode/deepseek-v4.1-flash-free",
+            "tools": {"bash": false, "read": false, "write": false, "edit": false, "glob": false, "grep": false, "list": false, "task": false, "webfetch": false, "websearch": false, "skill": false, "question": false, "todowrite": false},
+            "permission": {"*": "deny"},
+            "agent": {"qa": {"mode": "primary", "description": "Factual QA without tools", "prompt": "Answer questions only using conversation history supplied in the message. Do not use tools, files or system actions. Respond with a short direct answer or UNKNOWN when absent.", "steps": 1, "tools": {"bash": false, "read": false, "write": false, "edit": false, "glob": false, "grep": false, "list": false, "task": false, "webfetch": false, "websearch": false, "skill": false, "question": false}}}
+          }
+          JSON
+          opencode serve --port 4197 --hostname 127.0.0.1 >/tmp/oc-server.out 2>/tmp/oc-server.err &
+          echo $! >/tmp/oc-server.pid
+          for x in $(seq 1 35); do if curl -fsS http://127.0.0.1:4197/global/health > /tmp/oc-health; then break; fi; sleep 1; done
+          cat /tmp/oc-health
+      - name: Session POST with no tools
+        run: |
+          cat > /tmp/qa-probe.mjs <<'EOF'
+          const root='http://127.0.0.1:4197';
+          async function req(route, payload, wait=60000) {
+            const c=new AbortController();
+            const t=setTimeout(()=>c.abort(),wait);
+            try {
+              const res=await fetch(root+route, {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload),signal:c.signal});
+              const raw=await res.text();
+              if (!res.ok) throw Error('HTTP '+res.status+' '+raw.slice(0,600));
+              return JSON.parse(raw);
+            }finally{clearTimeout(t)}
+          }
+          const tests=[
+           'Conversation history: Alex enjoys walking in Porto and his favorite number is 42. Question: What is Alex favorite number?',
+           'Conversation history: Person A: I grew up near Cedar River. Person B: What city is that? Person A: I live in Lisbon. Question: Where does Person A live?',
+           'Conversation history: A friend likes the color turquoise. User: My friend also enjoys mountain hiking and is thinking about a future vacation. Question: Which color does the friend like?'
+          ];
+          for(let i=0;i<tests.length;i++) {
+            const session=await req('/session',{title:'Benchmark direct QA '+i});
+            console.log('SESSION',i,session.id);
+            const payload={model:{providerID:'opencode',modelID:'deepseek-v4.1-flash-free'},agent:'qa',system:'Answer directly using ONLY the provided text. NEVER use tools.',tools:{bash:false,read:false,write:false,edit:false,glob:false,grep:false,list:false,task:false,webfetch:false,websearch:false,skill:false,question:false,todowrite:false},parts:[{type:'text',text:tests[i]}]};
+            const started=Date.now();
+            try{
+              const result=await req('/session/'+session.id+'/message',payload,40000);
+              const parts=result.parts??[];
+              console.log('RESULT',i,Date.now()-started,JSON.stringify({error:result.info?.error,finish:result.info?.finish,partTypes:parts.map(p=>p.type),text:parts.filter(p=>p.type==='text').map(p=>p.text).join('\n').slice(0,600),toolCount:parts.filter(p=>p.type==='tool').length}));
+            }catch(e) {
+              console.log('FAIL',i,Date.now()-started,String(e));
+              const messages=await fetch(root+'/session/'+session.id+'/message').then(r=>r.json());
+              console.log('MESSAGES',JSON.stringify(messages).slice(0,1600));
+            }
+          }
+          EOF
+          node /tmp/qa-probe.mjs
+      - name: Show server failures
+        if: always()
+        run: |
+          tail -c 3000 /tmp/oc-server.err || true
