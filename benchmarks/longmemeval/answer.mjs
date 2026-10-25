@@ -19,17 +19,19 @@ const opts = new Map(process.argv.slice(2).map((arg) => {
 const input = opts.get('input') ?? '/tmp/longmemeval_s_cleaned.json';
 const retrievalPath = opts.get('retrieval') ?? 'benchmarks/longmemeval/retrieval.json';
 const output = opts.get('output') ?? 'benchmarks/longmemeval/qa.json';
-const provider = opts.get('provider') ?? (process.env.OPENROUTER_API_KEY ? 'openrouter' : 'ollama');
-const model = opts.get('model') ?? (provider === 'openrouter' ? 'deepseek/deepseek-v4.1-flash' : 'llama3.2:3b');
+const provider = opts.get('provider') ?? 'opencode';
+const model = opts.get('model') ?? (provider === 'opencode' ? 'opencode/deepseek-v4.1-flash-free' : provider === 'openrouter' ? 'deepseek/deepseek-v4.1-flash' : 'llama3.2:3b');
 const maxSessions = Number(opts.get('sessions') ?? 5);
 const charsPerSession = Number(opts.get('session-chars') ?? 2800);
 const arms = ['mind', 'bm25', 'no-memory'];
 const dataset = await Bun.file(input).json();
 const retrieval = await Bun.file(retrievalPath).json();
 const byId = new Map(dataset.map((item) => [item.question_id, item]));
-const items = retrieval.perQuestion;
+const count = Number(opts.get('count') ?? 12);
+if (!Number.isInteger(count) || count < 1 || count > 500) throw new Error('Invalid count');
+const items = retrieval.perQuestion.slice(0, count);
 if (!items?.length) throw new Error('Retrieval results missing.');
-if (!['ollama', 'openrouter'].includes(provider)) throw new Error('Unsupported provider: ' + provider);
+if (!['ollama', 'openrouter', 'opencode'].includes(provider)) throw new Error('Unsupported provider: ' + provider);
 if (provider === 'openrouter' && !process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is absent');
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const result = {
@@ -41,7 +43,59 @@ const result = {
   cases: [],
 };
 
+async function opencodeCompletion(messages) {
+  const dir = '/tmp/mind-longmemeval-opencode';
+  mkdirSync(dir, { recursive: true });
+  // OpenCode CLI must be the caller: free-tier chat API cannot be used by other clients.
+  const prompt = messages.map((msg) => msg.role.toUpperCase() + ':\n' + msg.content).join('\n\n') + '\n\nASSISTANT:';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const controller = new AbortController();
+    const deadline = setTimeout(() => controller.abort(), 150000);
+    try {
+      const proc = Bun.spawn([
+        'opencode', 'run', '--model', model, '--format', 'json',
+        '--title', 'LongMemEval QA ' + String(Date.now()),
+        prompt,
+      ], {
+        cwd: dir,
+        stdout: 'pipe',
+        stderr: 'pipe',
+        signal: controller.signal,
+        env: { ...process.env, OPENCODE_DISABLE_FREE_MODELS: '0' },
+      });
+      const [stdout, stderr, exitCode] = await Promise.all([
+        new Response(proc.stdout).text(),
+        new Response(proc.stderr).text(),
+        proc.exited,
+      ]);
+      if (exitCode !== 0) throw new Error('OpenCode exit ' + exitCode + ': ' + stderr.slice(0, 500));
+      const parts = [];
+      const failures = [];
+      for (const line of stdout.split('\n').filter(Boolean)) {
+        try {
+          const item = JSON.parse(line);
+          if (item.type === 'text' && typeof item.part?.text === 'string') {
+            parts.push(item.part.text);
+          }
+          if (item.type === 'error') failures.push(JSON.stringify(item).slice(0, 400));
+        } catch {}
+      }
+      if (failures.length) throw new Error('OpenCode model error: ' + failures.join('; '));
+      const text = parts.join('\n').trim();
+      if (!text) throw new Error('OpenCode returned no text: ' + stdout.slice(-300));
+      return { text, usage: null };
+    } catch (error) {
+      if (attempt === 2) throw error;
+      console.warn('OPENCODE_RETRY ' + (attempt + 1) + ': ' + String(error).slice(0, 300));
+      await sleep(2500 * (attempt + 1));
+    } finally {
+      clearTimeout(deadline);
+    }
+  }
+}
+
 async function chat(messages, maxTokens) {
+  if (provider === 'opencode') return opencodeCompletion(messages);
   const endpoint = provider === 'ollama'
     ? 'http://127.0.0.1:11434/api/chat'
     : 'https://openrouter.ai/api/v1/chat/completions';
