@@ -20,8 +20,8 @@ jobs:
           {
             "model": "opencode/deepseek-v4.1-flash-free",
             "tools": {"bash": false, "read": false, "write": false, "edit": false, "glob": false, "grep": false, "list": false, "task": false, "webfetch": false, "websearch": false, "skill": false, "question": false, "todowrite": false},
-            "permission": {"*": "deny"},
-            "agent": {"qa": {"mode": "primary", "description": "Factual QA without tools", "prompt": "Answer questions only using conversation history supplied in the message. Do not use tools, files or system actions. Respond with a short direct answer or UNKNOWN when absent.", "steps": 1, "tools": {"bash": false, "read": false, "write": false, "edit": false, "glob": false, "grep": false, "list": false, "task": false, "webfetch": false, "websearch": false, "skill": false, "question": false}}}
+            "permission": {"bash": "deny", "read": "deny", "edit": "deny", "webfetch": "deny", "websearch": "deny"},
+            "agent": {"qa": {"mode": "primary", "description": "Factual QA without tools", "prompt": "Answer questions only using conversation history supplied in the message. Do not use tools, files or system actions. Respond with a short direct answer or UNKNOWN when absent.", "tools": {"bash": false, "read": false, "write": false, "edit": false, "glob": false, "grep": false, "list": false, "task": false, "webfetch": false, "websearch": false, "skill": false, "question": false}}}
           }
           JSON
           opencode serve --port 4197 --hostname 127.0.0.1 >/tmp/oc-server.out 2>/tmp/oc-server.err &
@@ -43,17 +43,18 @@ jobs:
             }finally{clearTimeout(t)}
           }
           const tests=[
-           'Conversation history: Alex enjoys walking in Porto and his favorite number is 42. Question: What is Alex favorite number?',
-           'Conversation history: Person A: I grew up near Cedar River. Person B: What city is that? Person A: I live in Lisbon. Question: Where does Person A live?',
-           'Conversation history: A friend likes the color turquoise. User: My friend also enjoys mountain hiking and is thinking about a future vacation. Question: Which color does the friend like?'
+           {model:'deepseek-v4.1-flash-free', text:'Answer with exactly: BENCHMARK_READY'},
+           {model:'glm-5.3-flash-free', text:'Conversation history: Alex favorite number is 42. What number is his favorite?'},
+           {model:'big-pickle', text:'Conversation history: Alex favorite number is 42. What number is his favorite?'},
+           {model:'mimo-v2.6-flash-free', text:'Conversation history: Alex favorite number is 42. What number is his favorite?'}
           ];
           for(let i=0;i<tests.length;i++) {
             const session=await req('/session',{title:'Benchmark direct QA '+i});
-            console.log('SESSION',i,session.id);
-            const payload={model:{providerID:'opencode',modelID:'deepseek-v4.1-flash-free'},agent:'qa',system:'Answer directly using ONLY the provided text. NEVER use tools.',tools:{bash:false,read:false,write:false,edit:false,glob:false,grep:false,list:false,task:false,webfetch:false,websearch:false,skill:false,question:false,todowrite:false},parts:[{type:'text',text:tests[i]}]};
+            console.log('SESSION',i,tests[i].model,session.id);
+            const payload={model:{providerID:'opencode',modelID:tests[i].model},agent:'qa',system:'Answer directly using ONLY the provided text. NEVER use tools.',tools:{bash:false,read:false,write:false,edit:false,glob:false,grep:false,list:false,task:false,webfetch:false,websearch:false,skill:false,question:false,todowrite:false},parts:[{type:'text',text:tests[i].text}]};
             const started=Date.now();
             try{
-              const result=await req('/session/'+session.id+'/message',payload,40000);
+              const result=await req('/session/'+session.id+'/message',payload,23000);
               const parts=result.parts??[];
               console.log('RESULT',i,Date.now()-started,JSON.stringify({error:result.info?.error,finish:result.info?.finish,partTypes:parts.map(p=>p.type),text:parts.filter(p=>p.type==='text').map(p=>p.text).join('\n').slice(0,600),toolCount:parts.filter(p=>p.type==='tool').length}));
             }catch(e) {
