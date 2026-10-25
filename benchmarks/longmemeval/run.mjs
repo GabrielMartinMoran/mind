@@ -195,7 +195,7 @@ const byCategory = Object.fromEntries(
 const report = {
   benchmark: 'LongMemEval-S cleaned (2025-09)',
   protocol: 'per-question isolated corpus; one memory per entire session; direct evidence session-id matching; lexical RAG OFF',
-  datasetSha256: digest(await Bun.file(input).arrayBuffer()),
+  datasetSha256: digest(Buffer.from(await Bun.file(input).arrayBuffer())),
   count: records.length,
   answerableCount: answerable.length,
   abstentionCount: records.length - answerable.length,
