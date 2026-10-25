@@ -1,4 +1,4 @@
-name: LongMemEval OpenRouter RAG A/B (pilot)
+name: LongMemEval OpenRouter RAG A/B (12-question pilot)
 
 on:
   push:
@@ -69,7 +69,7 @@ jobs:
           bun benchmarks/longmemeval/run.mjs \
             --rag=both \
             --input=/tmp/longmemeval_s_cleaned.json \
-            --count=${{ inputs.count || '3' }} \
+            --count=${{ inputs.count || '12' }} \
             --output=benchmarks/longmemeval/openrouter-retrieval.json
       - name: Run paired QA with DeepSeek Flash and independent mini judge
         run: |
