@@ -1,12 +1,6 @@
-name: LongMemEval-S QA DeepSeek Flash Free
+name: LongMemEval-S QA DeepSeek Flash Free (experimental)
 
 on:
-  push:
-    branches:
-      - benchmark/longmemeval-20261025
-    paths:
-      - benchmarks/longmemeval/answer.mjs
-      - .github/workflows/opencode-qa.yml
   workflow_dispatch:
     inputs:
       count:
