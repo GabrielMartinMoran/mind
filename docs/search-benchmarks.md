@@ -12,16 +12,12 @@ Las herramientas viven en el repositorio (`scripts/bench-search.ts`,
 metodología **no depende de artefactos efímeros**: los dumps crudos van a `/tmp`, pero los
 scripts y los artefactos agregados están commiteados.
 
-## Comparación LongMemEval-S
+## Evaluación externa de memoria
 
-El workflow `longmemeval.yml` recupera hasta 20 sesiones por pregunta contra una
-base SQLite idéntica para Mind y FTS5/BM25. Se miden `hit@20`,
-`allEvidence@20`, `evidenceRecall@20` y `MRR@20`, sin usar el modelo lector.
-La preparación de la pregunta difiere por motor: el baseline elimina stopwords
-inglesas y usa OR, mientras Mind aplica la política de admisión y fusión del
-producto. Son estrategias de recuperación distintas; no son una prueba aislada
-de la calidad de BM25. El workflow publica el commit y la evidencia por pregunta
-en su artefacto JSON. Los resultados agregados anteriores siguen siendo históricos.
+La evaluación de respuestas de LongMemEval-S se realiza exclusivamente mediante
+[OmniMemEval](../benchmarks/omnimemeval/README.md), desde un workflow manual,
+fuera de CI. El harness de búsqueda local descrito en esta página sigue siendo
+independiente de esa evaluación externa.
 
 ## Política opt-in (fuera de CI)
 

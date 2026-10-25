@@ -50,6 +50,9 @@ frozen and is not current truth. The maintenance policy is in
 
 ## Benchmarks
 
+- [OmniMemEval / LongMemEval-S](../benchmarks/omnimemeval/README.md) —
+  external answer-quality benchmark, comparison provenance, and manual-only
+  GitHub Actions workflow (paid; not part of CI).
 - [Agent memory benchmark](../benchmarks/agent-memory/README.md) — documents the
   independent harness that measures whether Mind helps a real OpenCode agent.
 

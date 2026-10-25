@@ -44,6 +44,42 @@ The preview shows Mind's web app for inspecting and maintaining saved memories.
 - **Choose how to search.** Full-text search works out of the box; optional
   semantic search can be enabled with OpenAI or OpenRouter embeddings.
 
+## Benchmarks
+
+**81.67% answer accuracy** in a balanced 120-question pilot of
+[OmniMemEval LongMemEval-S](https://github.com/MemTensor/OmniMemEval).
+Mind was evaluated with its production SQLite search, **without embeddings**
+and with up to 20 session memories per question.
+
+| Memory system | Answer accuracy | Questions | Context tokens / question |
+| --- | ---: | ---: | ---: |
+| MemOS | 89.20% | 500 | 4,151 |
+| LCM-X | 87.00% | 500 | 5,164 |
+| **Mind (pilot, RAG off)** | **81.67%** | **120** | **50,882** |
+| EverOS | 80.40% | 500 | 12,379 |
+| Zep / Graphiti | 79.80% | 500 | 117,106 |
+| mem9 | 78.00% | 500 | 3,805 |
+| Letta | 77.67% | 500 | 49,431 |
+| Hindsight | 72.20% | 500 | 29,755 |
+| Supermemory | 66.07% | 500 | 6,635 |
+| Mem0 | 56.00% | 500 | 856 |
+
+**How to read this:** Mind answered **98/120** questions correctly (20 selected
+from each of the six categories). Other rows are
+[OmniMemEval's published 500-question results](https://github.com/MemTensor/OmniMemEval/blob/f7476c5502115542eca9971195bf8c5ca97b6256/docs/user_memory/results.md).
+Mind used GPT-4.1 mini to answer and GPT-4o mini to judge through OpenRouter;
+published runs may use different model revisions, providers, and deployments.
+**This is an indicative comparison, not an official leaderboard position.**
+Context tokens include the answer prompt and retrieved memories, so Mind's
+high context usage is an important optimization target.
+
+The attempted full 500-question Mind run **did not produce a valid score**:
+OpenRouter's US$10 key limit interrupted answer generation (78 failures).
+See the [120-question run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895)
+and [interrupted 500-question run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024).
+The benchmark is **manual only**, not part of CI:
+[setup, methodology, and how to run it](benchmarks/omnimemeval/README.md).
+
 ## What is Mind?
 
 Mind is a Bun + TypeScript project that provides a CLI, an MCP server, an HTTP

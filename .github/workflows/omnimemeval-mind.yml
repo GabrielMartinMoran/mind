@@ -1,18 +1,12 @@
-name: OmniMemEval Mind LongMemEval-S QA (pilot)
+name: OmniMemEval LongMemEval-S (manual)
 
 on:
-  push:
-    branches:
-      - benchmark/omnimemeval-20261025
-    paths:
-      - benchmarks/omnimemeval/**
-      - .github/workflows/omnimemeval-mind.yml
   workflow_dispatch:
     inputs:
       sample_size:
         description: Balanced questions (500 = complete official dataset)
         required: true
-        default: '500'
+        default: '120'
         type: choice
         options: ['60', '120', '500']
 
@@ -63,7 +57,7 @@ jobs:
         run: python data/longmemeval/prepare_longmemeval.py --variant s
       - name: Choose deterministic stratified questions
         working-directory: /tmp/omnimemeval
-        run: python "$GITHUB_WORKSPACE/benchmarks/omnimemeval/stratify.py" data/longmemeval/longmemeval_s_cleaned.json ${{ inputs.sample_size || '500' }}
+        run: python "$GITHUB_WORKSPACE/benchmarks/omnimemeval/stratify.py" data/longmemeval/longmemeval_s_cleaned.json ${{ inputs.sample_size || '120' }}
       - name: Run official QA and judge stages against Mind
         run: |
           umask 077
@@ -87,7 +81,7 @@ jobs:
           curl -fsS http://127.0.0.1:40315/health
           cd /tmp/omnimemeval
           bash scripts/run_lme_eval.sh --lib mind --env .env.mind --version stratified-${{ github.run_id }} \
-            --streaming 1 --start-idx 0 --end-idx $((${{ inputs.sample_size || '500' }} - 1)) \
+            --streaming 1 --start-idx 0 --end-idx $((${{ inputs.sample_size || '120' }} - 1)) \
             --top-k 20 --llm-workers 2 --num-runs 1 --allow-empty-search 1
       - name: Archive results (includes failures for diagnosis)
         if: always()

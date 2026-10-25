@@ -299,6 +299,17 @@ make release-simulate TYPE=patch
 
 Search benchmark methodology and reproducibility: [`docs/search-benchmarks.md`](docs/search-benchmarks.md).
 
+**OmniMemEval / LongMemEval-S** lives under `benchmarks/omnimemeval/`.
+The external 500-question answer-quality benchmark uses a pinned official
+harness with a thin Mind adapter and can **only** be started with
+`.github/workflows/omnimemeval-mind.yml` (`workflow_dispatch`).
+It is paid and must never run on push, pull request, or routine CI.
+The README reports the completed 120-question stratified pilot separately
+from competitors' 500-question published results; the 500-question Mind
+attempt was incomplete because of the OpenRouter key usage limit. Do not
+present this as an official rank. The separate agent-memory benchmark and
+search-relevance/latency harnesses are intentionally preserved.
+
 The **agent memory benchmark** (`benchmarks/agent-memory/`) is a separate,
 opt-in harness that compares OpenCode with and without Mind over a LoCoMo subset
 and agent scenarios; its README documents isolation, budget policy and how to

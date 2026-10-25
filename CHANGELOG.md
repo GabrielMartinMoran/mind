@@ -27,6 +27,15 @@ Example:
 
 ## [Unreleased]
 
+### Changed
+
+- Documented the OmniMemEval LongMemEval-S 120-question Mind pilot alongside published systems with explicit sample-size, context-token, and comparability limits.
+- Made the paid OmniMemEval workflow manual-only, with a 120-question default and optional 60- or 500-question runs.
+
+### Removed
+
+- Removed the superseded standalone LongMemEval retrieval/QA benchmark scripts and GitHub Actions workflows; preserved the agent-memory and local search benchmark harnesses.
+
 ### Fixed
 
 - Fixed punctuated natural-language questions (`?` or `¿`) losing partially matching memories whenever an exact match existed. Informative lexical matches now compete in the existing ranking, while common English/Spanish function words cannot seed a candidate; unpunctuated keyword searches and explicit operators retain their previous meaning.
