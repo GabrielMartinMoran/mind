@@ -22,7 +22,9 @@ describe('natural search terms', () => {
   test('does not broaden explicit syntax or short keyword queries', () => {
     expect(isNaturalLanguageRecall(parseQuery('what changed about cloudflare?'))).toBe(true);
     expect(isNaturalLanguageRecall(parseQuery('how did cloudflare change'))).toBe(false);
-    expect(isNaturalLanguageRecall(parseQuery('cómo migran las aves entre continentes'))).toBe(false);
+    expect(
+      isNaturalLanguageRecall(parseQuery('cómo migran las aves entre continentes'))
+    ).toBe(false);
     expect(isNaturalLanguageRecall(parseQuery('glossary glosario bilingue'))).toBe(false);
     for (const query of [
       'auth token',
