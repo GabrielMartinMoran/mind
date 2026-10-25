@@ -11,9 +11,10 @@ benchmark subject. The full session text is stored, not pre-extracted facts.
 Search requests top-20 with `MIND_RAG=false`. No model participates in ingestion.
 The index is erased between subjects through OmniMemEval's streaming mode.
 
-The current push workflow is a **20-question smoke/pilot**, not a 500-question
-leaderboard result. A full run can be requested using workflow_dispatch
-`end_idx=499` *after* the pilot and cost/accuracy behavior are verified.
+The initial smoke/pilot used the first 20 questions (all single-session-user),
+so 20/20 is not an overall score. Push runs use 120 deterministic, interleaved
+questions (20 per category). Select `sample_size=500` via workflow_dispatch
+for the official full 500-question benchmark; report smaller runs as pilots.
 
 Answer and judge models match the published model families
 (`openai/gpt-4.1-mini` and `openai/gpt-4o-mini`), but here run through
