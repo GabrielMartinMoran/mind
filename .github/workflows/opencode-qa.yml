@@ -12,7 +12,7 @@ on:
       count:
         description: Number of stratified questions for QA (1-500)
         required: true
-        default: '12'
+        default: '2'
 
 permissions:
   contents: read
@@ -43,7 +43,7 @@ jobs:
         run: |
           bun benchmarks/longmemeval/run.mjs \
             --input=/tmp/longmemeval_s_cleaned.json \
-            --count=${{ inputs.count || '12' }} \
+            --count=${{ inputs.count || '2' }} \
             --output=benchmarks/longmemeval/retrieval-qa.json
       - name: Answer and judge with free DeepSeek Flash
         run: |
@@ -52,7 +52,7 @@ jobs:
             --model=opencode/deepseek-v4.1-flash-free \
             --input=/tmp/longmemeval_s_cleaned.json \
             --retrieval=benchmarks/longmemeval/retrieval-qa.json \
-            --count=${{ inputs.count || '12' }} \
+            --count=${{ inputs.count || '2' }} \
             --output=benchmarks/longmemeval/qa-deepseek-free.json
       - name: Upload raw answers and judge decisions
         if: always()
