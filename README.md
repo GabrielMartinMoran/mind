@@ -52,6 +52,11 @@ FTS5 full-text search, metadata filters, tags, links, and a 3-tier memory
 model (T1 hot, T2 warm, T3 cold) to keep saved context useful over
 time.
 
+Natural-language questions with `?` or `¿` can retrieve complementary partial
+matches without letting common English or Spanish words dominate. Keyword,
+boolean, and quoted searches preserve their existing behavior; see the
+[search engine guide](docs/search-engine.md) for details.
+
 If you want semantic search, you can enable optional embeddings from OpenAI or
 OpenRouter. They are off by default.
 

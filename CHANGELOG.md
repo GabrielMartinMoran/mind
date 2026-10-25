@@ -29,7 +29,7 @@ Example:
 
 ### Fixed
 
-- Fixed natural-language searches losing partially matching memories whenever an exact match existed. Informative lexical matches now compete in the existing ranking, while common English/Spanish function words cannot seed a candidate and explicit search operators keep their previous meaning.
+- Fixed punctuated natural-language questions (`?` or `¿`) losing partially matching memories whenever an exact match existed. Informative lexical matches now compete in the existing ranking, while common English/Spanish function words cannot seed a candidate; unpunctuated keyword searches and explicit operators retain their previous meaning.
 
 ### Added
 

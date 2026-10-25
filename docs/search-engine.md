@@ -22,7 +22,12 @@ produce the same order.
    coverage; and an optional semantic channel for embedding neighbors. They run
    sequentially on one synchronous SQLite connection, so "fan-out" describes the
    candidate model, not concurrent execution.
-3. **Admit candidates.** For plain natural-language questions, common English and Spanish function words do not seed retrieval, and informative lexical matches reach fusion even alongside exact matches. Short keyword searches and explicit boolean, phrase, prefix or malformed queries retain the strict coverage ladder.
+3. **Admit candidates.** Plain questions containing `?` or `¿` use informative-term
+   recall: common English/Spanish function words cannot seed results, but
+   informative partial matches may rank alongside exact matches. This
+   intentionally conservative detection leaves unpunctuated keyword searches,
+   explicit boolean/phrase/prefix syntax, and malformed queries on the existing
+   strict coverage ladder.
    Semantic admission is independent for natural-language queries: a single
    group with no `NOT` and only plain terms may admit semantic-only candidates
    at cosine similarity 0.6 or higher. Explicit phrases, prefixes, and operators
