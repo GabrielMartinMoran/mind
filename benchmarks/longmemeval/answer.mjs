@@ -29,7 +29,9 @@ const retrieval = await Bun.file(retrievalPath).json();
 const byId = new Map(dataset.map((item) => [item.question_id, item]));
 const count = Number(opts.get('count') ?? 12);
 if (!Number.isInteger(count) || count < 1 || count > 500) throw new Error('Invalid count');
-const items = retrieval.perQuestion.slice(0, count);
+const offset = Number(opts.get('offset') ?? 0);
+if (!Number.isInteger(offset) || offset < 0 || offset >= 500) throw new Error('Invalid offset');
+const items = retrieval.perQuestion.slice(offset, offset + count);
 if (!items?.length) throw new Error('Retrieval results missing.');
 if (!['ollama', 'openrouter', 'opencode'].includes(provider)) throw new Error('Unsupported provider: ' + provider);
 if (provider === 'openrouter' && !process.env.OPENROUTER_API_KEY) throw new Error('OPENROUTER_API_KEY is absent');
@@ -37,6 +39,7 @@ const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const result = {
   protocol: 'LongMemEval-S cleaned QA, forced retrieval, session-level memory (NOT autonomous write/use)',
   datasetSha256: retrieval.datasetSha256,
+  selection: { count: items.length, offset },
   answerer: { provider, model, temperature: 0 },
   judge: { provider, model, temperature: 0, criterion: 'official task-specific LongMemEval yes/no rubrics' },
   context: { maxSessions, charsPerSession, turnSelection: 'query-term overlap, identical for both retrieved arms' },
