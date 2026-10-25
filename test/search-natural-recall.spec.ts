@@ -6,6 +6,7 @@ import {
   isNaturalLanguageRecall,
 } from '../src/store/shared/natural-search';
 import { parseQuery } from '../src/store/shared/query-parser';
+
 import { createTestStore } from './mocks/test-store';
 
 describe('natural search terms', () => {
