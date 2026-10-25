@@ -32,6 +32,7 @@ concurrency:
 
 jobs:
   qa:
+    environment: Develop
     runs-on: ubuntu-latest
     timeout-minutes: 150
     env:
@@ -44,7 +45,7 @@ jobs:
       - name: Check secret exists (never print its value)
         run: |
           if [ -z "$OPENROUTER_API_KEY" ]; then
-            echo "::error::Add OPENROUTER_API_KEY to Settings -> Secrets and variables -> Actions"
+            echo "::error::Add OPENROUTER_API_KEY as a secret in the Develop GitHub Environment"
             exit 1
           fi
           echo "OpenRouter credential available"
