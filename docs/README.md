@@ -59,6 +59,10 @@ frozen and is not current truth. The maintenance policy is in
 
 ## Releases
 
+- [v1.7.0 release notes](release-notes/v1.7.0.md) — search, agent setup,
+  continuity, and web experience improvements.
+- [v1.6.1 release notes](release-notes/v1.6.1.md) — OpenCode V1/V2 automation
+  compatibility and session identity fixes.
 - [v1.6.0 release notes](release-notes/v1.6.0.md) — memory discipline and search
   fixes.
 - [v1.5.1 release notes](release-notes/v1.5.1.md) — Neural Map UUID layout fix.
