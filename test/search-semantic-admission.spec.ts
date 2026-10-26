@@ -67,6 +67,8 @@ describe('semantic admission policy (unit)', () => {
 
   test('only a single plain-term group without excludes allows the bypass', () => {
     expect(canBypassLexicalAdmission(parseQuery('authentication token'))).toBe(true);
+    expect(canBypassLexicalAdmission(parseQuery('authentication and token'))).toBe(true);
+    expect(canBypassLexicalAdmission(parseQuery('authentication AND token'))).toBe(false);
     expect(canBypassLexicalAdmission(parseQuery('"authentication token"'))).toBe(false);
     expect(canBypassLexicalAdmission(parseQuery('authent*'))).toBe(false);
     expect(canBypassLexicalAdmission(parseQuery('authentication OR token'))).toBe(false);
@@ -95,6 +97,24 @@ describe('semantic admission (store integration)', () => {
     const admitted = results.find(result => result.name === 'session-recovery');
     expect(admitted).toBeDefined();
     expect(admitted!.methods).toContain('semantic');
+  });
+
+  test('lowercase and stays an ordinary term and keeps semantic admission', async () => {
+    store = seedStore();
+    await store.addMemory('test', 'auth-guide', 'authentication token rotation', {
+      tags: ['test'],
+    });
+    const paraphrase = await store.addMemory(
+      'test',
+      'session-recovery',
+      'renew signed credentials after expiry',
+      { tags: ['test'] }
+    );
+    enableRag([[paraphrase.id, 0.72]]);
+
+    const results = await store.search('authentication and token', { space: 'test' });
+
+    expect(results.map(result => result.name)).toContain('session-recovery');
   });
 
   test('respects space, tier, and tag filters for semantic candidates', async () => {
@@ -155,6 +175,7 @@ describe('semantic admission (store integration)', () => {
       'authentication token NOT legacy',
       '"authentication token"',
       'authentication OR token',
+      'authentication AND token',
       'authent*',
     ];
     for (const query of queries) {
@@ -284,6 +305,7 @@ describe('semantic admission (store integration)', () => {
     const queries = [
       '"authentication token"',
       'authentication OR token',
+      'authentication AND token',
       'authent*',
       'authentication token NOT legacy',
     ];

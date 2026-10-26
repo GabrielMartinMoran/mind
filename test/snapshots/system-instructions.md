@@ -56,7 +56,9 @@ when the results are weak or ambiguous.
 
 For explicit constraints, use structured syntax as an additional tool.
 `memory_query` supports quoted phrases, `OR`, `AND`, `NOT`, and a trailing `*`
-prefix.
+prefix. Only uppercase `AND`, `OR`, and `NOT` are boolean operators; lowercase
+forms are ordinary terms, and in a natural question common lowercase words may
+be removed by stopword filtering.
 
 ```json tool:memory_query
 {
@@ -65,6 +67,12 @@ prefix.
   "limit": 10
 }
 ```
+
+Omit `search` to list memories by metadata and recent changes instead of
+searching. A supplied search that leaves no informative term after stopword
+filtering, including an empty or stopword-only query, returns a validation
+error. Do not retry it unchanged; add a specific topic, name, identifier, or
+code term.
 
 Results include a `confidence` bucket (`high`, `medium`, `low`). Use it to judge
 a hit: `low` means the query and the memory barely agree, so refine the search

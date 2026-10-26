@@ -12,6 +12,13 @@ Las herramientas viven en el repositorio (`scripts/bench-search.ts`,
 metodología **no depende de artefactos efímeros**: los dumps crudos van a `/tmp`, pero los
 scripts y los artefactos agregados están commiteados.
 
+## Evaluación externa de memoria
+
+La evaluación de respuestas de LongMemEval-S se realiza exclusivamente mediante
+[OmniMemEval](../benchmarks/omnimemeval/README.md), desde un workflow manual,
+fuera de CI. El harness de búsqueda local descrito en esta página sigue siendo
+independiente de esa evaluación externa.
+
 ## Política opt-in (fuera de CI)
 
 Los benchmarks pesados **no** forman parte de `bun test` ni de CI. Se ejecutan con make

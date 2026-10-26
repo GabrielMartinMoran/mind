@@ -28,6 +28,15 @@ Feature: Mind skill is the single source of truth
       And it says to load it unconditionally before any Mind use
       And it names the system_instructions fallback when the skill is not listed or cannot be loaded
 
+    @contract
+    Scenario: The canonical RECALL guidance teaches search syntax and recovery
+      Given the canonical mind-cognitive-protocol body
+      When its RECALL section is read
+      Then it says only uppercase AND, OR, and NOT are boolean operators
+      And it says lowercase spellings are ordinary terms
+      And it says omitting search lists memories by metadata
+      And it says a supplied search with no informative term returns a validation error and must be reformulated with a specific term
+
   Rule: L2 and Codex AGENTS.md are pointers, not protocol copies
 
     @contract
@@ -65,7 +74,7 @@ Feature: Mind skill is the single source of truth
       Then it returns the complete canonical protocol once
       And its intro says it is the fallback copy used when the skill is unavailable
       And its intro says the skill is the primary source of truth
-      And its instructions_version is 2.1.0
+      And its instructions_version is 2.3.0
 
     @contract
     Scenario: One canonical protocol body remains the only full source

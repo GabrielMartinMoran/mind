@@ -135,4 +135,42 @@ describe('session summary migration', () => {
     expect(store.getMemory('sessions/mind', 'session-2026-04-23-11-00-00-legacy')).toBeNull();
     expect(store.getMemory('projects/mind', 'session-2026-04-23-11-00-00-legacy')).not.toBeNull();
   });
+
+  test('recovery falls back to recent memories when checkpoint context has no informative terms', async () => {
+    await store.addMemory('projects/mind', 'recent-note', 'Recent durable note', {
+      tags: ['cat:discovery'],
+    });
+    await store.addMemory(
+      'projects/mind',
+      'checkpoint-stopwords',
+      JSON.stringify({ goal: 'the and for', pending: 'de la', notes: '' }),
+      { tags: ['checkpoint', 'active'] }
+    );
+
+    const pack = await buildRecoveryPack(store, { space: 'projects/mind' });
+
+    expect(pack.checkpoint?.name).toBe('checkpoint-stopwords');
+    expect(pack.context_hits.map(hit => hit.ref)).toEqual(['projects/mind:recent-note']);
+  });
+
+  test('recovery does not swallow unrelated search errors', async () => {
+    await store.addMemory(
+      'projects/mind',
+      'checkpoint-strict',
+      JSON.stringify({ goal: 'cloudflare', pending: '', notes: '' }),
+      { tags: ['checkpoint', 'active'] }
+    );
+
+    const originalSearch = store.search;
+    store.search = async () => {
+      throw new Error('unexpected search failure');
+    };
+    try {
+      await expect(buildRecoveryPack(store, { space: 'projects/mind' })).rejects.toThrow(
+        'unexpected search failure'
+      );
+    } finally {
+      store.search = originalSearch;
+    }
+  });
 });

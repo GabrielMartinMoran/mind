@@ -90,7 +90,7 @@ export function queryMemoriesHandler(store: MindStore) {
     let totalCount: number;
     let search_method: string | undefined;
 
-    if (parsed.search) {
+    if (parsed.search !== undefined) {
       // Unified pipeline (D1): fused ranking with confidence/methods provenance.
       const results = await store.search(parsed.search, {
         space: spaceFilter,

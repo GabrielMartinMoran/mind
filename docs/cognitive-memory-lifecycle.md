@@ -385,8 +385,10 @@ easy to miss.
 
 Start with a natural, focused question; one query is usually enough. Refine only
 when the results are weak or ambiguous. For explicit constraints, `memory_query`
-with `search` also accepts quoted phrases, `OR`, `AND`, `NOT`, and a trailing
-`*` prefix. Results include a `confidence` bucket (`high`, `medium`, `low`) that
+with `search` also accepts structured syntax: quoted phrases, the uppercase
+`OR`/`AND`/`NOT` operators, and a trailing `*` prefix. The
+[search engine](search-engine.md) page documents the exact operator casing,
+supplied-query validation, and recovery. Results include a `confidence` bucket (`high`, `medium`, `low`) that
 tells you how strongly the query and the memory agree. Use it to decide whether
 to read a hit. `score`, `methods`, and `search_method` are diagnostic fields that
 appear only when the Mind MCP process sets

@@ -326,6 +326,24 @@ describe('canonical cognitive protocol source', () => {
     }
   });
 
+  test('the RECALL guidance names operator casing, omit-vs-search, and validation recovery', () => {
+    const body = readCanonicalBody();
+    const recall = sectionFor(body, 'RECALL').replace(/\s+/g, ' ');
+
+    for (const fragment of [
+      'Only uppercase `AND`, `OR`, and `NOT` are boolean operators',
+      'lowercase forms are ordinary terms',
+      'Omit `search` to list memories by metadata',
+      'no informative term after stopword filtering',
+      'add a specific topic, name, identifier, or code term',
+    ]) {
+      expect({ fragment, present: recall.includes(fragment) }).toEqual({
+        fragment,
+        present: true,
+      });
+    }
+  });
+
   test('the protocol teaches an on-demand temporal recall fallback', () => {
     const body = readCanonicalBody();
     const recall = sectionFor(body, 'RECALL').replace(/\s+/g, ' ');

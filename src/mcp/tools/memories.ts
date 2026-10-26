@@ -58,7 +58,7 @@ export function createMemoryTools(store: MindStore): MemoryTools {
     memory_query: {
       schema: MemoryQuerySchema,
       description:
-        'Query memories by metadata, date, or relevance search. search supports quoted phrases, OR/AND/NOT, and a trailing * prefix; results include a confidence bucket. Score, methods, and search_method appear only when USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE is exactly "true". Use space="*" for all spaces. Does not record access or promote tiers.',
+        'Query memories by metadata, date, or content relevance; omit `search` to list, and use quoted phrases, a trailing `*`, and uppercase `AND`/`OR`/`NOT` operators (lowercase forms are terms). A supplied search with no informative term after stopword filtering returns a validation error, so reformulate with a specific topic, name, identifier, or code term; score, methods, and search_method appear only when USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE is exactly "true", and space="*" searches all spaces without recording access.',
       annotations: { readOnlyHint: true, openWorldHint: false },
       handler: queryMemoriesHandler(store),
     },

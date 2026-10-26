@@ -1,5 +1,6 @@
 import { normalizeTag } from '../../helpers/tags';
 import type { SearchConfidence } from '../../store/shared/search-fusion';
+import { EmptySearchQueryError } from '../../store/shared/search-query-error';
 
 import { resolveTierFilter } from './query-filters';
 import type { RouteDefinition } from './types';
@@ -56,8 +57,10 @@ export const searchRoutes: RouteDefinition[] = [
     method: 'GET',
     match: exact('/api/search'),
     handle: async ({ url, store }) => {
+      // Absent q is "no text search" (200 + empty totals); an explicitly
+      // supplied q always enters the search pipeline, even when blank.
+      if (!url.searchParams.has('q')) return searchResponse([], 0, 0);
       const q = url.searchParams.get('q') ?? '';
-      if (!q) return searchResponse([], 0, 0);
 
       // Unified pipeline (D1/D6): default page 25, optional limit/offset.
       // `space=*` means all spaces; the response stays a flat array (additive
@@ -72,16 +75,23 @@ export const searchRoutes: RouteDefinition[] = [
       const limit = parsePositiveInt(url.searchParams.get('limit'), 25);
       const offset = parseNonNegativeInt(url.searchParams.get('offset'), 0);
 
-      const { results, total } = await store.searchPage(q, {
-        space,
-        tag,
-        ...tierFilter,
-        confidence,
-        semantic,
-        limit,
-        offset,
-      });
-      return searchResponse(results, total, offset);
+      try {
+        const { results, total } = await store.searchPage(q, {
+          space,
+          tag,
+          ...tierFilter,
+          confidence,
+          semantic,
+          limit,
+          offset,
+        });
+        return searchResponse(results, total, offset);
+      } catch (error) {
+        if (error instanceof EmptySearchQueryError) {
+          return Response.json({ error: error.message }, { status: 400 });
+        }
+        throw error;
+      }
     },
   },
 ];

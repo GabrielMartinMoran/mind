@@ -179,7 +179,7 @@ Feature: Skill-first distribution and lifecycle corrections
       Given the mind-management skill is unavailable
       When the agent calls system_instructions
       Then it receives the complete protocol
-      And the response version is 2.1.0
+      And the response version is 2.3.0
 
     @integration
     Scenario: The MCP handshake exposes activation instructions

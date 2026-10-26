@@ -25,7 +25,7 @@ Mind keeps a single token-free protocol body. Three render paths consume it:
 
 `system_instructions` remains the complete protocol and the explicit fallback
 when the skill is not listed or cannot be loaded. The response reports
-`instructions_version: "2.2.0"`.
+`instructions_version: "2.3.0"`.
 
 `src/cli/skill-activation.ts` owns the activation text and the skill load note.
 Changing the wording there updates setup and the MCP handshake together. No

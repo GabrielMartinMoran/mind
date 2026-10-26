@@ -14,6 +14,10 @@ import { createLinkTools } from '../src/mcp/tools/links';
 import { createMemoryTools } from '../src/mcp/tools/memories';
 import { createSpaceTools } from '../src/mcp/tools/spaces';
 import type { MindStore } from '../src/store/mind-store';
+import {
+  EmptySearchQueryError,
+  EMPTY_SEARCH_QUERY_MESSAGE,
+} from '../src/store/shared/search-query-error';
 
 import { createTestStore } from './mocks/test-store';
 
@@ -1074,6 +1078,85 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
     expect(res.memories[0]?.name).toBe('memory-1');
     // When no search is used, search_method should be undefined or not present
     expect(res.search_method).toBeUndefined();
+  });
+
+  test('omitted search stays a listing while present empty/stopword search errors', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind project', ['test']);
+    await store.addMemory('projects/mind', 'memory-1', 'the and for de la', { tags: ['test'] });
+
+    const tools = createMemoryTools(store);
+    const listed = await tools.memory_query.handler({ space: 'projects/mind' });
+    expect(listed.memories.length).toBe(1);
+
+    for (const search of ['', '   ', 'the and for de la', '"the and for"']) {
+      await expect(tools.memory_query.handler({ space: 'projects/mind', search })).rejects.toThrow(
+        EMPTY_SEARCH_QUERY_MESSAGE
+      );
+    }
+  });
+
+  test('memory_query search description documents uppercase-only operators and present-vs-omitted behavior', () => {
+    store = createTestStore();
+
+    const tools = createMemoryTools(store);
+    const schema = zodToJsonSchema(tools.memory_query.schema) as {
+      properties?: Record<string, { description?: string }>;
+    };
+    const description = schema.properties?.search?.description ?? '';
+
+    expect(description).toContain('Only uppercase AND, OR, NOT');
+    expect(description.toLowerCase()).toContain('lowercase');
+    expect(description).toContain('Omit to list memories by metadata');
+    expect(description).toContain('at least one informative term');
+    expect(description).toContain('validation error');
+    expect(description).toContain('add a specific topic');
+  });
+
+  test('memory_query tool description is action-oriented, concise, and consistent with its schema', () => {
+    store = createTestStore();
+
+    const tools = createMemoryTools(store);
+    const description = tools.memory_query.description ?? '';
+
+    expect(description).toContain('Query memories');
+    expect(description).toContain('omit `search` to list');
+    expect(description).toContain('uppercase `AND`/`OR`/`NOT`');
+    expect(description).toContain('validation error');
+    expect(description).not.toContain('See system_instructions');
+    expect(description.split(/(?<=[.!?])\s+/).filter(Boolean)).toHaveLength(2);
+  });
+
+  test('present empty search raises the typed validation error', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind project', ['test']);
+
+    const tools = createMemoryTools(store);
+    try {
+      await tools.memory_query.handler({ space: 'projects/mind', search: '' });
+      throw new Error('expected memory_query to reject an empty search');
+    } catch (error) {
+      expect(error).toBeInstanceOf(EmptySearchQueryError);
+      expect((error as EmptySearchQueryError).code).toBe('empty_search_query');
+    }
+  });
+
+  test('memory_query response includes search_method field when search is used', async () => {
+    process.env[EXPANDED_ENV] = 'true';
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind project', ['test']);
+    await store.addMemory('projects/mind', 'test-memory', 'hello world content', {
+      tags: ['test'],
+    });
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({
+      space: 'projects/mind',
+      search: 'hello',
+    });
+
+    expect(res).toHaveProperty('search_method');
+    expect(res.search_method).toBeDefined();
   });
 
   test('memory_query listing remains diagnostic-free even when the flag is true', async () => {

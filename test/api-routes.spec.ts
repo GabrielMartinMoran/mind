@@ -3,6 +3,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { matchApiRoute } from '../src/api/router';
 import { handleRequest } from '../src/api/server';
 import type { MindStore } from '../src/store/mind-store';
+import { EMPTY_SEARCH_QUERY_MESSAGE } from '../src/store/shared/search-query-error';
 
 import { createTestStore } from './mocks/test-store';
 
@@ -518,9 +519,38 @@ describe('API Routes — Search', () => {
 
     const response = await requestResponse('/api/search');
 
+    expect(response.status).toBe(200);
     expect(await response.json()).toEqual([]);
     expect(response.headers.get('X-Total-Count')).toBe('0');
     expect(response.headers.get('X-Has-More')).toBe('false');
+  });
+
+  test('returns 400 with the shared message for an explicit empty or stopword-only q', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'stopword-doc', 'the and for de la', { tags: ['test'] });
+
+    for (const path of [
+      '/api/search?q=&space=proj',
+      '/api/search?q=the+and+for+de+la&space=proj',
+      '/api/search?q=%22the+and+for%22&space=proj',
+    ]) {
+      const response = await requestResponse(path);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: EMPTY_SEARCH_QUERY_MESSAGE });
+    }
+  });
+
+  test('does not validate an absent q even when other filters are present', async () => {
+    store = createTestStore();
+    store.createSpace('proj', 'Project', ['test']);
+    await store.addMemory('proj', 'one', 'content', { tags: ['test'] });
+
+    const response = await requestResponse('/api/search?space=proj&tag=test');
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual([]);
+    expect(response.headers.get('X-Total-Count')).toBe('0');
   });
 
   test('parses and plumbs the semantic option without changing lexical order', async () => {

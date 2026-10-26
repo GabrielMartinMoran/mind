@@ -1,8 +1,10 @@
 import { describe, expect, test, afterEach } from 'bun:test';
 
 import { executeCommand } from '../src/cli/command-executor';
+import { searchGroup } from '../src/cli/commands/search';
 import { style } from '../src/helpers/style';
 import type { MindStore } from '../src/store/mind-store';
+import { EMPTY_SEARCH_QUERY_MESSAGE } from '../src/store/shared/search-query-error';
 
 import { mockedLogger } from './mocks/mocked-logger';
 import { createTestStore } from './mocks/test-store';
@@ -404,6 +406,28 @@ describe('Command Executor — Search', () => {
     await executeCommand(['search', 'authentication', '--space', 'proj-a'], store, logger);
     const logs = logger.getLogs();
     expect(logs.some(l => l.message.includes('proj-a'))).toBe(true);
+  });
+
+  test('should surface the shared validation error for an empty or stopword-only query', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'noise', 'the and for de la', { tags: ['test'] });
+
+    for (const query of ['', '   ', 'the and for']) {
+      await expect(executeCommand(['search', query], store, logger)).rejects.toThrow(
+        EMPTY_SEARCH_QUERY_MESSAGE
+      );
+    }
+  });
+
+  test('should document quoting, uppercase operators, and validation recovery in search help', () => {
+    const help = stripAnsi(searchGroup.helpEntries[0]!.getRendered());
+
+    expect(help).toContain('quote it when it contains multiple words');
+    expect(help).toContain('Only uppercase AND, OR, NOT are boolean operators');
+    expect(help).toContain('add a specific topic, name, identifier, or code term');
+    expect(help).toContain('list memories by metadata');
   });
 
   test('should query memories with metadata filters', async () => {

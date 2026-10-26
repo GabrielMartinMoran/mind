@@ -27,6 +27,20 @@ Example:
 
 ## [Unreleased]
 
+### Changed
+
+- Documented the OmniMemEval LongMemEval-S 120-question Mind pilot alongside published systems with explicit sample-size, context-token, and comparability limits.
+- Made the paid OmniMemEval workflow manual-only, with a 120-question default and optional 60- or 500-question runs.
+- Changed search operators to be case-sensitive: only uppercase `AND`, `OR`, and `NOT` are boolean syntax, while their lowercase forms are ordinary terms. In punctuated natural-language questions, lowercase `and`/`or` are removed by the stopword filter and lowercase `not` remains a term.
+- Changed punctuated natural-language recall to keep informative lexical candidates and let fusion rank complementary partial matches instead of discarding them; explicit uppercase `AND` stays strict and is excluded from semantic-only admission.
+- Changed a supplied search with no informative terms after stopword removal (including empty, whitespace-only, and quoted stopword-only input) to raise one typed validation error before any retrieval or embedding work. CLI prints the message, MCP returns a tool error, HTTP returns 400, checkpoint recovery keeps its recent-memory fallback, and the OmniMemEval bridge returns 400. Omitting the field still lists memories (MCP) or returns an empty 200 response (API).
+- Documented the current search contract—case-sensitive operators, supplied-query validation, admission, fusion, surface differences, and tests—in `docs/search-engine.md`, `README.md`, and `AGENTS.md`.
+- Clarified search guidance for agents across the canonical protocol, MCP `memory_query` tool and `search` field descriptions, and CLI help: only uppercase `AND`, `OR`, and `NOT` are boolean operators, omitting `search` lists memories by metadata, and a supplied stopword-only query returns a validation error that requires a more specific topic, name, identifier, or code term. Bumped `instructions_version` to `2.3.0` for the updated fallback.
+
+### Fixed
+
+- Fixed punctuated natural-language questions (`?` or `¿`) losing partially matching memories whenever an exact match existed. Informative lexical matches now compete in the existing ranking, while common English/Spanish function words cannot seed a candidate; unpunctuated keyword searches and explicit operators retain their previous meaning.
+
 ### Added
 
 - Added a default-off `--rag` switch to the agent-memory benchmark. When absent, every stage keeps `MIND_RAG=false` with no embedding-provider override; when passed, A1 ingest, the A1 search server, every A2 profile and every B scenario unit use `MIND_RAG=true` with the OpenRouter embedding provider, the run records `rag` in `meta.json`, and a post-ingest coverage gate aborts before A1 scoring if any ingested memory lacks an embedding.
@@ -83,6 +97,7 @@ Example:
 
 ### Changed
 
+- Expanded `docs/search-engine.md` into the end-to-end search reference: pipeline stages and entry points, query grammar, all eight `methods` values (with `token_set` documented as scoring-only), admission order, fusion and confidence, surface filters and pagination, RAG conditions, diagnostics, and known limits. Corrected `search_method` as an MCP-only top-result projection and clarified that embedding dimensions are not schema-enforced.
 - Changed MCP `memory_query(search)` to return compact results by default: `score`, `methods`, and the top-level `search_method` are omitted, while `confidence`, result order, `total`, `limit`, and `offset` are unchanged. Set `USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE=true` (exact value) in the Mind MCP process to restore the diagnostics; store, CLI, and HTTP results are unchanged. The canonical protocol and docs now guide agents with `confidence` instead of `methods`.
 - Changed bare `mind setup` to configure all supported agent integrations; moved the compatibility matrix to `mind setup compatibility` and kept `mind setup refresh` for detected integrations. A failing agent no longer aborts the run: its error is reported and the remaining agents still run, and the success summary is printed only when every agent succeeds.
 - Changed the cognitive protocol to use recent memory changes as an on-demand fallback for vague continuity or recent-work questions, with limits on scope, promotion, and claims of completeness; bumped `instructions_version` to `2.2.0` for the updated fallback.

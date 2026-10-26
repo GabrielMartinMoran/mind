@@ -44,6 +44,42 @@ The preview shows Mind's web app for inspecting and maintaining saved memories.
 - **Choose how to search.** Full-text search works out of the box; optional
   semantic search can be enabled with OpenAI or OpenRouter embeddings.
 
+## Benchmarks
+
+**81.67% answer accuracy** in a balanced 120-question pilot of
+[OmniMemEval LongMemEval-S](https://github.com/MemTensor/OmniMemEval).
+Mind was evaluated with its production SQLite search, **without embeddings**
+and with up to 20 session memories per question.
+
+| Memory system             | Answer accuracy | Questions | Context tokens / question |
+| ------------------------- | --------------: | --------: | ------------------------: |
+| MemOS                     |          89.20% |       500 |                     4,151 |
+| LCM-X                     |          87.00% |       500 |                     5,164 |
+| **Mind (pilot, RAG off)** |      **81.67%** |   **120** |                **50,882** |
+| EverOS                    |          80.40% |       500 |                    12,379 |
+| Zep / Graphiti            |          79.80% |       500 |                   117,106 |
+| mem9                      |          78.00% |       500 |                     3,805 |
+| Letta                     |          77.67% |       500 |                    49,431 |
+| Hindsight                 |          72.20% |       500 |                    29,755 |
+| Supermemory               |          66.07% |       500 |                     6,635 |
+| Mem0                      |          56.00% |       500 |                       856 |
+
+**How to read this:** Mind answered **98/120** questions correctly (20 selected
+from each of the six categories). Other rows are
+[OmniMemEval's published 500-question results](https://github.com/MemTensor/OmniMemEval/blob/f7476c5502115542eca9971195bf8c5ca97b6256/docs/user_memory/results.md).
+Mind used GPT-4.1 mini to answer and GPT-4o mini to judge through OpenRouter;
+published runs may use different model revisions, providers, and deployments.
+**This is an indicative comparison, not an official leaderboard position.**
+Context tokens include the answer prompt and retrieved memories, so Mind's
+high context usage is an important optimization target.
+
+The attempted full 500-question Mind run **did not produce a valid score**:
+OpenRouter's US$10 key limit interrupted answer generation (78 failures).
+See the [120-question run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895)
+and [interrupted 500-question run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024).
+The benchmark is **manual only**, not part of CI:
+[setup, methodology, and how to run it](benchmarks/omnimemeval/README.md).
+
 ## What is Mind?
 
 Mind is a Bun + TypeScript project that provides a CLI, an MCP server, an HTTP
@@ -51,6 +87,13 @@ API, and a web UI on top of one local SQLite memory store (`mind.db`). It uses
 FTS5 full-text search, metadata filters, tags, links, and a 3-tier memory
 model (T1 hot, T2 warm, T3 cold) to keep saved context useful over
 time.
+
+Natural-language questions with `?` or `¿` can retrieve complementary partial
+matches without letting common English or Spanish words dominate. Keyword and
+quoted searches keep their strict behavior, and only uppercase `AND`/`OR`/`NOT`
+are boolean operators. A supplied search with no informative terms returns a
+reformulation error. See the [search engine guide](docs/search-engine.md) for
+details.
 
 If you want semantic search, you can enable optional embeddings from OpenAI or
 OpenRouter. They are off by default.
@@ -165,7 +208,7 @@ unconditionally at session start and after compaction, before any Mind use; do
 not call a Mind MCP tool until it is loaded. Client L2 instructions and the MCP
 `initialize.instructions` handshake are activation pointers, not the protocol.
 If the skill is not listed or cannot be loaded, call the `system_instructions`
-MCP tool for the complete protocol at version `2.1.0`. That fallback is
+MCP tool for the complete protocol at version `2.3.0`. That fallback is
 complete but secondary; the skill is the primary source of truth.
 
 Mind does not track reads in a database, enforce a quota, or create a checkpoint
@@ -268,7 +311,19 @@ Query grammar:
   form of the implicit AND.
 - `NOT` excludes the following term (`auth NOT jwt`).
 - A trailing `*` matches a prefix (`type*`).
-- Malformed operator usage never errors; it degrades to a safe literal match.
+- Only uppercase `AND`, `OR`, and `NOT` are operators. Their lowercase forms are
+  ordinary words, so a natural question such as `is sqlite or json faster?`
+  searches for its informative terms instead of treating `or` as syntax.
+- Malformed operator usage never makes the parser throw; it degrades to a
+  literal token match. That parser fallback is separate from search validation
+  and doesn't skip it: a supplied search with only common words still returns
+  the validation error below.
+
+When you supply a search field, it must contain at least one informative term
+after common words are removed. Empty, whitespace-only, and stopword-only
+queries return the same actionable validation error before any retrieval runs.
+Omitting the field is different: MCP `memory_query` lists by metadata, and the
+HTTP API without `q` returns an empty successful result.
 
 Multi-word queries relax automatically. Exact phrase and all-term matches rank
 first, followed by near matches, substrings, and close spellings:

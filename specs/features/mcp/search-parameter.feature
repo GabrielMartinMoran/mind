@@ -16,6 +16,13 @@ Feature: search-parameter
     And no content search is performed
 
   @contract
+  Scenario: memory_query with explicit stopword-only search returns validation error
+    Given a space "projects/mind" with memories available
+    When I call memory_query with space="projects/mind", search="the and of"
+    Then the tool returns a validation error asking for an informative term
+    And the request does not fall back to metadata listing
+
+  @contract
   Scenario: memory_query response includes diagnostic search fields when the flag is true
     Given a space "projects/mind" with memory "test-memory" with content "hello world"
     And USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE is "true"
