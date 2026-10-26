@@ -27,6 +27,13 @@ Example:
 
 ## [Unreleased]
 
+### Changed
+
+- Simplified the GitHub README into a newcomer-friendly overview with a concise
+  setup flow, navigation, badges, benchmark context, and links to focused guides.
+- Moved advanced agent, CLI/MCP, configuration, and autosync guidance out of
+  the README into living documentation under `docs/`.
+
 ## [1.7.0] - 2026-10-26
 
 ### Changed
