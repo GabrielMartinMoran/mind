@@ -67,9 +67,7 @@ describe('buildOpenCodeEnv', () => {
     expect(env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBe('1');
     expect(env.OPENCODE_DISABLE_MODELS_FETCH).toBe('1');
     expect(env.OPENCODE_DISABLE_AUTOCOMPACT).toBe('1');
-    expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).model).toBe(
-      'openrouter/deepseek/deepseek-v4.1-flash'
-    );
+    expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).model).toBe('openrouter/openai/gpt-6-luna');
   });
 
   test('points every Mind path at the unit directory and disables RAG by default', () => {
@@ -122,7 +120,7 @@ describe('buildConfigContent', () => {
     const config = JSON.parse(
       buildConfigContent({ condition: 'no-memory', dir, mindBin: null })
     ) as ConfigShape;
-    expect(config.model).toBe('openrouter/deepseek/deepseek-v4.1-flash');
+    expect(config.model).toBe('openrouter/openai/gpt-6-luna');
     expect(config.mcp).toBeUndefined();
   });
 
@@ -269,7 +267,7 @@ describe('provider credential injection', () => {
     for (const profile of profiles) {
       expect(profile.env.OPENROUTER_API_KEY).toBe('test-key');
       expect(JSON.parse(profile.env.OPENCODE_CONFIG_CONTENT!).model).toBe(
-        'openrouter/deepseek/deepseek-v4.1-flash'
+        'openrouter/openai/gpt-6-luna'
       );
     }
   });

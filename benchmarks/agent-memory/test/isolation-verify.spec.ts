@@ -97,7 +97,7 @@ function goodResolver(target: IsolationDirs, overrides: Overrides = {}): FakeCom
             type: 'document',
             info: {
               $schema: 'https://opencode.ai/config.json',
-              model: { providerID: 'openrouter', model: 'deepseek/deepseek-v4.1-flash' },
+              model: { providerID: 'openrouter', model: 'openai/gpt-6-luna' },
               mcp: { servers },
             },
           },
@@ -123,7 +123,7 @@ function cleanNoMemoryResolver(skills = '{"data":[]}'): FakeCommandResolver {
         stdout: JSON.stringify([
           {
             type: 'document',
-            info: { model: { providerID: 'openrouter', model: 'deepseek/deepseek-v4.1-flash' } },
+            info: { model: { providerID: 'openrouter', model: 'openai/gpt-6-luna' } },
           },
         ]),
       };
@@ -487,7 +487,7 @@ describe('condition-derived skill-first check', () => {
                     {
                       type: 'document',
                       info: {
-                        model: { providerID: 'openrouter', model: 'deepseek/deepseek-v4.1-flash' },
+                        model: { providerID: 'openrouter', model: 'openai/gpt-6-luna' },
                       },
                     },
                   ]),
@@ -527,7 +527,7 @@ describe('condition-derived skill-first check', () => {
                     {
                       type: 'document',
                       info: {
-                        model: { providerID: 'openrouter', model: 'deepseek/deepseek-v4.1-flash' },
+                        model: { providerID: 'openrouter', model: 'openai/gpt-6-luna' },
                       },
                     },
                   ]),
