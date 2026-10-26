@@ -230,6 +230,31 @@ describe('prepareSkillFirst', () => {
     expect(parsed.instructions).toEqual([briefActivationPath(dir.home)]);
   });
 
+  test('preserves the scenario Mind MCP environment override', async () => {
+    const { dir, mindBin, env } = makeHarness();
+    const withMindEnv = buildOpenCodeEnv({
+      condition: 'mind-current',
+      dir,
+      mindBin,
+      mindEnv: { USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE: 'true' },
+    });
+    const fake = setupRunner({});
+
+    const prepared = await prepareSkillFirst({
+      dir,
+      env: withMindEnv,
+      mindBin,
+      run: fake.runner,
+    });
+    const parsed = JSON.parse(prepared.env.OPENCODE_CONFIG_CONTENT!) as {
+      mcp: { servers: Record<string, { environment: Record<string, string> }> };
+    };
+
+    expect(parsed.mcp.servers.mind!.environment.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE).toBe('true');
+    expect(prepared.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE).toBeUndefined();
+    expect(env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE).toBeUndefined();
+  });
+
   test('honours an explicit timeout', async () => {
     const { dir, mindBin, env } = makeHarness();
     const fake = setupRunner({});

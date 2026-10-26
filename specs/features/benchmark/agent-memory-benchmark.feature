@@ -264,6 +264,14 @@ Feature: Agent memory benchmark harness
       Then the scenario does not pass on embedding presence and answer text alone
       And it passes only when the target result records the semantic provenance
 
+    @integration
+    Scenario: B10 opts into expanded MCP response metadata for provenance
+      Given the benchmark configures B10 and a scenario that does not inspect search provenance
+      When each scenario's local Mind MCP config is generated
+      Then B10 sets USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE to "true"
+      And the other scenario leaves the flag unset
+      And the flag is stored in the Mind MCP server environment, not the parent worker environment
+
     @unit
     Scenario: Semantic recall is gated on RAG and a Mind condition
       Given a scenario that requires semantic recall and enables RAG

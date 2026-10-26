@@ -83,6 +83,7 @@ Example:
 
 ### Changed
 
+- Changed MCP `memory_query(search)` to return compact results by default: `score`, `methods`, and the top-level `search_method` are omitted, while `confidence`, result order, `total`, `limit`, and `offset` are unchanged. Set `USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE=true` (exact value) in the Mind MCP process to restore the diagnostics; store, CLI, and HTTP results are unchanged. The canonical protocol and docs now guide agents with `confidence` instead of `methods`.
 - Changed bare `mind setup` to configure all supported agent integrations; moved the compatibility matrix to `mind setup compatibility` and kept `mind setup refresh` for detected integrations. A failing agent no longer aborts the run: its error is reported and the remaining agents still run, and the success summary is printed only when every agent succeeds.
 - Changed the cognitive protocol to use recent memory changes as an on-demand fallback for vague continuity or recent-work questions, with limits on scope, promotion, and claims of completeness; bumped `instructions_version` to `2.2.0` for the updated fallback.
 - Changed web command actions to consistent Lucide icons with visible labels by default: Logs is a visible secondary topbar action, New space is quieter, New memory sits beside the space title in List and Neural Map, and icon-only mobile actions keep descriptive accessible names. Destructive triggers are outlined while only the final delete confirmation is solid, and tier, filter, pagination, and badge marks stay icon-free.

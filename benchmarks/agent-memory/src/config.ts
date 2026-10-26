@@ -103,6 +103,14 @@ export function credentialEnvVarFor(model: ModelRef): string | null {
   return PROVIDER_CREDENTIAL_ENV[model.providerID] ?? null;
 }
 
+/**
+ * Scenario-declared Mind MCP environment variable that restores the expanded
+ * `memory_query` diagnostics (`score`/`methods`/`search_method`). Only B10
+ * opts in because its assertion reads `methods` provenance; every other
+ * scenario keeps the compact default.
+ */
+export const EXPANDED_MCP_RESPONSE_ENV = 'USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE';
+
 export interface BenchmarkPaths {
   readonly runRoot: string;
   readonly workRoot: string;

@@ -407,6 +407,7 @@ async function runUnit(
       mindBin,
       rag: effectiveRag,
       embeddingProvider: effectiveRag ? RAG_EMBEDDING_PROVIDER : undefined,
+      mindEnv: scenario.mindEnv,
     }),
     ...(options.credentialEnv ?? {}),
   };
