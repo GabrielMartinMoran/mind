@@ -10,33 +10,32 @@ prompts and scoring pipeline are not modified.
 
 ## Recorded results
 
-| Run            | Scope                           |     Answer accuracy | Context tokens / question | Evidence                                                                               |
-| -------------- | ------------------------------- | ------------------: | ------------------------: | -------------------------------------------------------------------------------------- |
-| Balanced pilot | 120 questions (20 per category) | **81.67% (98/120)** |                    50,882 | [Actions run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895)     |
-| Full attempt   | 500 questions                   |      **Not scored** |                         — | [Interrupted run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024) |
+| Run                                           | Scope                            |        Answer accuracy | Evidence                                                                               |
+| --------------------------------------------- | -------------------------------- | ---------------------: | -------------------------------------------------------------------------------------- |
+| **GPT-6 Luna (low), best completed**          | 120 balanced questions           |   **86.67% (104/120)** | [Completed run](https://github.com/GabrielMartinMoran/mind/actions/runs/40320556252)   |
+| GPT-6 Luna (low), manually adjusted           | 119 judged + 1 manually credited | **85.83% (103/120)\*** | [Replay](https://github.com/GabrielMartinMoran/mind/actions/runs/40347160769)          |
+| Historical pilot (GPT-4.1 mini / GPT-4o mini) | 120 balanced questions           |        81.67% (98/120) | [Earlier run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895)     |
+| Historical full attempt                       | 500 questions                    |             Not scored | [Interrupted run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024) |
 
-The full attempt ingested and searched the dataset, but 78 of 500 answer
-generations failed when the OpenRouter key reached its **US$10 monthly limit**.
-Because the official judge did not complete, it has **no valid 500-question
-accuracy score**. Never treat the 120-question figure as an official rank.
+\*The manually adjusted result has **102 judged correct out of 119**, plus
+one answer counted correct at the user's request after its embedding request
+failed. It is **not an official OmniMemEval accuracy score**. The completed
+86.67% run is the strongest valid observed result for this Mind revision.
 
-The pilot uses one full, timestamped conversation session per T3 memory,
-separate SQLite spaces for benchmark users, `MIND_RAG=false`, top-20 search,
-GPT-4.1 mini for answers, and GPT-4o mini for grading **in that historical run**.
-The new workflow requests **GPT-6 Luna (`openai/gpt-6-luna`) with reasoning
-effort `low` for both answering and judging**, through OpenRouter. The fixed
-upstream harness ordinarily requests `temperature=0`; our adapter adjusts
-only these two generation parameters for the new reasoning model, keeping the
-benchmark's prompts and judging rules unchanged.
+Mind's 86.67% would be third **by raw score** against
+[OmniMemEval's published LongMemEval-S numbers](https://github.com/MemTensor/OmniMemEval/blob/main/docs/user_memory/results.md)
+(MemOS 89.20%, LCM-X 87.00%). This is an **indicative comparison only**:
+Mind's result uses a 120-question stratified subset and GPT-6 Luna (low) for
+both answering and judging, whereas published systems use 500 questions and
+a different model/judge setup. Mind is not ranked officially.
 
-**Important:** Switching the judge changes the evaluation protocol. The new
-Luna-low scores can be compared between Mind's RAG-on and RAG-off runs, but
-**must not be treated as directly comparable to OmniMemEval's published
-GPT-4o-mini-judged leaderboard** or to Mind's historical 81.67% pilot.
-Using the same model for answering and judging may also introduce correlated
-judging errors. See
-[OmniMemEval's reproduced LongMemEval results](https://github.com/MemTensor/OmniMemEval/blob/f7476c5502115542eca9971195bf8c5ca97b6256/docs/user_memory/results.md#longmemeval)
-for peer measurements.
+The new runs use the same production SQLite search, one timestamped
+conversation session per T3 memory, isolated spaces, top-20 retrieval, and
+OpenRouter. The best completed run uses lexical search; the manually adjusted
+run also requested embeddings, with one failed ingestion. The earlier pilot
+used GPT-4.1 mini for answers and GPT-4o mini for grading. The historical
+full attempt was interrupted by the OpenRouter key's former US$10 limit
+(78 answer-generation failures), so it produced no valid 500-question score.
 
 ## Run manually
 

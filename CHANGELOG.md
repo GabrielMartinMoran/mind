@@ -29,6 +29,7 @@ Example:
 
 ### Changed
 
+- Highlighted the strongest completed OmniMemEval LongMemEval-S result (86.67% with GPT-6 Luna low as answerer and judge) in a compact README mention, replacing the oversized leaderboard table while retaining an explicit indicative-only ranking caveat and detailed benchmark evidence.
 - Switched OmniMemEval answerer and judge to GPT-6 Luna with low reasoning effort, keeping the original prompts but marking new scores non-comparable to historical GPT-4o-mini-judged leaderboards.
 - Changed the independent agent-memory benchmark's default OpenRouter model from DeepSeek V4.1 Flash to GPT-6 Luna (low variant); revised OmniMemEval preflight budget thresholds to reflect its lower base price.
 
