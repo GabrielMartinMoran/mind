@@ -65,7 +65,7 @@ authorized.
   **2.0.28**). The pinned SDK (`@opencode/sdk@2.0.28`) is a dependency of this
   benchmark subproject, not of the root package.
 - For paid stages: a valid **OpenRouter** credential for the pilot model
-  **`deepseek/deepseek-v4.1-flash`**. The harness reads the key at runtime from
+  **`openai/gpt-6-luna` (reasoning `low`)**. The harness reads the key at runtime from
   `~/.local/share/opencode/auth.json` (provider `openrouter`) into the child
   process environment only (`OPENROUTER_API_KEY`); it is never printed or
   written to artifacts. (The `opencode-go` pairing remains available as an
@@ -86,7 +86,7 @@ Every condition gets its own isolated run tree under
   reads user config/plugins/skills, never reuses the shared background service,
   and keeps its own session database (`OPENCODE_DB`);
 - `OPENCODE_CONFIG_CONTENT` pinning exactly the authorized model
-  (`openrouter/deepseek/deepseek-v4.1-flash`) and, for Mind conditions, exactly one local
+  (`openrouter/openai/gpt-6-luna`, variant `low`) and, for Mind conditions, exactly one local
   `mind` MCP server; `no-memory` gets zero MCP;
 - the `OPENCODE_DISABLE_*` guards (project config, Claude Code, default plugins,
   model fetch, autocompact);

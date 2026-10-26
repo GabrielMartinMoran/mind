@@ -8,7 +8,10 @@ import os
 import sys
 from urllib.request import Request, urlopen
 
-MINIMUM_USD = {"60": 2.5, "120": 6.0, "500": 25.0}
+# Conservative startup minimums, not strict spending caps. Luna's base prices
+# are lower than the former answer/judge models; actual usage varies with
+# prompt caching, output length, reasoning tokens and optional embeddings.
+MINIMUM_USD = {"60": 1.5, "120": 3.0, "500": 12.0}
 
 
 def check_budget(sample_size: str) -> None:

@@ -68,15 +68,14 @@ export function embeddingCredentialEnvVar(provider: EmbeddingProviderId): string
 /**
  * The single authorized provider/model pair for a run. Never changed mid-run.
  *
- * Scope change (2026-10-18): the pilot now runs on **OpenRouter** with the same
- * DeepSeek V4.1 Flash model. The `opencode-go` pairing is kept below as an
- * alternative constant (its credential is paused) so switching back is a
- * one-line change.
+ * Benchmarks use OpenRouter GPT-6 Luna at low reasoning effort.
+ * The legacy `opencode-go` DeepSeek configuration below is kept solely as an
+ * explicit historical fallback, not the default evaluation model.
  */
 export const MODEL_OPENROUTER: ModelRef = {
   providerID: 'openrouter',
-  id: 'deepseek/deepseek-v4.1-flash',
-  variant: 'default',
+  id: 'openai/gpt-6-luna',
+  variant: 'low',
 };
 
 /** The original (paused) provider/model pairing. Kept for reference. */

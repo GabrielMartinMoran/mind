@@ -22,10 +22,19 @@ accuracy score**. Never treat the 120-question figure as an official rank.
 
 The pilot uses one full, timestamped conversation session per T3 memory,
 separate SQLite spaces for benchmark users, `MIND_RAG=false`, top-20 search,
-GPT-4.1 mini for answers, and GPT-4o mini for grading. The two models were
-accessed through **OpenRouter**; OmniMemEval's published runs use varying
-provider and model configurations. The resulting scores are useful context
-but not strictly equivalent. See
+GPT-4.1 mini for answers, and GPT-4o mini for grading **in that historical run**.
+The new workflow requests **GPT-6 Luna (`openai/gpt-6-luna`) with reasoning
+effort `low` for both answering and judging**, through OpenRouter. The fixed
+upstream harness ordinarily requests `temperature=0`; our adapter adjusts
+only these two generation parameters for the new reasoning model, keeping the
+benchmark's prompts and judging rules unchanged.
+
+**Important:** Switching the judge changes the evaluation protocol. The new
+Luna-low scores can be compared between Mind's RAG-on and RAG-off runs, but
+**must not be treated as directly comparable to OmniMemEval's published
+GPT-4o-mini-judged leaderboard** or to Mind's historical 81.67% pilot.
+Using the same model for answering and judging may also introduce correlated
+judging errors. See
 [OmniMemEval's reproduced LongMemEval results](https://github.com/MemTensor/OmniMemEval/blob/f7476c5502115542eca9971195bf8c5ca97b6256/docs/user_memory/results.md#longmemeval)
 for peer measurements.
 
@@ -53,7 +62,8 @@ live OpenRouter key and effective budget, and stops if the observed remaining
 credit is below the minimum estimated for its selected sample size. This is
 **not** a hard spending cap, since actual token use varies. An RAG-on run
 also stops if embeddings cannot be created; it never silently runs as RAG-off.
-Paired comparisons must use the exact same question subset, models, and top-k.
+Paired comparisons must use the exact same question subset, models
+(GPT-6 Luna low for both answering and judging), and top-k.
 The two modes have separate processes/DBs and must be reported independently.
 
 ## Implementation

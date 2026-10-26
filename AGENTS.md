@@ -304,6 +304,10 @@ The external 500-question answer-quality benchmark uses a pinned official
 harness with a thin Mind adapter and can **only** be started with
 `.github/workflows/omnimemeval-mind.yml` (`workflow_dispatch`).
 It is paid and must never run on push, pull request, or routine CI.
+OmniMemEval uses GPT-6 Luna `low` for both answerer and judge; results are
+not directly comparable to the original GPT-4o-mini-judged published results.
+The independent agent-memory paid harness also pins OpenRouter GPT-6 Luna
+with variant `low` instead of its previous DeepSeek V4.1 Flash default.
 The OmniMemEval manual workflow accepts `rag_mode=off|on`; RAG-on must
 index and query embeddings through OpenRouter, and fail rather than silently
 behave as RAG-off. Runs check the available OpenRouter key budget before

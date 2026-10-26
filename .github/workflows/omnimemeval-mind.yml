@@ -71,10 +71,10 @@ jobs:
         run: |
           umask 077
           cat >/tmp/omnimemeval/.env.mind <<EOF
-          ANSWER_MODEL=openai/gpt-4.1-mini
+          ANSWER_MODEL=openai/gpt-6-luna
           ANSWER_BASE_URL=https://openrouter.ai/api/v1
           ANSWER_API_KEY=$OPENROUTER_API_KEY
-          EVAL_MODEL=openai/gpt-4o-mini
+          EVAL_MODEL=openai/gpt-6-luna
           EVAL_BASE_URL=https://openrouter.ai/api/v1
           EVAL_API_KEY=$OPENROUTER_API_KEY
           TOPK=20
@@ -89,7 +89,7 @@ jobs:
           done
           curl -fsS http://127.0.0.1:40315/health
           cd /tmp/omnimemeval
-          bash scripts/run_lme_eval.sh --lib mind --env .env.mind --version rag-${{ inputs.rag_mode || 'off' }}-${{ github.run_id }} \
+          bash scripts/run_lme_eval.sh --lib mind --env .env.mind --version luna-low-rag-${{ inputs.rag_mode || 'off' }}-${{ github.run_id }} \
             --streaming 1 --start-idx 0 --end-idx $((${{ inputs.sample_size || '120' }} - 1)) \
             --top-k 20 --llm-workers 2 --num-runs 1 --allow-empty-search 1
       - name: Archive results (includes failures for diagnosis)
