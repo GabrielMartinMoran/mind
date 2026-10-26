@@ -1,9 +1,10 @@
 // ── Query parser (D2) ──
 //
 // Parses free-text user input into a structured AST and builds safe FTS5 MATCH
-// expressions from it. Raw FTS5 syntax is never passed through: quotes, OR,
-// AND (= implicit AND), NOT and trailing `*` are the only supported operators.
-// Anything malformed degrades to a literal-AND fallback — parsing never throws.
+// expressions from it. Raw FTS5 syntax is never passed through: quotes,
+// uppercase OR, AND (= implicit AND), NOT and trailing `*` are the only
+// supported operators; their lowercase forms are ordinary terms. Anything
+// malformed degrades to a literal-AND fallback — parsing never throws.
 
 import { normalizeToken } from './matching-tokenizer';
 
@@ -25,6 +26,13 @@ export interface ParsedQuery {
   exclude: QueryNode[];
   /** True when the input was malformed and fell back to literal AND. */
   degraded: boolean;
+  /**
+   * True when the input contained an explicit uppercase `AND`. The parser
+   * erases AND from the AST (it matches implicit conjunction), so this
+   * provenance is the only way for policies to tell intentional boolean
+   * syntax from a natural-language bag of words.
+   */
+  explicitAnd: boolean;
 }
 
 /** Relaxation-rung identifiers produced from a parsed query. */
@@ -46,7 +54,8 @@ const OR_OPERATOR = 'OR';
 const AND_OPERATOR = 'AND';
 
 function isOperator(token: RawToken, operator: string): boolean {
-  return token.kind === 'word' && !token.prefix && token.value.toUpperCase() === operator;
+  // Case-sensitive on purpose: only exact uppercase booleans are syntax.
+  return token.kind === 'word' && !token.prefix && token.value === operator;
 }
 
 function toNode(token: RawToken): QueryNode {
@@ -102,8 +111,17 @@ function scan(input: string): { tokens: RawToken[]; malformed: boolean } {
 }
 
 function degrade(raw: string, tokens: RawToken[]): ParsedQuery {
-  if (tokens.length === 0) return { raw, groups: [], exclude: [], degraded: true };
-  return { raw, groups: [{ nodes: tokens.map(toNode) }], exclude: [], degraded: true };
+  // Degraded input treats every word literally, operator-shaped words included,
+  // so no boolean provenance survives.
+  if (tokens.length === 0)
+    return { raw, groups: [], exclude: [], degraded: true, explicitAnd: false };
+  return {
+    raw,
+    groups: [{ nodes: tokens.map(toNode) }],
+    exclude: [],
+    degraded: true,
+    explicitAnd: false,
+  };
 }
 
 /**
@@ -112,7 +130,7 @@ function degrade(raw: string, tokens: RawToken[]): ParsedQuery {
  */
 export function parseQuery(input: string): ParsedQuery {
   const raw = input;
-  if (!input.trim()) return { raw, groups: [], exclude: [], degraded: false };
+  if (!input.trim()) return { raw, groups: [], exclude: [], degraded: false, explicitAnd: false };
 
   const { tokens, malformed } = scan(input);
   if (malformed) return degrade(raw, tokens);
@@ -122,11 +140,15 @@ export function parseQuery(input: string): ParsedQuery {
   let current: QueryNode[] = [];
   let pendingExclude = false;
   let invalid = false;
+  let explicitAnd = false;
 
   for (let index = 0; index < tokens.length; index += 1) {
     const token = tokens[index]!;
 
-    if (isOperator(token, AND_OPERATOR)) continue;
+    if (isOperator(token, AND_OPERATOR)) {
+      explicitAnd = true;
+      continue;
+    }
 
     if (isOperator(token, NOT_OPERATOR)) {
       if (index === tokens.length - 1) {
@@ -163,7 +185,7 @@ export function parseQuery(input: string): ParsedQuery {
   // Malformed operator usage or no positive group ⇒ literal-AND fallback.
   if (invalid || groups.length === 0) return degrade(raw, tokens);
 
-  return { raw, groups, exclude, degraded: false };
+  return { raw, groups, exclude, degraded: false, explicitAnd };
 }
 
 /** True when the query carries no positive or negative matchable nodes. */

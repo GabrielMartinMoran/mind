@@ -385,9 +385,11 @@ easy to miss.
 
 Start with a natural, focused question; one query is usually enough. Refine only
 when the results are weak or ambiguous. For explicit constraints, `memory_query`
-with `search` also accepts quoted phrases, `OR`, `AND`, `NOT`, and a trailing
-`*` prefix. Results include a `confidence` bucket and a `methods` list that
-names the channels that matched. Use `space: "*"` to search across spaces.
+with `search` also accepts structured syntax: quoted phrases, boolean operators,
+and a trailing `*` prefix. The [search engine](search-engine.md) page documents
+the exact operator casing, supplied-query validation, and recovery. Results
+include a `confidence` bucket and a `methods` list that names the channels that
+matched. Use `space: "*"` to search across spaces.
 
 Semantic recall is optional. RAG is off by default. When it is enabled,
 natural-language queries can admit semantic-only matches at cosine similarity

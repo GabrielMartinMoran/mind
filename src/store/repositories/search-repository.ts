@@ -23,8 +23,10 @@ import {
   canBypassLexicalAdmission,
   countCoveredQueryTokens,
   documentSatisfiesQuery,
+  EmptySearchQueryError,
   foldedWords,
   fuseCandidates,
+  hasInformativeQueryTerms,
   isEmptyQuery,
   normalizeDateBound,
   buildInformativeAnyMatch,
@@ -672,6 +674,10 @@ export function createSearchRepository(
     filter?: { space?: string; tag?: string; tier?: Tier; tiers?: Tier[]; semantic?: boolean }
   ): Promise<ScoredSearchResult[]> {
     const ast = parseQuery(query);
+    // A supplied search with no informative positive terms is a caller
+    // validation error, never an empty result. Check before the empty-AST
+    // return and before any lexical or semantic channel runs.
+    if (!hasInformativeQueryTerms(ast)) throw new EmptySearchQueryError();
     if (isEmptyQuery(ast)) return [];
 
     const rungs = buildRungs(ast);

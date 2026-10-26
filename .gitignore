@@ -63,3 +63,11 @@ benchmarks/agent-memory/*
 # Generated artifacts stay ignored even inside the re-included directories.
 benchmarks/agent-memory/experiments/REPORTS/
 benchmarks/agent-memory/probes/evidence/
+
+# Omnimemeval benchmark: sources, tests, and docs are versionable.
+!benchmarks/omnimemeval/
+benchmarks/omnimemeval/*
+!benchmarks/omnimemeval/*.md
+!benchmarks/omnimemeval/*.py
+!benchmarks/omnimemeval/*.ts
+!benchmarks/omnimemeval/test/

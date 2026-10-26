@@ -10,7 +10,7 @@ const p = ArgParser.param.bind(ArgParser);
 
 const SEARCH = new ArgParser(
   ['search|s', p('query')],
-  'Full-text search across all memories. Supports quoted phrases, OR/AND/NOT and a trailing * prefix.',
+  'Full-text search across all memories. Provide a query; quote it when it contains multiple words. Only uppercase AND, OR, NOT are boolean operators; lowercase forms are ordinary terms. If stopword filtering leaves no informative term, add a specific topic, name, identifier, or code term. Use "query" to list memories by metadata.',
   [
     { name: 'space', hasValue: true, description: 'space name (e.g. projects/api); "*" for all' },
     { name: 'tag', hasValue: true, description: 'tag without # (e.g. backend)' },

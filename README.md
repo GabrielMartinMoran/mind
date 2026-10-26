@@ -89,9 +89,11 @@ model (T1 hot, T2 warm, T3 cold) to keep saved context useful over
 time.
 
 Natural-language questions with `?` or `¿` can retrieve complementary partial
-matches without letting common English or Spanish words dominate. Keyword,
-boolean, and quoted searches preserve their existing behavior; see the
-[search engine guide](docs/search-engine.md) for details.
+matches without letting common English or Spanish words dominate. Keyword and
+quoted searches keep their strict behavior, and only uppercase `AND`/`OR`/`NOT`
+are boolean operators. A supplied search with no informative terms returns a
+reformulation error. See the [search engine guide](docs/search-engine.md) for
+details.
 
 If you want semantic search, you can enable optional embeddings from OpenAI or
 OpenRouter. They are off by default.
@@ -206,7 +208,7 @@ unconditionally at session start and after compaction, before any Mind use; do
 not call a Mind MCP tool until it is loaded. Client L2 instructions and the MCP
 `initialize.instructions` handshake are activation pointers, not the protocol.
 If the skill is not listed or cannot be loaded, call the `system_instructions`
-MCP tool for the complete protocol at version `2.1.0`. That fallback is
+MCP tool for the complete protocol at version `2.3.0`. That fallback is
 complete but secondary; the skill is the primary source of truth.
 
 Mind does not track reads in a database, enforce a quota, or create a checkpoint
@@ -309,7 +311,19 @@ Query grammar:
   form of the implicit AND.
 - `NOT` excludes the following term (`auth NOT jwt`).
 - A trailing `*` matches a prefix (`type*`).
-- Malformed operator usage never errors; it degrades to a safe literal match.
+- Only uppercase `AND`, `OR`, and `NOT` are operators. Their lowercase forms are
+  ordinary words, so a natural question such as `is sqlite or json faster?`
+  searches for its informative terms instead of treating `or` as syntax.
+- Malformed operator usage never makes the parser throw; it degrades to a
+  literal token match. That parser fallback is separate from search validation
+  and doesn't skip it: a supplied search with only common words still returns
+  the validation error below.
+
+When you supply a search field, it must contain at least one informative term
+after common words are removed. Empty, whitespace-only, and stopword-only
+queries return the same actionable validation error before any retrieval runs.
+Omitting the field is different: MCP `memory_query` lists by metadata, and the
+HTTP API without `q` returns an empty successful result.
 
 Multi-word queries relax automatically. Exact phrase and all-term matches rank
 first, followed by near matches, substrings, and close spellings:

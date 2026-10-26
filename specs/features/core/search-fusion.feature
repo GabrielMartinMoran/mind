@@ -23,15 +23,22 @@ Feature: Search fusion pipeline
       And memories matching beta are returned
 
     @unit
-    Scenario: Explicit AND behaves like implicit AND
+    Scenario: Uppercase AND is explicit syntax with implicit-AND matching
       When searching for "auth AND jwt"
       Then the result set equals searching for "auth jwt"
+      And the parsed query records an explicit AND operator
 
     @unit
     Scenario: NOT excludes the following term
       When searching for "auth NOT jwt"
       Then memories matching auth are returned
       And memories containing jwt are excluded
+
+    @unit
+    Scenario: Lowercase boolean-looking words remain ordinary terms
+      When parsing "auth and or not jwt"
+      Then the query has one positive group with five terms
+      And the query has no explicit AND, OR, or NOT operators
 
     @unit
     Scenario: A trailing prefix wildcard expands a term
@@ -62,6 +69,14 @@ Feature: Search fusion pipeline
       When searching for "foundry token color selector highlight" where only "foundry" and "token" exist
       Then memories matching "foundry" and "token" are returned
       And their provenance includes the "any" method
+
+    @integration
+    Scenario: Prose and in a question does not suppress informative recall
+      Given a full match and a partial match exist for informative query terms
+      When searching for a punctuated natural-language query containing lowercase "and"
+      Then both informative matches are retained
+      And the stronger match ranks before the partial match
+      And memories matched only by stopwords are not returned
 
     @integration
     Scenario: Duplicate hits across rungs deduplicate to one result
@@ -203,7 +218,29 @@ Feature: Search fusion pipeline
       When the same query runs through CLI, MCP and API
       Then the ordered memory list is identical across surfaces
 
+    @contract
+    Scenario: API search without q keeps its no-search response
+      When GET /api/search is called without q
+      Then the response is HTTP 200 with an empty result set
+
+    @contract
+    Scenario: API rejects an explicit q with no informative terms
+      When GET /api/search is called with q containing only stopwords
+      Then the response is HTTP 400 with a reformulation message
+
   Rule: Noise guards
+
+    @integration
+    Scenario: A supplied search containing only stopwords asks for reformulation
+      When searching for "the and of"
+      Then the search returns a validation error asking for an informative term
+      And no retrieval channel or embedding provider runs
+
+    @integration
+    Scenario: A quoted stopword-only search asks for reformulation
+      When searching for the exact phrase "the and of"
+      Then the search returns the same validation error asking for an informative term
+      And no retrieval channel or embedding provider runs
 
     @integration
     Scenario: Terms absent from the corpus return no results

@@ -45,9 +45,17 @@ export {
 } from './search-fusion';
 export {
   buildInformativeAnyMatch,
+  hasInformativeQueryTerms,
   informativeSearchTokens,
+  isInformativeQueryTerm,
   isNaturalLanguageRecall,
+  queryWords,
 } from './natural-search';
+export {
+  EmptySearchQueryError,
+  EMPTY_SEARCH_QUERY_CODE,
+  EMPTY_SEARCH_QUERY_MESSAGE,
+} from './search-query-error';
 export {
   canBypassLexicalAdmission,
   selectSemanticAdmittedIds,

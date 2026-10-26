@@ -25,12 +25,15 @@ export const SEMANTIC_ADMISSION_FLOOR = 0.6;
 
 /**
  * True when the query is a natural-language bag of words: exactly one positive
- * group, no NOT exclusions, and every node a plain (non-prefix) term.
+ * group, no NOT exclusions, every node a plain (non-prefix) term, and no
+ * explicit uppercase AND. Only uppercase operator words are syntax; lowercase
+ * `and` remains an ordinary term in the group.
  *
  * Explicit operators — quoted phrases, prefixes, OR, AND and NOT — express
  * lexical intent, so those queries keep the lexical admission path.
  */
 export function canBypassLexicalAdmission(ast: ParsedQuery): boolean {
+  if (ast.explicitAnd) return false;
   if (ast.groups.length !== 1 || ast.exclude.length > 0) return false;
   return ast.groups[0]!.nodes.every(node => node.type === 'term' && !node.prefix);
 }

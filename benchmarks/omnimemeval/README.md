@@ -10,10 +10,10 @@ prompts and scoring pipeline are not modified.
 
 ## Recorded results
 
-| Run | Scope | Answer accuracy | Context tokens / question | Evidence |
-| --- | --- | ---: | ---: | --- |
-| Balanced pilot | 120 questions (20 per category) | **81.67% (98/120)** | 50,882 | [Actions run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895) |
-| Full attempt | 500 questions | **Not scored** | — | [Interrupted run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024) |
+| Run            | Scope                           |     Answer accuracy | Context tokens / question | Evidence                                                                               |
+| -------------- | ------------------------------- | ------------------: | ------------------------: | -------------------------------------------------------------------------------------- |
+| Balanced pilot | 120 questions (20 per category) | **81.67% (98/120)** |                    50,882 | [Actions run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895)     |
+| Full attempt   | 500 questions                   |      **Not scored** |                         — | [Interrupted run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024) |
 
 The full attempt ingested and searched the dataset, but 78 of 500 answer
 generations failed when the OpenRouter key reached its **US$10 monthly limit**.

@@ -52,6 +52,56 @@ describe('query parser — Query parsing rule', () => {
     );
   });
 
+  test('only uppercase AND, OR and NOT are operators', () => {
+    const lowerAnd = parseQuery('auth and token');
+    expect(lowerAnd.degraded).toBe(false);
+    expect(lowerAnd.explicitAnd).toBe(false);
+    expect(lowerAnd.groups).toEqual([
+      {
+        nodes: [
+          { type: 'term', token: 'auth', prefix: false },
+          { type: 'term', token: 'and', prefix: false },
+          { type: 'term', token: 'token', prefix: false },
+        ],
+      },
+    ]);
+
+    const lowerOr = parseQuery('alpha or beta');
+    expect(lowerOr.degraded).toBe(false);
+    expect(lowerOr.groups).toEqual([
+      {
+        nodes: [
+          { type: 'term', token: 'alpha', prefix: false },
+          { type: 'term', token: 'or', prefix: false },
+          { type: 'term', token: 'beta', prefix: false },
+        ],
+      },
+    ]);
+
+    const lowerNot = parseQuery('auth not jwt');
+    expect(lowerNot.degraded).toBe(false);
+    expect(lowerNot.exclude).toEqual([]);
+    expect(lowerNot.groups).toEqual([
+      {
+        nodes: [
+          { type: 'term', token: 'auth', prefix: false },
+          { type: 'term', token: 'not', prefix: false },
+          { type: 'term', token: 'jwt', prefix: false },
+        ],
+      },
+    ]);
+  });
+
+  test('records explicit uppercase AND provenance', () => {
+    expect(parseQuery('auth AND jwt').explicitAnd).toBe(true);
+    expect(parseQuery('auth jwt').explicitAnd).toBe(false);
+    expect(parseQuery('auth and jwt').explicitAnd).toBe(false);
+    expect(parseQuery('auth OR jwt').explicitAnd).toBe(false);
+    expect(parseQuery('auth NOT jwt').explicitAnd).toBe(false);
+    // Degraded input treats operator words literally, so provenance stays false.
+    expect(parseQuery('OR OR auth NOT').explicitAnd).toBe(false);
+  });
+
   test('NOT excludes the following term', () => {
     const ast = parseQuery('auth NOT jwt');
     expect(ast.groups).toEqual([{ nodes: [{ type: 'term', token: 'auth', prefix: false }] }]);

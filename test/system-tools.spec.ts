@@ -46,7 +46,15 @@ describe('MCP System Tools', () => {
     expect(rendered).toContain('load it unconditionally before any Mind use');
     // @ts-ignore — handler accepts 0 args but type system requires 1
     const response = await createSystemTools().system_instructions.handler();
-    expect(response.instructions_version).toBe('2.2.0');
+    expect(response.instructions_version).toBe('2.3.0');
+  });
+
+  test('system instructions describe operator casing, omit-vs-search, and validation recovery', () => {
+    const rendered = renderSystemInstructions();
+
+    expect(rendered).toContain('Only uppercase `AND`, `OR`, and `NOT` are boolean operators');
+    expect(rendered).toContain('Omit `search` to list memories by metadata');
+    expect(rendered).toContain('add a specific topic');
   });
 
   test('system instructions renderer should match snapshot', () => {
@@ -141,7 +149,7 @@ describe('MCP System Tools', () => {
     const response = await tool.handler();
     expect(response).toEqual({
       content: [{ type: 'text', text: renderSystemInstructions() }],
-      instructions_version: '2.2.0',
+      instructions_version: '2.3.0',
     });
   });
 
@@ -152,7 +160,7 @@ describe('MCP System Tools', () => {
     const sourceText = readFileSync(SYSTEM_INSTRUCTIONS_SOURCE_PATH, 'utf-8');
     const expected = `${sourceText.replace('{{protocolBody}}', loadCanonicalProtocolBody()).trimEnd()}\n`;
 
-    expect(response.instructions_version).toBe('2.2.0');
+    expect(response.instructions_version).toBe('2.3.0');
     expect(response.content[0]?.type).toBe('text');
     expect(response.content[0]?.text).toBe(expected);
   });

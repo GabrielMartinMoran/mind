@@ -22,9 +22,10 @@ frozen and is not current truth. The maintenance policy is in
 
 ## Search
 
-- [Search engine](search-engine.md) — describes the current channels,
-  admission rules, schema v10 storage, the fuzzy prefix-3 limit, and the
-  performance envelope.
+- [Search engine](search-engine.md) — explains the end-to-end pipeline: query
+  grammar and validation, the eight result methods, admission, fusion and
+  confidence, surface filters and pagination, schema v10 storage, fuzzy
+  prefix-3, and semantic/RAG behavior.
 - [Search benchmark methodology](search-benchmarks.md) — explains how to
   measure search quality, latency, and index size, and how to reproduce it.
 

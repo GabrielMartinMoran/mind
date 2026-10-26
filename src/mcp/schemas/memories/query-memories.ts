@@ -6,7 +6,7 @@ export const MemoryQuerySchema = z.object({
     .string()
     .optional()
     .describe(
-      'Relevance search query supporting quoted "phrases", OR / AND / NOT operators, and a trailing * prefix wildcard. Malformed operator usage degrades to a safe literal match. Each result includes score, a confidence bucket (high|medium|low) and the matched methods.'
+      'Relevance search over memory names and content. Only uppercase AND, OR, NOT are boolean operators; lowercase spellings are ordinary terms. Omit to list memories by metadata; a supplied search must contain at least one informative term after stopwords are removed, otherwise it returns a validation error asking you to add a specific topic, name, identifier, or code term.'
     ),
   tag: z.string().optional().describe('Filter by tag.'),
   tier: z
