@@ -50,7 +50,7 @@ function mindResolver(mcpOutputs: string[]): FakeCommandResolver {
           {
             type: 'document',
             info: {
-              model: { providerID: 'openrouter', model: 'deepseek/deepseek-v4.1-flash' },
+              model: { providerID: 'openrouter', model: 'openai/gpt-6-luna' },
               mcp: { servers: { mind: { type: 'local', command: ['/x/mind', 'mcp'] } } },
             },
           },

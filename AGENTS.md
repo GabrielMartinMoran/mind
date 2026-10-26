@@ -304,13 +304,18 @@ The external 500-question answer-quality benchmark uses a pinned official
 harness with a thin Mind adapter and can **only** be started with
 `.github/workflows/omnimemeval-mind.yml` (`workflow_dispatch`).
 It is paid and must never run on push, pull request, or routine CI.
-The README reports the strongest completed 120-question OmniMemEval result:
-86.67%, answered and judged with GPT-6 Luna (low). Its indicative third-place
-comparison is **not an official rank**: peers' published results use 500
-questions and a different model/judge setup. The benchmark documentation
-records the historical pilot, the interrupted 500-question attempt, and
-the separately labeled manually credited result (85.83%). The independent
-agent-memory and search-relevance/latency harnesses are preserved.
+OmniMemEval uses GPT-6 Luna `low` for both answerer and judge; results are
+not directly comparable to the original GPT-4o-mini-judged published results.
+The independent agent-memory paid harness also pins OpenRouter GPT-6 Luna
+with variant `low` instead of its previous DeepSeek V4.1 Flash default.
+The OmniMemEval manual workflow accepts `rag_mode=off|on`; RAG-on must
+index and query embeddings through OpenRouter, and fail rather than silently
+behave as RAG-off. Runs check the available OpenRouter key budget before
+installing benchmark dependencies. The README reports the completed 120-question stratified pilot separately
+from competitors' 500-question published results; the 500-question Mind
+attempt was incomplete because of the OpenRouter key usage limit. Do not
+present this as an official rank. The separate agent-memory benchmark and
+search-relevance/latency harnesses are intentionally preserved.
 
 The **agent memory benchmark** (`benchmarks/agent-memory/`) is a separate,
 opt-in harness that compares OpenCode with and without Mind over a LoCoMo subset

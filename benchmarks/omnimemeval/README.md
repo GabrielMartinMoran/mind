@@ -45,7 +45,8 @@ pull request, schedule, or routine test triggers it.
 1. In GitHub, open **Actions → OmniMemEval LongMemEval-S (manual)**.
 2. Select **Run workflow** and the branch containing the adapter.
 3. Choose `sample_size`: **60**, **120** (default), or **500** (full dataset).
-4. Inspect the resulting report and artifacts in that Actions run.
+4. Choose `rag_mode`: **off** (lexical baseline) or **on** (OpenRouter `text-embedding-3-small` for writes and semantic queries).
+5. Inspect the resulting report and artifacts in that Actions run.
 
 The workflow requires an `OPENROUTER_API_KEY` secret in the GitHub
 `Develop` environment. It downloads the dataset at runtime and does not
@@ -55,9 +56,14 @@ free tests for the independent
 OpenRouter.
 
 **Cost warning:** the key's previous US$10 monthly cap was exhausted during
-the 500-question run. If it remains unchanged, a full run cannot finish.
-OmniMemEval currently has **no built-in spend ceiling** in this adapter:
-check your OpenRouter budget and key limits before explicitly starting it.
+the 500-question run. Before installing dependencies, the workflow checks the
+live OpenRouter key and effective budget, and stops if the observed remaining
+credit is below the minimum estimated for its selected sample size. This is
+**not** a hard spending cap, since actual token use varies. An RAG-on run
+also stops if embeddings cannot be created; it never silently runs as RAG-off.
+Paired comparisons must use the exact same question subset, models
+(GPT-6 Luna low for both answering and judging), and top-k.
+The two modes have separate processes/DBs and must be reported independently.
 
 ## Implementation
 
