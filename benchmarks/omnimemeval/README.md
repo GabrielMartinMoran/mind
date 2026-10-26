@@ -10,12 +10,12 @@ prompts and scoring pipeline are not modified.
 
 ## Recorded results
 
-| Run | Scope | Answer accuracy | Evidence |
-| --- | --- | ---: | --- |
-| **GPT-6 Luna (low), best completed** | 120 balanced questions | **86.67% (104/120)** | [Completed run](https://github.com/GabrielMartinMoran/mind/actions/runs/40320556252) |
-| GPT-6 Luna (low), manually adjusted | 119 judged + 1 manually credited | **85.83% (103/120)\*** | [Replay](https://github.com/GabrielMartinMoran/mind/actions/runs/40347160769) |
-| Historical pilot (GPT-4.1 mini / GPT-4o mini) | 120 balanced questions | 81.67% (98/120) | [Earlier run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895) |
-| Historical full attempt | 500 questions | Not scored | [Interrupted run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024) |
+| Run                                           | Scope                            |        Answer accuracy | Evidence                                                                               |
+| --------------------------------------------- | -------------------------------- | ---------------------: | -------------------------------------------------------------------------------------- |
+| **GPT-6 Luna (low), best completed**          | 120 balanced questions           |   **86.67% (104/120)** | [Completed run](https://github.com/GabrielMartinMoran/mind/actions/runs/40320556252)   |
+| GPT-6 Luna (low), manually adjusted           | 119 judged + 1 manually credited | **85.83% (103/120)\*** | [Replay](https://github.com/GabrielMartinMoran/mind/actions/runs/40347160769)          |
+| Historical pilot (GPT-4.1 mini / GPT-4o mini) | 120 balanced questions           |        81.67% (98/120) | [Earlier run](https://github.com/GabrielMartinMoran/mind/actions/runs/40211788895)     |
+| Historical full attempt                       | 500 questions                    |             Not scored | [Interrupted run](https://github.com/GabrielMartinMoran/mind/actions/runs/40212406024) |
 
 \*The manually adjusted result has **102 judged correct out of 119**, plus
 one answer counted correct at the user's request after its embedding request

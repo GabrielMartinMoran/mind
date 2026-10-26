@@ -50,7 +50,7 @@ The preview shows Mind's web app for inspecting and maintaining saved memories.
 [OmniMemEval LongMemEval-S](https://github.com/MemTensor/OmniMemEval) —
 **indicative #3 by score** against
 [published results](https://github.com/MemTensor/OmniMemEval/blob/main/docs/user_memory/results.md).
-*120 balanced questions · Answering and judging with GPT-6 Luna (low).*
+_120 balanced questions · Answering and judging with GPT-6 Luna (low)._
 
 The comparison is not an official ranking: published runs use 500 questions
 and different model/judge configurations.
