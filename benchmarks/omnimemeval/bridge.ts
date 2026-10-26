@@ -1,6 +1,6 @@
 /**
  * Local transport adapter for OmniMemEval. Calls Mind's production store API:
- * one durable memory per benchmark conversation session, RAG disabled.
+ * one durable memory per benchmark conversation session; RAG is opt-in.
  * This does not modify Mind's ranking, prompts or admission policy.
  */
 import { join } from 'node:path';
@@ -30,9 +30,21 @@ export function mapBridgeError(error: unknown): BridgeErrorResponse {
   return { status: 500, body: { error: String(error) } };
 }
 
+export function resolveBenchmarkRagMode(value: string | undefined): boolean {
+  if (value === 'true') return true;
+  if (value === 'false' || value === undefined) return false;
+  throw new Error('MIND_RAG must be true or false for OmniMemEval');
+}
+
 export async function startBridge(): Promise<void> {
-  process.env.MIND_RAG = 'false';
-  const { createSqliteStore } = await import('../../src/store/sqlite-store.ts');
+  const ragEnabled = resolveBenchmarkRagMode(process.env.MIND_RAG);
+  const [{ createSqliteStore }, { isRagEnabled }] = await Promise.all([
+    import('../../src/store/sqlite-store.ts'),
+    import('../../src/helpers/rag.ts'),
+  ]);
+  if (ragEnabled && !isRagEnabled()) {
+    throw new Error('RAG requested but no valid embedding provider/key is configured');
+  }
 
   const store = createSqliteStore(join(tmpdir(), 'mind-omnimemeval-' + process.pid + '.sqlite'));
   const counts = new Map<string, number>();
@@ -62,10 +74,13 @@ export async function startBridge(): Promise<void> {
           (message: any) => String(message.role ?? 'unknown') + ': ' + String(message.content ?? '')
         )
         .join('\n');
-    await store.addMemory(space, 'session-' + String(index).padStart(3, '0'), content, {
+    const memory = await store.addMemory(space, 'session-' + String(index).padStart(3, '0'), content, {
       tags: ['benchmark', 'session'],
       tier: 3,
     });
+    if (ragEnabled && !memory.embedding) {
+      throw new Error('RAG requested but session embedding was not created');
+    }
     return { ok: true, count: index };
   }
 
@@ -76,7 +91,7 @@ export async function startBridge(): Promise<void> {
     const results = await store.search(String(payload.query ?? ''), {
       space,
       limit: Math.max(1, Math.min(20, limit)),
-      semantic: false,
+      semantic: ragEnabled,
     });
     return {
       count: results.length,
@@ -100,7 +115,7 @@ export async function startBridge(): Promise<void> {
     port,
     async fetch(request) {
       if (new URL(request.url).pathname === '/health') {
-        return Response.json({ ok: true, engine: 'mind', rag: false });
+        return Response.json({ ok: true, engine: 'mind', rag: ragEnabled });
       }
       try {
         const payload = (await request.json()) as any;
