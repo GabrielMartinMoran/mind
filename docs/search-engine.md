@@ -261,8 +261,10 @@ exposes, and how it filters and paginates, differs.
   Omitting `search` lists memories by metadata; supplying it, even as an empty
   string, runs search and can raise the validation error. The `from`/`to` date
   range filters on `changed_at` after fusion, so `total` reflects the post-date
-  count. It adds the top-result-based `search_method`. The semantic channel
-  follows the server's RAG setting.
+  count. By default each result keeps `confidence` alongside the memory fields,
+  and it adds `score`, `methods`, and the top-result-based `search_method` only
+  in expanded debug mode (see below). The semantic channel follows the
+  server's RAG setting.
 - **HTTP `GET /api/search`.** Accepts `q`, `space` (`*` means all), `tag`,
   `tier` or `tiers`, `confidence`, `semantic` (`on`/`off`), `limit` (default 25,
   maximum 500), and `offset`. Without `q` it returns HTTP 200 with an empty
