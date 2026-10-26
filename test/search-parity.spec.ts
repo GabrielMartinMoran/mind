@@ -6,7 +6,7 @@
 // cases run without RAG (no paid calls); the semantic cases replace the
 // embedding provider with a deterministic in-process stub.
 
-import { afterEach, describe, expect, spyOn, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 
 import { matchApiRoute } from '../src/api/router';
 import * as ragHelpers from '../src/helpers/rag';
@@ -18,14 +18,34 @@ import { createTestStore } from './mocks/test-store';
 let store: (MindStore & { cleanup: () => void }) | null = null;
 const restorers: (() => void)[] = [];
 
+// The compact/expanded contract must not depend on the invoking shell. Capture
+// the ambient value once, force compact mode before every test so compact
+// assertions always run with the flag absent, and restore the ambient value
+// afterwards so this file never leaks env state into other suites.
+const EXPANDED_RESPONSE_ENV = 'USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE';
+const ambientExpandedResponse = process.env[EXPANDED_RESPONSE_ENV];
+
+function restoreAmbientExpandedResponse(): void {
+  if (ambientExpandedResponse === undefined) {
+    delete process.env[EXPANDED_RESPONSE_ENV];
+    return;
+  }
+  process.env[EXPANDED_RESPONSE_ENV] = ambientExpandedResponse;
+}
+
 function restoreAll(): void {
   for (const restore of restorers.splice(0)) restore();
   ragHelpers.resetSemanticBreaker();
 }
 
+beforeEach(() => {
+  delete process.env[EXPANDED_RESPONSE_ENV];
+});
+
 afterEach(() => {
   store?.cleanup();
   store = null;
+  restoreAmbientExpandedResponse();
   restoreAll();
 });
 
@@ -73,7 +93,7 @@ async function seedLexical(created: MindStore): Promise<void> {
 }
 
 describe('HTTP /api/search — MCP parity', () => {
-  test('same order, score, confidence and methods for the same query', async () => {
+  test('same order by default; MCP is compact while HTTP keeps diagnostics', async () => {
     store = seedParityCorpus();
     await seedLexical(store);
 
@@ -81,30 +101,43 @@ describe('HTTP /api/search — MCP parity', () => {
     const httpResults = await response.json();
 
     const tools = createMemoryTools(store);
-    const mcp = await tools.memory_query.handler({
+    const compact = await tools.memory_query.handler({
       space: 'projects/parity',
       search: 'authentication token',
     });
 
     expect(httpResults.map((result: any) => result.name)).toEqual(
-      mcp.memories.map((memory: any) => memory.name)
+      compact.memories.map((memory: any) => memory.name)
     );
     expect(httpResults.length).toBeGreaterThan(0);
 
     for (let i = 0; i < httpResults.length; i += 1) {
       const httpResult = httpResults[i];
-      const mcpResult = mcp.memories[i];
-      expect(httpResult.score).toBeCloseTo(mcpResult.score, 10);
+      const mcpResult = compact.memories[i];
+      // HTTP keeps the full diagnostics; compact MCP keeps only confidence.
+      expect(httpResult).toHaveProperty('score');
+      expect(httpResult).toHaveProperty('methods');
       expect(httpResult.confidence).toBe(mcpResult.confidence);
-      expect(httpResult.methods).toEqual(mcpResult.methods);
+      expect(mcpResult).not.toHaveProperty('score');
+      expect(mcpResult).not.toHaveProperty('methods');
     }
 
-    // The MCP surface exposes score/confidence/methods, so all three are
-    // compared above; total semantics also match.
-    expect(Number(response.headers.get('X-Total-Count'))).toBe(mcp.total);
-    expect(mcp.memories.map((memory: any) => memory.score)).toEqual(
-      httpResults.map((result: any) => result.score)
+    expect(compact).not.toHaveProperty('search_method');
+    expect(Number(response.headers.get('X-Total-Count'))).toBe(compact.total);
+
+    // The exact opt-in restores score/methods parity with HTTP.
+    process.env[EXPANDED_RESPONSE_ENV] = 'true';
+    const expanded = await tools.memory_query.handler({
+      space: 'projects/parity',
+      search: 'authentication token',
+    });
+    expect(expanded.memories.map((memory: any) => memory.name)).toEqual(
+      httpResults.map((result: any) => result.name)
     );
+    for (let i = 0; i < httpResults.length; i += 1) {
+      expect(httpResults[i].score).toBeCloseTo(expanded.memories[i].score, 10);
+      expect(httpResults[i].methods).toEqual(expanded.memories[i].methods);
+    }
   });
 
   test('same ranking and totals with tag and tier filters', async () => {
@@ -117,7 +150,7 @@ describe('HTTP /api/search — MCP parity', () => {
     const httpResults = await response.json();
 
     const tools = createMemoryTools(store);
-    const mcp = await tools.memory_query.handler({
+    const compact = await tools.memory_query.handler({
       space: 'projects/parity',
       search: 'authentication token',
       tag: 'cat:decision',
@@ -125,14 +158,16 @@ describe('HTTP /api/search — MCP parity', () => {
     });
 
     expect(httpResults.map((result: any) => result.name)).toEqual(
-      mcp.memories.map((memory: any) => memory.name)
+      compact.memories.map((memory: any) => memory.name)
     );
     for (let i = 0; i < httpResults.length; i += 1) {
-      expect(httpResults[i].score).toBeCloseTo(mcp.memories[i].score, 10);
-      expect(httpResults[i].confidence).toBe(mcp.memories[i].confidence);
-      expect(httpResults[i].methods).toEqual(mcp.memories[i].methods);
+      expect(httpResults[i].confidence).toBe(compact.memories[i].confidence);
+      expect(httpResults[i]).toHaveProperty('score');
+      expect(httpResults[i]).toHaveProperty('methods');
+      expect(compact.memories[i]).not.toHaveProperty('score');
+      expect(compact.memories[i]).not.toHaveProperty('methods');
     }
-    expect(Number(response.headers.get('X-Total-Count'))).toBe(mcp.total);
+    expect(Number(response.headers.get('X-Total-Count'))).toBe(compact.total);
   });
 
   test('semantic=off skips the semantic channel; semantic=on and MCP use it', async () => {

@@ -172,7 +172,8 @@ current answer stays unambiguous.
 **Retrieval.** Start with one natural, focused question. Structured syntax
 (phrases, `OR`, `AND`, `NOT`, prefixes) is an additional tool for explicit
 constraints. The protocol does not require multiple queries. Results carry a
-`confidence` bucket and `methods` provenance, so a weak hit is visible.
+`confidence` bucket, so a weak hit is visible without extra diagnostic fields;
+`score`, `methods`, and `search_method` are opt-in diagnostics for debugging.
 
 **Linking.** `memory_add.links_to` creates a generic `related` link. Use
 `link_create` when direction and a specific label matter. Re-creating the same

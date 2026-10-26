@@ -23,24 +23,32 @@ is `searchMemories` in `src/store/repositories/search-repository.ts`;
 2. **Parse.** The parser builds a query AST from quoted phrases, uppercase `OR`,
    `AND`, `NOT`, and a trailing `*` prefix. Adjacent terms are an implicit `AND`.
    Only the exact uppercase operator words are syntax; their lowercase forms are
-   ordinary terms.
-3. **Collect.** Independent channels gather candidate rows: the phrase, all-term,
-   and any-term rungs; trigram substrings; fuzzy spellings; LIKE for sub-trigram
-   terms; and, when enabled, embeddings. A token-set score is also computed, but
-   only over lexical candidates already collected. The channels run sequentially
-   on one synchronous SQLite connection, so "fan-out" describes the candidate
+   ordinary terms. Malformed operator usage degrades to a safe literal match and
+   never raises an error.
+3. **Collect candidates with a logical fan-out.** The lexical channels are
+   logically independent: phrase, all-term, and any-term relaxation rungs; a
+   trigram channel for substrings; a fuzzy channel for close spellings; LIKE for
+   terms shorter than a trigram; a token-set channel for partial multi-word
+   coverage (scored only over lexical candidates already collected); and an
+   optional semantic channel for embedding neighbors. They run sequentially on
+   one synchronous SQLite connection, so "fan-out" describes the candidate
    model, not concurrent execution.
-4. **Admit.** Explicit keyword, boolean, phrase, and prefix queries use a
-   boolean-satisfaction gate with relaxed coverage and a lexical last-resort tier.
-   Punctuated natural-language questions instead keep every informative lexical
-   candidate so complementary partial matches can rank. Semantic candidates
-   follow a separate, stricter admission rule.
-5. **Fuse.** Each channel is normalized and weighted, an agreement bonus rewards
-   candidates found by more than one channel, and results are ordered by fused
-   score with deterministic tie-breaks.
-6. **Shape, filter, and paginate.** Each result carries `score`, `confidence`, and
-   `methods`. Confidence filtering, date filtering, totals, and pagination are
-   applied after fusion and differ by surface.
+4. **Admit candidates.** Explicit keyword, boolean, phrase, and prefix queries use
+   a boolean-satisfaction gate with relaxed coverage and a lexical last-resort
+   tier. Punctuated natural-language questions instead keep every informative
+   lexical candidate so complementary partial matches can rank. Semantic
+   admission is independent for natural-language queries: a single group with no
+   `NOT` and only plain terms may admit semantic-only candidates at cosine
+   similarity 0.6 or higher. Explicit phrases, prefixes, and operators stay
+   lexical.
+5. **Fuse and rank.** Each channel is normalized and weighted, an agreement bonus
+   rewards candidates found by more than one channel, and results are ordered by
+   fused score with deterministic tie-breaks.
+6. **Shape, filter, and paginate.** Every result carries a `confidence` bucket
+   (`high`, `medium`, or `low`); the pipeline also computes a `score` plus a
+   `methods` list of the channels that matched it, which MCP returns only when
+   the expanded-response flag is set. Confidence filtering, date filtering,
+   totals, and pagination are applied after fusion and differ by surface.
 
 ## Query grammar and parsing
 
@@ -273,6 +281,22 @@ The engine paginates only when a caller supplies `limit` or `offset`, clamping
 `src/store/sqlite-store.ts`). The default of 25 belongs to the CLI, MCP, and API
 surfaces, not to the store. For browser behavior and URL state, see
 [Web UI](web-ui.md).
+
+## Response fields by surface
+
+CLI `search` prints its existing result lines, including the `confidence`
+bucket. `GET /api/search` keeps `score`, `confidence`, and `methods` on every
+result item. MCP `memory_query(search)` is compact by default: each result keeps
+`confidence`, `changed_at`, and the other memory fields, while `score` and
+`methods` are omitted and the top-level `search_method` is absent.
+
+MCP includes those three diagnostic fields only when the Mind MCP process runs
+with `USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE` set to exactly `true`. The variable
+is read by Mind, not by the agent client. With the flag unset or set to any other
+value (`false`, `1`, `TRUE`), the response stays compact. `total`, `limit`,
+`offset`, and result order are the same in both modes, and `search_method`
+stays absent when a search returns no hits. The YAML text item and
+`structuredContent` always carry the same fields.
 
 ## Storage and schema v10
 

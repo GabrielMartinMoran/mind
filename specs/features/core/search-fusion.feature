@@ -170,10 +170,19 @@ Feature: Search fusion pipeline
       Then the bucket is "low"
 
     @contract
-    Scenario: MCP results expose confidence and methods per memory
+    Scenario: MCP compact results expose confidence without diagnostic search fields
       When calling memory_query with search for a matching term
       Then each returned memory exposes a confidence bucket
-      And each returned memory exposes its methods
+      And each returned memory omits score and methods
+      And the response omits search_method
+      And the response YAML matches the structured payload
+
+    @contract
+    Scenario: MCP expanded results expose diagnostic search fields when enabled
+      Given USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE is exactly "true"
+      When calling memory_query with search for a matching term
+      Then each returned memory exposes score, confidence, and methods
+      And the response exposes search_method
       And the response YAML matches the structured payload
 
     @integration

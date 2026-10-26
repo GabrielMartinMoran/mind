@@ -15,6 +15,7 @@ let store: MindStore & { cleanup: () => void };
 
 afterEach(() => {
   store?.cleanup();
+  delete process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE;
 });
 
 function expectYamlParity(response: {
@@ -127,7 +128,8 @@ describe('MCP YAML content stage 1', () => {
     expectNoBoundaryLeaks(memoryQuery.structuredContent);
     expect(memoryQuery.structuredContent).not.toHaveProperty('search_method');
 
-    // Search results expose confidence + methods, with YAML parity retained.
+    // Search results expose confidence; diagnostics require the exact opt-in.
+    process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE = 'true';
     const memorySearch: any = await memoryTools.memory_query.handler({
       space: 'projects/mind',
       search: 'yaml',
@@ -140,6 +142,7 @@ describe('MCP YAML content stage 1', () => {
     expect(searchedItem.confidence).toMatch(/^(high|medium|low)$/);
     expect(Array.isArray(searchedItem.methods)).toBe(true);
     expect(searchedItem.score).toBeGreaterThan(0);
+    delete process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE;
 
     const checkpointSave = await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
@@ -171,6 +174,37 @@ describe('MCP YAML content stage 1', () => {
     );
 
     expectYamlParity(await statusTools.status.handler({ space: 'projects/mind' }));
+  });
+
+  test('memory_query YAML stays equivalent in compact and expanded modes', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind project', ['type:project']);
+    await store.addMemory('projects/mind', 'parity-memory', 'hello world content', {
+      tags: ['test'],
+    });
+
+    const memoryTools = createMemoryTools(store);
+
+    const compact: any = await memoryTools.memory_query.handler({
+      space: 'projects/mind',
+      search: 'hello',
+    });
+    expectYamlParity(compact);
+    expect(compact.structuredContent?.memories?.[0]?.confidence).toMatch(/^(high|medium|low)$/);
+    expect(compact.structuredContent?.memories?.[0]).not.toHaveProperty('score');
+    expect(compact.structuredContent?.memories?.[0]).not.toHaveProperty('methods');
+    expect(compact.structuredContent).not.toHaveProperty('search_method');
+
+    process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE = 'true';
+    const expanded: any = await memoryTools.memory_query.handler({
+      space: 'projects/mind',
+      search: 'hello',
+    });
+    expectYamlParity(expanded);
+    expect(expanded.structuredContent?.memories?.[0]?.score).toBeGreaterThan(0);
+    expect(Array.isArray(expanded.structuredContent?.memories?.[0]?.methods)).toBe(true);
+    expect(typeof expanded.structuredContent?.search_method).toBe('string');
+    delete process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE;
   });
 
   test('in-scope YAML payloads are normalized before serialization', async () => {

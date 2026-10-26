@@ -339,11 +339,15 @@ first, followed by near matches, substrings, and close spellings:
   queries can admit semantic-only matches at cosine ≥0.6 even when lexical
   results exist; explicit phrases, prefixes, and operators stay lexical.
 
-Every result includes a `confidence` bucket (`high`, `medium`, `low`) and a
-`methods` list naming the channels that matched it. The CLI prints the bucket as
-`[high]`, `[medium]`, or `[low]`. If RAG is off, search still works and just
-omits the semantic channel. If an embedding request fails, Mind skips semantic
-search for about five minutes instead of retrying on every query.
+Every result includes a `confidence` bucket (`high`, `medium`, `low`). The CLI
+prints the bucket as `[high]`, `[medium]`, or `[low]`. HTTP results also carry
+`score` and a `methods` list naming the channels that matched. MCP
+`memory_query(search)` is compact by default: it keeps `confidence` and omits
+`score`, `methods`, and the top-level `search_method` unless the Mind MCP
+process sets `USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE=true`. If RAG is off, search
+still works and just omits the semantic channel. If an embedding request fails,
+Mind skips semantic search for about five minutes instead of retrying on every
+query.
 
 In the web UI, search stays scoped to the open space. Clearing the query removes
 old results and restores the loaded memory list when its filters still match.
@@ -548,7 +552,7 @@ Stage 1 MCP structured tools now return the same payload in two forms:
 
 In this stage, `system_instructions` and the content-only delete/link tools keep their existing text responses.
 
-`memory_query` supports optional `search` for full-text search and returns pagination fields such as `limit` and `offset` in both `structuredContent` and YAML content. Search results also include `confidence` and `methods`, and the payload reports a `search_method` compatibility mapping. Its optional `tier` field also accepts `null`, which means the same thing as omitting the tier filter (all tiers).
+`memory_query` supports optional `search` for full-text search and returns pagination fields such as `total`, `limit`, and `offset` in both `structuredContent` and YAML content. Search results always include `confidence`. The diagnostic fields `score`, `methods`, and the top-level `search_method` appear only when the Mind MCP process sets `USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE=true`; the flag is Mind's, not a client setting. Its optional `tier` field also accepts `null`, which means the same thing as omitting the tier filter (all tiers).
 
 Memory MCP workflows also support bounded composite ergonomics while keeping atomic tools:
 

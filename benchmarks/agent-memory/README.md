@@ -447,7 +447,13 @@ today:
   output, so memory content is never retained. A free unit test verifies the
   prompt's lexical overlap is empty, proving the scenario tests meaning rather
   than term matching.
-  B10 declares `rag: true` and `requires: ['mind-memory', 'semantic-recall']`.
+  Because compact `memory_query` responses omit `methods`, B10 opts in through
+  its own Mind MCP child environment: the scenario declares
+  `mindEnv: { USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE: 'true' }`, and the harness
+  writes it only into the generated `mcp.servers.mind.environment`, never into
+  the worker environment. The flag belongs to Mind, not to an OpenCode setting,
+  and no other scenario receives it. B10 declares `rag: true` and
+  `requires: ['mind-memory', 'semantic-recall']`.
   A run-level `--rag` overrides every scenario's own flag, so it also enables
   B10 (and every other unit) without changing the scenario definition.
   Without a Mind condition, the RAG embedding credential (currently
@@ -554,8 +560,9 @@ How a scenario runs:
 - **Redacted execution evidence.** Each session's `result.json` keeps only
   ordered tool names, skill ids, nested code-mode tool names, parent/child
   session ids, `memory_query` memory names with their `methods`, and the idle
-  outcome. Prompts, message text, tool results, and memory contents are dropped
-  before the file is written.
+  outcome. `methods` is recorded only for scenarios that opt into expanded MCP
+  responses (currently B10). Prompts, message text, tool results, and memory
+  contents are dropped before the file is written.
 - **Assertions, not prose.** `makeAssertion(ctx)` inspects
   `{ workspaceDir, sessionResults, childResults, mindDb }` and returns
   `{ pass, details }`; agent prose is never accepted as success. An assertion

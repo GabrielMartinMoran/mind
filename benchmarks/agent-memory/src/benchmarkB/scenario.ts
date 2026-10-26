@@ -124,6 +124,13 @@ export interface Scenario {
    */
   readonly rag?: boolean;
   /**
+   * Optional environment merged into the generated Mind MCP server's
+   * `environment` only. It never reaches the parent worker environment, so a
+   * scenario can opt into MCP response details (for example expanded
+   * `memory_query` diagnostics) without changing how the harness runs.
+   */
+  readonly mindEnv?: Readonly<Record<string, string>>;
+  /**
    * Capabilities the scenario needs. When one is unavailable (wrong engine,
    * missing credential) the runner records `not_run` with a reason instead of
    * failing the scenario.

@@ -17,6 +17,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { EXPANDED_MCP_RESPONSE_ENV } from '../../../config';
 import { inspectAllMemories, inspectEmbeddingCoverage } from '../../../mind/inspect';
 import { duplicateMemoryNames } from '../../duplicates';
 import { sessionSearchProvenance } from '../../runner';
@@ -190,6 +191,9 @@ export const B10_SCENARIO: Scenario = {
   // Only a Mind condition with RAG can seed embeddings and recall by meaning.
   rag: true,
   requires: ['mind-memory', 'semantic-recall'],
+  // The assertion reads `methods` provenance, so this scenario opts into the
+  // expanded MCP response inside its Mind MCP child only.
+  mindEnv: { [EXPANDED_MCP_RESPONSE_ENV]: 'true' },
   seed: seedB10,
   sessions: [{ prompt: B10_PROMPTS[0]! }],
   makeAssertion,
