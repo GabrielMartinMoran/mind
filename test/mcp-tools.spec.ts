@@ -38,6 +38,7 @@ function requireListedTool(tools: ListedTool[], name: string): ListedTool {
 
 afterEach(() => {
   store?.cleanup();
+  delete process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE;
 });
 
 describe('MCP input schema fidelity', () => {
@@ -970,14 +971,22 @@ describe('MCP Memory Tools - links_to Best-Effort (Phase 1a)', () => {
 });
 
 describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () => {
-  test('memory_query with search parameter returns unified-pipeline results', async () => {
+  const EXPANDED_ENV = 'USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE';
+
+  async function seedSearchCorpus() {
     store = createTestStore();
     store.createSpace('projects/mind', 'Mind project', ['test']);
     await store.addMemory('projects/mind', 'auth-jwt', 'JWT authentication implementation', {
       tags: ['cat:decision'],
     });
+    await store.addMemory('projects/mind', 'auth-token', 'authentication token rotation', {
+      tags: ['cat:decision'],
+    });
+    return createMemoryTools(store);
+  }
 
-    const tools = createMemoryTools(store);
+  test('memory_query search is compact by default and keeps confidence', async () => {
+    const tools = await seedSearchCorpus();
     const res = await tools.memory_query.handler({
       space: 'projects/mind',
       search: 'JWT',
@@ -985,15 +994,68 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
 
     expect(res.memories).toBeDefined();
     expect(res.memories.length).toBeGreaterThan(0);
-    // Should find the memory with JWT in content
     const found = res.memories.find((m: { name: string }) => m.name === 'auth-jwt');
     expect(found).toBeDefined();
-    // New contract (D12): score + confidence + methods provenance per result.
+    expect(found.confidence).toBe('high');
+    expect(found).not.toHaveProperty('score');
+    expect(found).not.toHaveProperty('methods');
+    expect(res).not.toHaveProperty('search_method');
+    expect(res.total).toBeGreaterThan(0);
+    expect(res.limit).toBe(25);
+    expect(res.offset).toBe(0);
+  });
+
+  test('memory_query expands diagnostics when the flag is exactly "true"', async () => {
+    process.env[EXPANDED_ENV] = 'true';
+    const tools = await seedSearchCorpus();
+    const res = await tools.memory_query.handler({
+      space: 'projects/mind',
+      search: 'JWT',
+    });
+
+    const found = res.memories.find((m: { name: string }) => m.name === 'auth-jwt');
+    expect(found).toBeDefined();
     expect(found.score).toBeGreaterThan(0);
     expect(found.confidence).toBe('high');
     expect(found.methods).toContain('all');
     expect(res.search_method).toBe('mixed');
   });
+
+  test('compact output preserves result order, confidence, and pagination of the expanded output', async () => {
+    const tools = await seedSearchCorpus();
+    const args = { space: 'projects/mind', search: 'authentication', limit: 1, offset: 0 };
+
+    const compact = await tools.memory_query.handler(args);
+    process.env[EXPANDED_ENV] = 'true';
+    const expanded = await tools.memory_query.handler(args);
+
+    expect(compact.memories.map((m: any) => m.name)).toEqual(
+      expanded.memories.map((m: any) => m.name)
+    );
+    expect(compact.memories.map((m: any) => m.confidence)).toEqual(
+      expanded.memories.map((m: any) => m.confidence)
+    );
+    expect(compact.total).toBe(expanded.total);
+    expect(compact.limit).toBe(expanded.limit);
+    expect(compact.offset).toBe(expanded.offset);
+  });
+
+  for (const value of ['false', '1', 'TRUE', '', 'enabled']) {
+    test(`memory_query stays compact for non-true flag value "${value}"`, async () => {
+      process.env[EXPANDED_ENV] = value;
+      const tools = await seedSearchCorpus();
+      const res = await tools.memory_query.handler({
+        space: 'projects/mind',
+        search: 'JWT',
+      });
+
+      expect(res.memories.length).toBeGreaterThan(0);
+      expect(res.memories[0]).not.toHaveProperty('score');
+      expect(res.memories[0]).not.toHaveProperty('methods');
+      expect(res).not.toHaveProperty('search_method');
+      expect(res.memories[0]?.confidence).toMatch(/^(high|medium|low)$/);
+    });
+  }
 
   test('memory_query without search uses SQL filters only', async () => {
     store = createTestStore();
@@ -1014,21 +1076,18 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
     expect(res.search_method).toBeUndefined();
   });
 
-  test('memory_query response includes search_method field when search is used', async () => {
+  test('memory_query listing remains diagnostic-free even when the flag is true', async () => {
+    process.env[EXPANDED_ENV] = 'true';
     store = createTestStore();
     store.createSpace('projects/mind', 'Mind project', ['test']);
-    await store.addMemory('projects/mind', 'test-memory', 'hello world content', {
-      tags: ['test'],
-    });
+    await store.addMemory('projects/mind', 'memory-1', 'content', { tags: ['cat:decision'] });
 
     const tools = createMemoryTools(store);
-    const res = await tools.memory_query.handler({
-      space: 'projects/mind',
-      search: 'hello',
-    });
+    const res = await tools.memory_query.handler({ space: 'projects/mind' });
 
-    expect(res).toHaveProperty('search_method');
-    expect(res.search_method).toBeDefined();
+    expect(res).not.toHaveProperty('search_method');
+    expect(res.memories[0]).not.toHaveProperty('score');
+    expect(res.memories[0]).not.toHaveProperty('methods');
   });
 });
 
@@ -1091,6 +1150,7 @@ describe('MCP Memory Tools - memory_query limits (D6)', () => {
 
 describe('MCP Memory Tools - memory_query LIKE fallback (Phase 1b LIKE fix)', () => {
   test('memory_query substring hit: embedded substring found by the unified pipeline', async () => {
+    process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE = 'true';
     store = createTestStore();
     store.createSpace('projects/mind-mcp-fallback', 'Test', ['test']);
     await store.addMemory(
@@ -1165,7 +1225,8 @@ describe('MCP Search Tool Removed (Phase 1b Step 2)', () => {
       search: 'hello',
     });
     expect(res.memories.length).toBe(1);
-    expect(res.search_method).toBe('mixed');
+    expect(res.memories[0]?.confidence).toBeDefined();
+    expect(res).not.toHaveProperty('search_method');
   });
 });
 

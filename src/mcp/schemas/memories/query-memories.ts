@@ -6,7 +6,7 @@ export const MemoryQuerySchema = z.object({
     .string()
     .optional()
     .describe(
-      'Relevance search query supporting quoted "phrases", OR / AND / NOT operators, and a trailing * prefix wildcard. Malformed operator usage degrades to a safe literal match. Each result includes score, a confidence bucket (high|medium|low) and the matched methods.'
+      'Relevance search query supporting quoted "phrases", OR / AND / NOT operators, and a trailing * prefix wildcard. Malformed operator usage degrades to a safe literal match. Each result includes a confidence bucket (high|medium|low). Score, matched methods, and the top-level search_method are diagnostics returned only when USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE is exactly "true".'
     ),
   tag: z.string().optional().describe('Filter by tag.'),
   tier: z

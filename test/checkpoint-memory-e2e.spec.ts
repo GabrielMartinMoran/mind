@@ -10,6 +10,7 @@ let store: MindStore & { cleanup: () => void };
 
 afterEach(() => {
   store?.cleanup();
+  delete process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE;
 });
 
 // =============================================================================
@@ -187,6 +188,7 @@ describe('Phase 6: Integration Tests — Complete Workflows', () => {
   // Test 4: memory_query with search parameter
   // ==========================================================================
   test('memory_query with search parameter returns unified-pipeline results', async () => {
+    process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE = 'true';
     const memoryTools = createMemoryTools(store);
 
     // 1. Add memory with known content

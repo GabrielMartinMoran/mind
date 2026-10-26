@@ -116,6 +116,8 @@ import { createFakeSessionDriver, type FakeSessionScript } from '../src/testing/
 
 const HARNESS_ROOT = join(import.meta.dir, '..');
 
+const EXPANDED_RESPONSE_ENV = 'USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE';
+
 function fixtureDirFor(scenario: { fixture: string }): string {
   return join(HARNESS_ROOT, scenario.fixture);
 }
@@ -224,6 +226,14 @@ describe('scenario registry', () => {
       expect(scenario.sessions).toHaveLength(expectedSessions);
       expect(typeof scenario.makeAssertion).toBe('function');
       expect(scenario.fixture).toMatch(/^fixtures\//);
+    }
+  });
+
+  test('declares the expanded MCP response env on B10 only', () => {
+    expect(B10_SCENARIO.mindEnv).toEqual({ [EXPANDED_RESPONSE_ENV]: 'true' });
+    for (const scenario of SCENARIOS) {
+      if (scenario.id === 'b10') continue;
+      expect(scenario.mindEnv).toBeUndefined();
     }
   });
 
@@ -2236,6 +2246,43 @@ describe('per-scenario RAG toggle', () => {
     expect(result.notRunReason).toContain('OPENROUTER_API_KEY');
     expect(result.sessions).toHaveLength(0);
     expect(run.aggregates[0]!.notRun).toBe(1);
+  });
+});
+
+describe('per-scenario Mind MCP env', () => {
+  function mindServerEnvironment(env: Record<string, string>): Record<string, string> {
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as {
+      mcp?: { servers: Record<string, { environment: Record<string, string> }> };
+    };
+    return config.mcp!.servers.mind!.environment;
+  }
+
+  test('B10 generated Mind MCP config opts into expanded metadata', async () => {
+    const seen: Record<string, string>[] = [];
+    // Keep B10's declarative env but stub the seed/assertion: this test proves
+    // scenario-to-config propagation, not the paid semantic run.
+    const probe: Scenario = {
+      ...B10_SCENARIO,
+      seed: undefined,
+      makeAssertion: () => ({ pass: true, details: ['probe'] }),
+    };
+    await runProbe(probe, {
+      credentialEnv: { OPENROUTER_API_KEY: 'sk-or-test-secret' },
+      executor: noopExecutor(job => seen.push(job.env)),
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(mindServerEnvironment(seen[0]!)[EXPANDED_RESPONSE_ENV]).toBe('true');
+    // The scenario-only override never becomes a parent worker variable.
+    expect(seen[0]![EXPANDED_RESPONSE_ENV]).toBeUndefined();
+  });
+
+  test('a scenario without a Mind env override leaves the flag unset', async () => {
+    const seen: Record<string, string>[] = [];
+    await runProbe(simpleScenario(), { executor: noopExecutor(job => seen.push(job.env)) });
+
+    expect(mindServerEnvironment(seen[0]!)[EXPANDED_RESPONSE_ENV]).toBeUndefined();
+    expect(seen[0]![EXPANDED_RESPONSE_ENV]).toBeUndefined();
   });
 });
 

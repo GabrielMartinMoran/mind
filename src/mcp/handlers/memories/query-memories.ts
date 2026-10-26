@@ -14,6 +14,12 @@ interface MemoryQueryPayload {
   search_method?: string;
 }
 
+const EXPANDED_RESPONSE_ENV = 'USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE';
+
+function isExpandedResponseEnabled(): boolean {
+  return process.env[EXPANDED_RESPONSE_ENV] === 'true';
+}
+
 export function applyDateFilters<T extends { changed_at: string }>(
   results: T[],
   from?: string,
@@ -26,7 +32,8 @@ function buildMemoryQueryResponse(
   memories: any[],
   totalCount: number,
   search_method: string | undefined,
-  parsed: { limit?: number; offset?: number }
+  parsed: { limit?: number; offset?: number },
+  includeDiagnostics: boolean
 ): ReturnType<typeof buildYamlContent<MemoryQueryPayload>> {
   const response: MemoryQueryPayload = {
     memories: memories.map(
@@ -38,14 +45,23 @@ function buildMemoryQueryResponse(
         created_at: _created_at,
         updated_at: _updated_at,
         ...rest
-      }: any) => presentMemoryResponse(rest)
+      }: any) => {
+        const presented = presentMemoryResponse(rest);
+
+        if (includeDiagnostics) {
+          return presented;
+        }
+
+        const { score: _score, methods: _methods, ...compact } = presented;
+        return compact;
+      }
     ),
     total: totalCount,
     limit: parsed.limit ?? 25,
     offset: parsed.offset ?? 0,
   };
 
-  if (search_method) {
+  if (includeDiagnostics && search_method) {
     response.search_method = search_method;
   }
 
@@ -113,6 +129,12 @@ export function queryMemoriesHandler(store: MindStore) {
       });
     }
 
-    return buildMemoryQueryResponse(memories, totalCount, search_method, parsed);
+    return buildMemoryQueryResponse(
+      memories,
+      totalCount,
+      search_method,
+      parsed,
+      isExpandedResponseEnabled()
+    );
   };
 }

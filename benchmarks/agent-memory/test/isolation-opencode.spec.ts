@@ -156,6 +156,35 @@ describe('buildConfigContent', () => {
     }
   });
 
+  test('merges scenario Mind env only into the Mind MCP server environment', () => {
+    const env = buildOpenCodeEnv({
+      condition: 'mind-current',
+      dir,
+      mindBin,
+      mindEnv: {
+        USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE: 'true',
+        // Reserved isolation pointers cannot be overridden by a scenario.
+        MIND_DB_PATH: '/leak/mind.db',
+      },
+    });
+    const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT!) as ConfigShape;
+    expect(config.mcp!.servers.mind!.environment.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE).toBe(
+      'true'
+    );
+    expect(config.mcp!.servers.mind!.environment.MIND_DB_PATH).toBe(dir.mindDb);
+    // The parent worker environment never receives the scenario-only flag.
+    expect(env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE).toBeUndefined();
+  });
+
+  test('leaves the scenario Mind env unset when a scenario declares none', () => {
+    const config = JSON.parse(
+      buildConfigContent({ condition: 'mind-current', dir, mindBin })
+    ) as ConfigShape;
+    expect(
+      config.mcp!.servers.mind!.environment.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE
+    ).toBeUndefined();
+  });
+
   test('throws when a mind condition is missing its binary', () => {
     expect(() => buildConfigContent({ condition: 'mind-v9', dir, mindBin: null })).toThrow(
       IsolationConfigError
@@ -196,6 +225,29 @@ describe('applyMindDatabase', () => {
     expect(config.mcp!.servers.mind!.environment.MIND_DB_PATH).toBe('/next/mind.db');
     expect(config.mcp!.servers.mind!.environment.MIND_DATA_DIR).toBe('/next');
     expect(config.mcp!.servers.mind!.environment.MIND_SYNC_ROOT).toBe('/next/sync');
+  });
+});
+
+describe('applyMindDatabase scenario Mind env', () => {
+  test('preserves the scenario Mind MCP environment override', () => {
+    const env = buildOpenCodeEnv({
+      condition: 'mind-current',
+      dir,
+      mindBin,
+      mindEnv: { USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE: 'true' },
+    });
+
+    const next = applyMindDatabase(env, {
+      dbPath: '/next/mind.db',
+      dataDir: '/next',
+      syncRoot: '/next/sync',
+    });
+    const config = JSON.parse(next.OPENCODE_CONFIG_CONTENT!) as ConfigShape;
+
+    expect(config.mcp!.servers.mind!.environment.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE).toBe(
+      'true'
+    );
+    expect(config.mcp!.servers.mind!.environment.MIND_DB_PATH).toBe('/next/mind.db');
   });
 });
 

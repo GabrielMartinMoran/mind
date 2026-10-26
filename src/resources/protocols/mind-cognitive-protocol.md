@@ -62,7 +62,11 @@ prefix.
 }
 ```
 
-Results include `confidence` (`high`, `medium`, `low`) and `methods`.
+Results include a `confidence` bucket (`high`, `medium`, `low`). Use it to judge
+a hit: `low` means the query and the memory barely agree, so refine the search
+or read the candidate before relying on it. `score`, `methods`, and
+`search_method` are diagnostic fields that appear only when the Mind MCP process
+sets `USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE=true`; normal use needs `confidence`.
 Use `space: "*"` to search across spaces. `memory_query` does not record access
 or promote tiers.
 
@@ -74,8 +78,8 @@ Read selected memories with `memory_read`. Active use promotes one tier
 ```
 
 RAG is optional and off by default. When enabled, semantic matches can appear
-without sharing words with the query; check `methods` before trusting a weak
-hit.
+without sharing words with the query; treat a `low` or `medium` confidence hit as
+a candidate to read, not a settled answer.
 
 ### Temporal fallback
 

@@ -29,8 +29,8 @@ produce the same order.
    stay lexical.
 4. **Fuse and rank.** Each channel is normalized and weighted, and an agreement
    bonus rewards candidates found by more than one channel. Every result carries
-   a `score`, a `confidence` bucket (`high`, `medium`, or `low`), and a `methods`
-   list of the channels that matched it.
+   a `confidence` bucket (`high`, `medium`, or `low`), and the pipeline computes
+   a `score` plus a `methods` list of the channels that matched it.
 
 `search_method` remains a compatibility summary (`fts5`, `like`, `trigram`,
 `fuzzy`, `embeddings`, or `mixed`); `methods` is the per-result provenance.
@@ -38,6 +38,22 @@ produce the same order.
 `score` is normalized to the best result of the same query. It is an
 intra-query relative signal and is not comparable across queries. `confidence`
 is a three-level bucket, not a calibrated probability.
+
+## Response fields by surface
+
+CLI `search` prints its existing result lines, including the `confidence`
+bucket. `GET /api/search` keeps `score`, `confidence`, and `methods` on every
+result item. MCP `memory_query(search)` is compact by default: each result keeps
+`confidence`, `changed_at`, and the other memory fields, while `score` and
+`methods` are omitted and the top-level `search_method` is absent.
+
+MCP includes those three diagnostic fields only when the Mind MCP process runs
+with `USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE` set to exactly `true`. The variable
+is read by Mind, not by the agent client. With the flag unset or set to any other
+value (`false`, `1`, `TRUE`), the response stays compact. `total`, `limit`,
+`offset`, and result order are the same in both modes, and `search_method`
+stays absent when a search returns no hits. The YAML text item and
+`structuredContent` always carry the same fields.
 
 ## Storage and schema v10
 

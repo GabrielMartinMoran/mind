@@ -386,14 +386,19 @@ easy to miss.
 Start with a natural, focused question; one query is usually enough. Refine only
 when the results are weak or ambiguous. For explicit constraints, `memory_query`
 with `search` also accepts quoted phrases, `OR`, `AND`, `NOT`, and a trailing
-`*` prefix. Results include a `confidence` bucket and a `methods` list that
-names the channels that matched. Use `space: "*"` to search across spaces.
+`*` prefix. Results include a `confidence` bucket (`high`, `medium`, `low`) that
+tells you how strongly the query and the memory agree. Use it to decide whether
+to read a hit. `score`, `methods`, and `search_method` are diagnostic fields that
+appear only when the Mind MCP process sets
+`USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE=true`; normal use needs `confidence`. Use
+`space: "*"` to search across spaces.
 
 Semantic recall is optional. RAG is off by default. When it is enabled,
 natural-language queries can admit semantic-only matches at cosine similarity
 0.6 or higher even when lexical results exist. Queries with explicit phrases,
-prefixes, or operators stay lexical. Check `methods` before trusting a weak
-semantic hit.
+prefixes, or operators stay lexical. Treat a `low` or `medium` confidence hit as
+a candidate to read, not a settled answer. CLI search keeps its existing output,
+and HTTP search keeps `score`, `confidence`, and `methods`.
 
 ### Space orientation
 

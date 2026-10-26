@@ -65,6 +65,11 @@ export interface ConditionIsolationInput {
   /** Embedding provider used only when `rag` is true. */
   readonly embeddingProvider?: EmbeddingProviderId;
   /**
+   * Optional environment merged into the Mind MCP server's `environment` only.
+   * The parent worker environment is never given these values.
+   */
+  readonly mindEnv?: Readonly<Record<string, string>>;
+  /**
    * Optional permission ruleset merged into the config. The `judge` profile
    * uses a deny-all tool rule so an evaluator session cannot wander.
    */
@@ -181,7 +186,9 @@ export function buildConfigContent(input: ConditionIsolationInput): string {
   const mindServer: MindMcpServer = {
     type: 'local',
     command: [input.mindBin, 'mcp'],
-    environment: mindPointerEnv(input),
+    // Scenario overrides belong to the Mind MCP child only, never the parent.
+    // Reserved isolation pointers stay authoritative over scenario values.
+    environment: { ...input.mindEnv, ...mindPointerEnv(input) },
   };
 
   return `${JSON.stringify(
