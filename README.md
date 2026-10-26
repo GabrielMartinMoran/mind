@@ -71,7 +71,7 @@ Mind goes beyond retrieval. It's designed to help AI agents build, connect, prio
 
 **Benchmarks measure how well a system answers. Mind is built to make knowledge useful over time.**
 
-*Benchmark note: Evaluated using GPT-6 Luna (low) for answering and judging, with RAG disabled. Additional tests with RAG enabled yielded very similar results. The ranking is indicative rather than official, as published results use different evaluation configurations.*
+_Benchmark note: Evaluated using GPT-6 Luna (low) for answering and judging, with RAG disabled. Additional tests with RAG enabled yielded very similar results. The ranking is indicative rather than official, as published results use different evaluation configurations._
 
 [OmniMemEval results](https://github.com/MemTensor/OmniMemEval/blob/main/docs/user_memory/results.md) · [How Mind manages memory](docs/cognitive-memory-lifecycle.md)
 
