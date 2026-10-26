@@ -27,16 +27,14 @@ Example:
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-26
+
 ### Changed
 
 - Simplified the GitHub README into a newcomer-friendly overview with a concise
   setup flow, navigation, badges, benchmark context, and links to focused guides.
 - Moved advanced agent, CLI/MCP, configuration, and autosync guidance out of
   the README into living documentation under `docs/`.
-
-## [1.7.0] - 2026-10-26
-
-### Changed
 
 - Reworked the README benchmark section to pair Mind's 86.67% LongMemEval-S result and its indicative-ranking caveat with the memory capabilities beyond retrieval.
 - Switched OmniMemEval answerer and judge to GPT-6 Luna with low reasoning effort, keeping the original prompts but marking new scores non-comparable to historical GPT-4o-mini-judged leaderboards.
