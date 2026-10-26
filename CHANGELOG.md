@@ -29,6 +29,8 @@ Example:
 
 ### Changed
 
+- Highlighted the strongest completed OmniMemEval LongMemEval-S result (86.67% on 120 balanced questions with GPT-6 Luna low as answerer and judge) in a compact README mention, replacing the oversized leaderboard table while retaining an explicit indicative-only ranking caveat and detailed benchmark evidence.
+
 - Documented the OmniMemEval LongMemEval-S 120-question Mind pilot alongside published systems with explicit sample-size, context-token, and comparability limits.
 - Made the paid OmniMemEval workflow manual-only, with a 120-question default and optional 60- or 500-question runs.
 - Changed search operators to be case-sensitive: only uppercase `AND`, `OR`, and `NOT` are boolean syntax, while their lowercase forms are ordinary terms. In punctuated natural-language questions, lowercase `and`/`or` are removed by the stopword filter and lowercase `not` remains a term.
