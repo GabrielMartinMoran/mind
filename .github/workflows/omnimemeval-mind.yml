@@ -16,17 +16,6 @@ on:
         type: choice
         options: ['60', '120', '500']
 
-  workflow_call:
-    inputs:
-      sample_size:
-        type: string
-        required: false
-        default: '120'
-      rag_mode:
-        type: string
-        required: false
-        default: 'off'
-
 permissions:
   contents: read
 

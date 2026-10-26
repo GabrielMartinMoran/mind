@@ -74,10 +74,15 @@ export async function startBridge(): Promise<void> {
           (message: any) => String(message.role ?? 'unknown') + ': ' + String(message.content ?? '')
         )
         .join('\n');
-    const memory = await store.addMemory(space, 'session-' + String(index).padStart(3, '0'), content, {
-      tags: ['benchmark', 'session'],
-      tier: 3,
-    });
+    const memory = await store.addMemory(
+      space,
+      'session-' + String(index).padStart(3, '0'),
+      content,
+      {
+        tags: ['benchmark', 'session'],
+        tier: 3,
+      }
+    );
     if (ragEnabled && !memory.embedding) {
       throw new Error('RAG requested but session embedding was not created');
     }
