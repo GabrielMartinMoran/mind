@@ -27,9 +27,11 @@ Example:
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-10-26
+
 ### Changed
 
-- Highlighted the strongest completed OmniMemEval LongMemEval-S result (86.67% with GPT-6 Luna low as answerer and judge) in a compact README mention, replacing the oversized leaderboard table while retaining an explicit indicative-only ranking caveat and detailed benchmark evidence.
+- Reworked the README benchmark section to pair Mind's 86.67% LongMemEval-S result and its indicative-ranking caveat with the memory capabilities beyond retrieval.
 - Switched OmniMemEval answerer and judge to GPT-6 Luna with low reasoning effort, keeping the original prompts but marking new scores non-comparable to historical GPT-4o-mini-judged leaderboards.
 - Changed the independent agent-memory benchmark's default OpenRouter model from DeepSeek V4.1 Flash to GPT-6 Luna (low variant); revised OmniMemEval preflight budget thresholds to reflect its lower base price.
 
@@ -179,11 +181,6 @@ Example:
 - Fixed silent search recall on accented/partial words (R1): folding diacritics in the trigram tokenizer makes accented and unaccented queries match both ways.
 - Fixed non-deterministic fuzzy candidate selection: the old unordered `LIMIT 2000` vocabulary prefilter is gone; fuzzy tokens, vocabulary, and expansions are sorted and the fuzzy expansion list is deterministic.
 - Fixed non-deterministic search ordering by replacing the numeric identifier tie-break (which produced `NaN` on UUIDs) with a stable name/id string comparison.
-- Fixed OpenCode automation plugin loading on OpenCode V2. The generated `~/.config/opencode/plugins/mind-automation.js` default-exports a V2 plugin definition (`id` + `setup`) and registers V2 session hooks (`context`, `compaction`) plus `ctx.event.subscribe`, while keeping the V1 `server()` hooks for backward compatibility. V2 changed the plugin API and rejects V1 modules with `Plugin must export a default definition with an id and an effect or setup function`. The object-entrypoint V1 form requires OpenCode 1.18.29 or newer.
-- Fixed OpenCode V2 automation to resolve one project space per canonical project path. The event's `location.project.canonical` now takes precedence over `location.directory`, so continuity artifacts no longer land in `projects/<event-directory>` when events come from a nested or different directory.
-- Fixed OpenCode V2 automation writing plugin state for every streamed event. State is now written only after state-changing events (`session.created`, compaction, `session.deleted`), and the checkpoint, summary, and handled maps are capped to the newest 400 entries.
-- Fixed OpenCode V2 session id extraction to skip empty or non-string fields so later fallbacks still resolve (for example, an empty `payload.sessionID` no longer masks `payload.sessionId`).
-- Fixed OpenCode V1 automation using the bus event id instead of the session id. The generated plugin now resolves the session identity from V1 event `properties` (`properties.sessionID`, `properties.session.id`, or `properties.info.id`) before falling back to the legacy event id, so checkpoint dedupe keys and session summary names use the real session.
 - Fixed the agent memory benchmark's isolated MCP registration on OpenCode 2.0.28. The in-process SDK host does not read `OPENCODE_CONFIG_CONTENT` on its own, so the driver now hands it the inline config explicitly (`OpenCode.create({ config: { content, directory } })`); the fail-closed `mcp list` check retries a bounded number of times to absorb the background-service warm-up race; and code-mode (`execute`) tool calls are unwrapped so real `mind.*` calls are counted. The A2 stage now runs real sessions that use Mind.
 - Fixed benchmark harness secret hygiene: worker `job.json` files (and the raw A2 result dump) redact credential env values at write time, so a provider key is never persisted even transiently. The harness also records `opencode`/SDK versions in `meta.json` and accumulates A2 + judge costs into `meta.budget.spentUsd`.
 - Fixed the agent memory benchmark per-question Mind database isolation: the per-question DB copy produced by A2 is now actually applied to the child environment and the `mind` MCP server config (`MIND_DB_PATH`/`MIND_DATA_DIR`/`MIND_SYNC_ROOT`), so questions no longer share one condition database. The free `locomo` stage also closes its `locomo:start` stage instead of leaving it `running`.
@@ -204,6 +201,16 @@ Example:
 - Removed `@opencode/sdk` from the root dependencies; it now belongs to the benchmark subproject. Removed the unused `bun-style` dependency; terminal styling uses `ansi-styles`.
 - Removed the stale root `package-lock.json`; `bun.lock` is the only root lockfile. Removed npm-lock handling from `scripts/release.sh` and the matching test fixtures.
 - Removed six temporal historical reports after extracting their durable conclusions into `docs/search-engine.md`, `docs/search-benchmarks.md`, and the existing living pages: the search audit, search optimization plan, search follow-up implementation report, cognitive-memory-lifecycle implementation report, skill-first-distribution implementation report, and merge-readiness report.
+
+## [1.6.1] - 2026-09-30
+
+### Fixed
+
+- Fixed OpenCode automation plugin loading on OpenCode V2. The generated `~/.config/opencode/plugins/mind-automation.js` default-exports a V2 plugin definition (`id` + `setup`) and registers V2 session hooks (`context`, `compaction`) plus `ctx.event.subscribe`, while keeping the V1 `server()` hooks for backward compatibility. V2 changed the plugin API and rejects V1 modules with `Plugin must export a default definition with an id and an effect or setup function`. The object-entrypoint V1 form requires OpenCode 1.18.29 or newer.
+- Fixed OpenCode V2 automation to resolve one project space per canonical project path. The event's `location.project.canonical` now takes precedence over `location.directory`, so continuity artifacts no longer land in `projects/<event-directory>` when events come from a nested or different directory.
+- Fixed OpenCode V2 automation writing plugin state for every streamed event. State is now written only after state-changing events (`session.created`, compaction, `session.deleted`), and the checkpoint, summary, and handled maps are capped to the newest 400 entries.
+- Fixed OpenCode V2 session id extraction to skip empty or non-string fields so later fallbacks still resolve (for example, an empty `payload.sessionID` no longer masks `payload.sessionId`).
+- Fixed OpenCode V1 automation using the bus event id instead of the session id. The generated plugin now resolves the session identity from V1 event `properties` (`properties.sessionID`, `properties.session.id`, or `properties.info.id`) before falling back to the legacy event id, so checkpoint dedupe keys and session summary names use the real session.
 
 ## [1.6.0] - 2026-06-30
 
