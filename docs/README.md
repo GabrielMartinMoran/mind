@@ -7,6 +7,17 @@ evidence with durable technical value is retained under `docs/history/`; it is
 frozen and is not current truth. The maintenance policy is in
 [AGENTS.md §6](../AGENTS.md#6-documentation-philosophy-and-maintenance).
 
+## Using Mind
+
+- [Agent setup](agent-setup.md) — install and refresh agent integrations,
+  including capability and safety details.
+- [CLI, web UI, and MCP reference](interfaces.md) — operational commands,
+  endpoints, and tool response behavior.
+- [Configuration](configuration.md) — installation paths, environment
+  variables, optional embedding providers, and storage.
+- [Autosync (experimental)](autosync.md) — project Markdown export/import,
+  conflict handling, and limitations.
+
 ## Project
 
 - [Mind's purpose and philosophy](mind-philosophy.md) — states what Mind is
