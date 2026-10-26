@@ -1,6 +1,6 @@
-# 🧠 Mind
-
 ![Mind banner: connected memory nodes](./assets/image/mind-banner.png)
+
+# 🧠 Mind
 
 **Your coding agent forgets. Mind remembers.**
 
@@ -9,6 +9,16 @@ bug fixes, and working context available across sessions, compaction, and
 tools.
 
 **Local-first · Open source · MCP**
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=gabrielmartinmoran%2Fmind&type=date&releases=&legend=bottom-right">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=gabrielmartinmoran/mind&type=date&theme=dark&legend=bottom-right" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=gabrielmartinmoran/mind&type=date&legend=bottom-right" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=gabrielmartinmoran/mind&type=date&legend=bottom-right" />
+ </picture>
+</a>
 
 ### Get started
 
@@ -50,12 +60,7 @@ The preview shows Mind's web app for inspecting and maintaining saved memories.
 [OmniMemEval LongMemEval-S](https://github.com/MemTensor/OmniMemEval) —
 **indicative #3 by score** against
 [published results](https://github.com/MemTensor/OmniMemEval/blob/main/docs/user_memory/results.md).
-_120 balanced questions · Answering and judging with GPT-6 Luna (low)._
-
-The comparison is not an official ranking: published runs use 500 questions
-and different model/judge configurations.
-[Run](https://github.com/GabrielMartinMoran/mind/actions/runs/40320556252) ·
-[Methodology and results](benchmarks/omnimemeval/README.md).
+_· Answering and judging with GPT-6 Luna (low)._
 
 ## What is Mind?
 
