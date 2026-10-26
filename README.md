@@ -54,13 +54,44 @@ The preview shows Mind's web app for inspecting and maintaining saved memories.
 - **Choose how to search.** Full-text search works out of the box; optional
   semantic search can be enabled with OpenAI or OpenRouter embeddings.
 
-## Benchmarks
+## 🏆 Benchmarks: 86.67% Accuracy. And That's Just One Part of Mind.
 
-**86.67% answer accuracy** on
-[OmniMemEval LongMemEval-S](https://github.com/MemTensor/OmniMemEval) —
-**indicative #3 by score** against
-[published results](https://github.com/MemTensor/OmniMemEval/blob/main/docs/user_memory/results.md).
-_· Answering and judging with GPT-6 Luna (low)._
+**86.67% answer accuracy. Top-3 territory. Even without using embeddings.**
+
+Mind achieved **86.67% answer accuracy** on
+[OmniMemEval LongMemEval-S](https://github.com/MemTensor/OmniMemEval),
+placing it in **top-three territory** by score against
+[published results](https://github.com/MemTensor/OmniMemEval/blob/main/docs/user_memory/results.md)
+— with semantic RAG disabled.
+
+**But remembering the right answer is only part of what makes a great memory system.**
+
+Mind goes beyond retrieval. It's designed to help AI agents build, connect,
+prioritize, and maintain knowledge as projects evolve:
+
+- 🧠 **Memory that adapts.** A three-tier memory system automatically promotes
+  actively used knowledge and keeps less-used context accessible without
+  discarding it.
+- 🔗 **Knowledge, not isolated facts.** Directional memory links connect
+  decisions, discoveries, dependencies, and fixes into an explorable knowledge
+  graph.
+- 🔄 **Knowledge that evolves.** Superseded decisions, living references, and
+  preserved history help agents distinguish current knowledge from what used
+  to be true.
+- ⚡ **Continuity across sessions.** Checkpoints, session summaries, and shared
+  memory help agents resume work after context compaction, session changes,
+  and handoffs.
+
+**Benchmarks measure how well a system answers. Mind is built to make knowledge
+useful over time.**
+
+*Benchmark note: Evaluated using GPT-6 Luna (low) for answering and judging,
+with RAG disabled. Additional tests with RAG enabled yielded very similar
+results. The ranking is indicative rather than official, as published results
+use different evaluation configurations.*
+
+[OmniMemEval results](https://github.com/MemTensor/OmniMemEval/blob/main/docs/user_memory/results.md)
+· [How Mind manages memory](docs/cognitive-memory-lifecycle.md)
 
 ## What is Mind?
 
