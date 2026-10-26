@@ -67,9 +67,7 @@ describe('buildOpenCodeEnv', () => {
     expect(env.OPENCODE_DISABLE_DEFAULT_PLUGINS).toBe('1');
     expect(env.OPENCODE_DISABLE_MODELS_FETCH).toBe('1');
     expect(env.OPENCODE_DISABLE_AUTOCOMPACT).toBe('1');
-    expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).model).toBe(
-      'openrouter/openai/gpt-6-luna'
-    );
+    expect(JSON.parse(env.OPENCODE_CONFIG_CONTENT!).model).toBe('openrouter/openai/gpt-6-luna');
   });
 
   test('points every Mind path at the unit directory and disables RAG by default', () => {

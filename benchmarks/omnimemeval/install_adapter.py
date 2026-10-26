@@ -3,6 +3,7 @@
 from pathlib import Path
 import shutil
 import sys
+import re
 
 upstream = Path(sys.argv[1])
 here = Path(__file__).resolve().parent
@@ -23,9 +24,7 @@ search.write_text(source.replace(marker, marker + '\n    "mind": generic_text_se
 # switch only the request parameters to OpenRouter's documented Luna LOW mode.
 def configure_luna_low(path: Path) -> None:
     source = path.read_text()
-    original = "            temperature=0,"
     # Answer and judge have different indentation. Preserve the original one.
-    import re
     matches = re.findall(r"(?m)^([ ]*)temperature=0,", source)
     if len(matches) != 1:
         raise RuntimeError(f"Expected exactly one pinned temperature argument: {path}")
