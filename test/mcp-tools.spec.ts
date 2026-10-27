@@ -14,6 +14,10 @@ import { createLinkTools } from '../src/mcp/tools/links';
 import { createMemoryTools } from '../src/mcp/tools/memories';
 import { createSpaceTools } from '../src/mcp/tools/spaces';
 import type { MindStore } from '../src/store/mind-store';
+import {
+  EmptySearchQueryError,
+  EMPTY_SEARCH_QUERY_MESSAGE,
+} from '../src/store/shared/search-query-error';
 
 import { createTestStore } from './mocks/test-store';
 
@@ -38,6 +42,7 @@ function requireListedTool(tools: ListedTool[], name: string): ListedTool {
 
 afterEach(() => {
   store?.cleanup();
+  delete process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE;
 });
 
 describe('MCP input schema fidelity', () => {
@@ -164,6 +169,7 @@ describe('MCP input schema fidelity', () => {
         env: {
           ...process.env,
           MIND_DB_PATH: dbPath,
+          MIND_SYNC_ROOT: tempDir,
         },
       });
       client = new Client({ name: 'mind-tools-list-test', version: '1.0.0' });
@@ -188,7 +194,8 @@ describe('MCP input schema fidelity', () => {
         maximum: 500,
       });
       expect(memoryQueryTool.annotations).toMatchObject({ readOnlyHint: true });
-      expect(memoryQueryTool.description).toContain('See system_instructions');
+      expect(memoryQueryTool.description).not.toContain('See system_instructions');
+      expect(memoryQueryTool.description).toContain('Query memories');
 
       const checkpointQueryTool = requireListedTool(listedTools, 'checkpoint_query');
       expect(checkpointQueryTool.inputSchema.properties?.status).toMatchObject({
@@ -208,6 +215,7 @@ describe('MCP input schema fidelity', () => {
         type: 'object',
         properties: {},
       });
+      expect(systemInstructionsTool.description).toContain('fallback');
 
       const spaceDeleteTool = requireListedTool(listedTools, 'space_delete');
       expect(spaceDeleteTool.annotations).toMatchObject({ destructiveHint: true });
@@ -307,10 +315,14 @@ describe('MCP Memory Tools', () => {
     expect(res.linked_by.length).toBe(1);
     // Links include ref string instead of id
     expect(Object.keys(res.links_to[0] ?? {}).sort()).toEqual(
-      ['changed_at', 'name', 'pinned', 'ref', 'space', 'tags', 'tier'].sort()
+      ['changed_at', 'direction', 'label', 'name', 'pinned', 'ref', 'space', 'tags', 'tier'].sort()
     );
     expect(res.links_to[0]?.ref).toBe('proj:outgoing');
+    expect(res.links_to[0]?.label).toBe('related');
+    expect(res.links_to[0]?.direction).toBe('outgoing');
     expect(res.linked_by[0]?.ref).toBe('proj:incoming');
+    expect(res.linked_by[0]?.label).toBe('related');
+    expect(res.linked_by[0]?.direction).toBe('incoming');
   });
 
   test('memory_query should use default pagination values', async () => {
@@ -451,7 +463,7 @@ describe('MCP Checkpoint Tools', () => {
     await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'First goal',
-      pending: 'First pending',
+      pending: '',
     });
 
     // Update it
@@ -522,7 +534,7 @@ describe('MCP Checkpoint Tools', () => {
     const created = await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'Goal',
-      pending: 'Pending',
+      pending: '',
     });
 
     const res = await tools.checkpoint_done.handler({
@@ -553,7 +565,7 @@ describe('MCP Checkpoint Tools', () => {
     const created = await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'Goal',
-      pending: 'Pending',
+      pending: '',
     });
 
     await tools.checkpoint_done.handler({
@@ -631,7 +643,7 @@ describe('MCP Checkpoint Tools', () => {
     await tools.checkpoint_save.handler({
       space: 'myproject',
       goal: 'First goal',
-      pending: 'First pending',
+      pending: '',
     });
 
     // Complete first checkpoint (creates session memory, deletes checkpoint)
@@ -734,6 +746,8 @@ describe('MCP Spaces Tools', () => {
     const res = await tools.space_list.handler({});
 
     expect(res.spaces.length).toBe(2);
+    expect(res.spaces[0]!.tier_counts).toEqual({ t1: 0, t2: 0, t3: 0 });
+    expect(res.spaces[0]!.memory_count).toBe(0);
   });
 
   test('space_get should return space details', async () => {
@@ -766,6 +780,12 @@ describe('MCP Spaces Tools', () => {
       (res.trending_memories.tier_1.memories[0] as Record<string, unknown>)?.updated_at
     ).toBeUndefined();
     expect(res.active_checkpoints).toEqual({ total: 0, checkpoints: [] });
+    expect(res.references).toEqual({
+      total: 0,
+      returned_count: 0,
+      coverage: 'complete',
+      memories: [],
+    });
   });
 
   test('space_update should update description', async () => {
@@ -955,14 +975,22 @@ describe('MCP Memory Tools - links_to Best-Effort (Phase 1a)', () => {
 });
 
 describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () => {
-  test('memory_query with search parameter returns FTS5 results', async () => {
+  const EXPANDED_ENV = 'USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE';
+
+  async function seedSearchCorpus() {
     store = createTestStore();
     store.createSpace('projects/mind', 'Mind project', ['test']);
     await store.addMemory('projects/mind', 'auth-jwt', 'JWT authentication implementation', {
       tags: ['cat:decision'],
     });
+    await store.addMemory('projects/mind', 'auth-token', 'authentication token rotation', {
+      tags: ['cat:decision'],
+    });
+    return createMemoryTools(store);
+  }
 
-    const tools = createMemoryTools(store);
+  test('memory_query search is compact by default and keeps confidence', async () => {
+    const tools = await seedSearchCorpus();
     const res = await tools.memory_query.handler({
       space: 'projects/mind',
       search: 'JWT',
@@ -970,10 +998,68 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
 
     expect(res.memories).toBeDefined();
     expect(res.memories.length).toBeGreaterThan(0);
-    // Should find the memory with JWT in content
-    expect(res.memories.some((m: { name: string }) => m.name === 'auth-jwt')).toBe(true);
-    expect(res.search_method).toBe('fts5');
+    const found = res.memories.find((m: { name: string }) => m.name === 'auth-jwt');
+    expect(found).toBeDefined();
+    expect(found.confidence).toBe('high');
+    expect(found).not.toHaveProperty('score');
+    expect(found).not.toHaveProperty('methods');
+    expect(res).not.toHaveProperty('search_method');
+    expect(res.total).toBeGreaterThan(0);
+    expect(res.limit).toBe(25);
+    expect(res.offset).toBe(0);
   });
+
+  test('memory_query expands diagnostics when the flag is exactly "true"', async () => {
+    process.env[EXPANDED_ENV] = 'true';
+    const tools = await seedSearchCorpus();
+    const res = await tools.memory_query.handler({
+      space: 'projects/mind',
+      search: 'JWT',
+    });
+
+    const found = res.memories.find((m: { name: string }) => m.name === 'auth-jwt');
+    expect(found).toBeDefined();
+    expect(found.score).toBeGreaterThan(0);
+    expect(found.confidence).toBe('high');
+    expect(found.methods).toContain('all');
+    expect(res.search_method).toBe('mixed');
+  });
+
+  test('compact output preserves result order, confidence, and pagination of the expanded output', async () => {
+    const tools = await seedSearchCorpus();
+    const args = { space: 'projects/mind', search: 'authentication', limit: 1, offset: 0 };
+
+    const compact = await tools.memory_query.handler(args);
+    process.env[EXPANDED_ENV] = 'true';
+    const expanded = await tools.memory_query.handler(args);
+
+    expect(compact.memories.map((m: any) => m.name)).toEqual(
+      expanded.memories.map((m: any) => m.name)
+    );
+    expect(compact.memories.map((m: any) => m.confidence)).toEqual(
+      expanded.memories.map((m: any) => m.confidence)
+    );
+    expect(compact.total).toBe(expanded.total);
+    expect(compact.limit).toBe(expanded.limit);
+    expect(compact.offset).toBe(expanded.offset);
+  });
+
+  for (const value of ['false', '1', 'TRUE', '', 'enabled']) {
+    test(`memory_query stays compact for non-true flag value "${value}"`, async () => {
+      process.env[EXPANDED_ENV] = value;
+      const tools = await seedSearchCorpus();
+      const res = await tools.memory_query.handler({
+        space: 'projects/mind',
+        search: 'JWT',
+      });
+
+      expect(res.memories.length).toBeGreaterThan(0);
+      expect(res.memories[0]).not.toHaveProperty('score');
+      expect(res.memories[0]).not.toHaveProperty('methods');
+      expect(res).not.toHaveProperty('search_method');
+      expect(res.memories[0]?.confidence).toMatch(/^(high|medium|low)$/);
+    });
+  }
 
   test('memory_query without search uses SQL filters only', async () => {
     store = createTestStore();
@@ -994,7 +1080,69 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
     expect(res.search_method).toBeUndefined();
   });
 
+  test('omitted search stays a listing while present empty/stopword search errors', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind project', ['test']);
+    await store.addMemory('projects/mind', 'memory-1', 'the and for de la', { tags: ['test'] });
+
+    const tools = createMemoryTools(store);
+    const listed = await tools.memory_query.handler({ space: 'projects/mind' });
+    expect(listed.memories.length).toBe(1);
+
+    for (const search of ['', '   ', 'the and for de la', '"the and for"']) {
+      await expect(tools.memory_query.handler({ space: 'projects/mind', search })).rejects.toThrow(
+        EMPTY_SEARCH_QUERY_MESSAGE
+      );
+    }
+  });
+
+  test('memory_query search description documents uppercase-only operators and present-vs-omitted behavior', () => {
+    store = createTestStore();
+
+    const tools = createMemoryTools(store);
+    const schema = zodToJsonSchema(tools.memory_query.schema) as {
+      properties?: Record<string, { description?: string }>;
+    };
+    const description = schema.properties?.search?.description ?? '';
+
+    expect(description).toContain('Only uppercase AND, OR, NOT');
+    expect(description.toLowerCase()).toContain('lowercase');
+    expect(description).toContain('Omit to list memories by metadata');
+    expect(description).toContain('at least one informative term');
+    expect(description).toContain('validation error');
+    expect(description).toContain('add a specific topic');
+  });
+
+  test('memory_query tool description is action-oriented, concise, and consistent with its schema', () => {
+    store = createTestStore();
+
+    const tools = createMemoryTools(store);
+    const description = tools.memory_query.description ?? '';
+
+    expect(description).toContain('Query memories');
+    expect(description).toContain('omit `search` to list');
+    expect(description).toContain('uppercase `AND`/`OR`/`NOT`');
+    expect(description).toContain('validation error');
+    expect(description).not.toContain('See system_instructions');
+    expect(description.split(/(?<=[.!?])\s+/).filter(Boolean)).toHaveLength(2);
+  });
+
+  test('present empty search raises the typed validation error', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind project', ['test']);
+
+    const tools = createMemoryTools(store);
+    try {
+      await tools.memory_query.handler({ space: 'projects/mind', search: '' });
+      throw new Error('expected memory_query to reject an empty search');
+    } catch (error) {
+      expect(error).toBeInstanceOf(EmptySearchQueryError);
+      expect((error as EmptySearchQueryError).code).toBe('empty_search_query');
+    }
+  });
+
   test('memory_query response includes search_method field when search is used', async () => {
+    process.env[EXPANDED_ENV] = 'true';
     store = createTestStore();
     store.createSpace('projects/mind', 'Mind project', ['test']);
     await store.addMemory('projects/mind', 'test-memory', 'hello world content', {
@@ -1010,10 +1158,82 @@ describe('MCP Memory Tools - search parameter in memory_query (Phase 1b)', () =>
     expect(res).toHaveProperty('search_method');
     expect(res.search_method).toBeDefined();
   });
+
+  test('memory_query listing remains diagnostic-free even when the flag is true', async () => {
+    process.env[EXPANDED_ENV] = 'true';
+    store = createTestStore();
+    store.createSpace('projects/mind', 'Mind project', ['test']);
+    await store.addMemory('projects/mind', 'memory-1', 'content', { tags: ['cat:decision'] });
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({ space: 'projects/mind' });
+
+    expect(res).not.toHaveProperty('search_method');
+    expect(res.memories[0]).not.toHaveProperty('score');
+    expect(res.memories[0]).not.toHaveProperty('methods');
+  });
+});
+
+describe('MCP Memory Tools - memory_query limits (D6)', () => {
+  test('defaults to 25 results and reports the total', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind-limits', 'Limits', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('projects/mind-limits', `m-${i}`, 'shared token content', {
+        tags: ['test'],
+      });
+    }
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({
+      space: 'projects/mind-limits',
+      search: 'token',
+    });
+
+    expect(res.total).toBe(30);
+    expect(res.memories.length).toBe(25);
+    expect(res.limit).toBe(25);
+    expect(res.offset).toBe(0);
+  });
+
+  test('honours explicit limit and offset', async () => {
+    store = createTestStore();
+    store.createSpace('projects/mind-limits-2', 'Limits', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('projects/mind-limits-2', `m-${i}`, 'shared token content', {
+        tags: ['test'],
+      });
+    }
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({
+      space: 'projects/mind-limits-2',
+      search: 'token',
+      limit: 10,
+      offset: 5,
+    });
+
+    expect(res.memories.length).toBe(10);
+    expect(res.offset).toBe(5);
+  });
+
+  test('space "*" searches across all spaces', async () => {
+    store = createTestStore();
+    store.createSpace('projects/a', 'A', ['test']);
+    store.createSpace('projects/b', 'B', ['test']);
+    await store.addMemory('projects/a', 'a1', 'shared token', { tags: ['test'] });
+    await store.addMemory('projects/b', 'b1', 'shared token', { tags: ['test'] });
+
+    const tools = createMemoryTools(store);
+    const res = await tools.memory_query.handler({ space: '*', search: 'token' });
+
+    expect(res.memories.map((m: any) => m.space).sort()).toEqual(['projects/a', 'projects/b']);
+  });
 });
 
 describe('MCP Memory Tools - memory_query LIKE fallback (Phase 1b LIKE fix)', () => {
-  test('memory_query LIKE fallback hit: embedded substring not found by FTS5 falls through to LIKE', async () => {
+  test('memory_query substring hit: embedded substring found by the unified pipeline', async () => {
+    process.env.USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE = 'true';
     store = createTestStore();
     store.createSpace('projects/mind-mcp-fallback', 'Test', ['test']);
     await store.addMemory(
@@ -1031,10 +1251,12 @@ describe('MCP Memory Tools - memory_query LIKE fallback (Phase 1b LIKE fix)', ()
       search: 'duablevalue',
     });
 
-    expect(res.search_method).toBe('like');
+    expect(res.search_method).toBe('trigram');
     expect(res.memories).toBeDefined();
     expect(res.memories.length).toBe(1);
     expect(res.memories[0]?.name).toBe('test-memory');
+    expect(res.memories[0]?.confidence).toBe('medium');
+    expect(res.memories[0]?.methods).toContain('trigram');
   });
 
   test('memory_query no-hit: nonexistent search term returns empty results without error', async () => {
@@ -1086,7 +1308,8 @@ describe('MCP Search Tool Removed (Phase 1b Step 2)', () => {
       search: 'hello',
     });
     expect(res.memories.length).toBe(1);
-    expect(res.search_method).toBe('fts5');
+    expect(res.memories[0]?.confidence).toBeDefined();
+    expect(res).not.toHaveProperty('search_method');
   });
 });
 
@@ -1103,7 +1326,7 @@ describe('MCP Checkpoint Tools - Session Transformation (Phase 2)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'Complete API refactor',
-      pending: 'Write tests',
+      pending: '',
       linked_memories: ['memory-1', 'memory-2'],
     });
 
@@ -1144,7 +1367,7 @@ describe('MCP Checkpoint Tools - Session Transformation (Phase 2)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'Simple task',
-      pending: 'Done',
+      pending: '',
     });
 
     // Call checkpoint_done
@@ -1174,7 +1397,7 @@ describe('MCP Checkpoint Tools - Session Transformation (Phase 2)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'First task',
-      pending: 'Done',
+      pending: '',
     });
 
     await checkpointTools.checkpoint_done.handler({
@@ -1325,7 +1548,7 @@ describe('MCP Checkpoint Tools - checkpoint_query (Phase 3)', () => {
     await checkpointTools.checkpoint_save.handler({
       space: 'projects/mind',
       goal: 'First task',
-      pending: 'Done',
+      pending: '',
     });
     await checkpointTools.checkpoint_done.handler({
       space: 'projects/mind',

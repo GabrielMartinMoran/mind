@@ -7,6 +7,7 @@ import type {
   Memory,
   MemorySummary,
   Link,
+  LinkDirection,
   Tier,
   SearchFilter,
   MemoryQueryFilter,
@@ -15,7 +16,11 @@ import type {
   SpaceGraphResult,
   LegacyBrain,
   HotMemorySummary,
+  BoundedMemorySummaryResult,
 } from '../types';
+
+import type { ScoredSearchResult } from './repositories/search-repository';
+import type { SearchConfidence } from './shared/search-fusion';
 
 export interface LinkedMemorySummary {
   id: string;
@@ -25,6 +30,8 @@ export interface LinkedMemorySummary {
   tier: Tier;
   tags: string[];
   pinned: boolean;
+  label: string;
+  direction: LinkDirection;
 }
 
 export interface MemoryPatchInput {
@@ -36,6 +43,46 @@ export interface MemoryPatchInput {
   removeTags?: string[];
   addLinksToIds?: string[];
   removeLinksToIds?: string[];
+}
+
+/** Prepared input for the atomic checkpoint-to-session transformation. */
+export interface CompleteCheckpointInput {
+  space: string;
+  checkpointId: string;
+  sessionName: string;
+  sessionContent: string;
+  tags: string[];
+  tier: Tier;
+}
+
+/** Optional pagination for relevance search. Surfaces supply their own defaults. */
+export interface SearchPagination {
+  /** Maximum results to return; clamped by the store to 1..500. Omit for unbounded. */
+  limit?: number;
+  /** Zero-based offset into the ranked results. */
+  offset?: number;
+}
+
+/**
+ * Options for the unified relevance search. Extends the domain filters with
+ * pipeline switches (semantic channel) and post-fusion filtering so every
+ * surface can share one pipeline without duplicating ranking logic.
+ */
+export interface SearchOptions extends SearchFilter, SearchPagination {
+  /** Restrict results to one confidence bucket; applied after fusion. */
+  confidence?: SearchConfidence;
+  /**
+   * `false` skips the semantic/embedding channel for this query while keeping
+   * every lexical method. Omit (or `true`) to keep the server default, which
+   * runs the semantic channel when RAG is enabled.
+   */
+  semantic?: boolean;
+}
+
+/** One page of fused results plus the total after filters, before pagination. */
+export interface SearchPageResult {
+  results: ScoredSearchResult[];
+  total: number;
 }
 
 export interface MindStore {
@@ -78,6 +125,15 @@ export interface MindStore {
   deleteMemory(id: string): void;
   deleteMemoryByName(space: string, name: string): void;
   /**
+   * Atomically transform a checkpoint into a session summary: revalidate the
+   * checkpoint, insert the summary, copy every inbound/outbound link keeping
+   * its direction and label, and delete the checkpoint in one transaction.
+   * The embedding is generated best-effort after commit. If any step fails the
+   * transaction rolls back, leaving no partial summary, copied links, or
+   * deletion.
+   */
+  completeCheckpoint(input: CompleteCheckpointInput): Promise<Memory>;
+  /**
    * Record an access (bumps count + last_accessed_at).
    * Also auto-promotes non-pinned memories one tier up (with LRU eviction if destination is full).
    * Silently skips promotion if destination is full and all are pinned.
@@ -97,6 +153,8 @@ export interface MindStore {
     spaces: { tag: string; count: number }[];
     memories: { tag: string; count: number }[];
   };
+  /** Distinct sorted memory tags belonging to one space, across all tiers. */
+  listMemoryTags(spaceName: string): string[];
 
   // Tiers
   /**
@@ -119,8 +177,17 @@ export interface MindStore {
   getLinks(memoryId: string): Link[];
 
   // Search (T4 memories are no longer applicable - T3 is unlimited)
-  // When RAG is enabled, returns FTS results merged with semantic similarity scores
-  search(query: string, filter?: SearchFilter): Promise<SearchResult[]>;
+  // Unified multi-channel pipeline (D1). Returns fused score, confidence and
+  // provenance per result. Optional pagination applies after ranking; when
+  // omitted the full ordered set is returned (the eval harness relies on this).
+  search(query: string, filter?: SearchOptions): Promise<ScoredSearchResult[]>;
+  /**
+   * Same unified pipeline as {@link search}, but also reports the total number
+   * of admitted results after filters (confidence included) and before
+   * pagination, so HTTP surfaces can emit accurate pagination headers without
+   * re-running the pipeline. The MCP/CLI shapes are unaffected.
+   */
+  searchPage(query: string, filter?: SearchOptions): Promise<SearchPageResult>;
 
   // Search with fallback chain: FTS5 → LIKE → embeddings; returns results + search_method
   searchFallback(
@@ -136,9 +203,14 @@ export interface MindStore {
     space?: string;
     tag?: string;
     tier?: number;
+    tiers?: Tier[];
     from?: string;
     to?: string;
   }): Promise<number>;
+
+  // Bounded space-orientation queries (checkpoints excluded, pinned first)
+  getTrendingMemories(space: string, tier: Tier, limit: number): BoundedMemorySummaryResult;
+  getLivingReferences(space: string, limit: number): BoundedMemorySummaryResult;
 
   // Graph view (includes T1..T3 only)
   getSpaceGraph(space: string, opts?: { limit?: number; maxLimit?: number }): SpaceGraphResult;

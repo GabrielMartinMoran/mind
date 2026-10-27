@@ -1,39 +1,23 @@
-@delta-added
-Feature: Search Input Cyberpunk Glow
+@web @product/search-focus
+Feature: Search Focus Emphasis
 
-  Scenario: Search input has subtle border by default
-    Given the global search input is rendered in the sidebar
-    When the input is in default state
-    Then the border should be a subtle dark color (#1a1a3a)
-    And no glow should be visible
+  Search controls use a visible focus ring and no ambient pulse.
 
-  Scenario: Search input glows on focus
-    Given the search input is in default state
-    When the user clicks into the input or presses Tab
-    Then the border should transition to cyan
-    And the border glow should be 0 0 6px var(--neon-cyan), 0 0 16px rgba(0,240,255,0.4), 0 0 32px rgba(0,240,255,0.15)
-    And the transition should take 200ms with ease-out-expo
+  @integration
+  Scenario: Search input focus ring
+    Given the space search input is visible
+    When it receives keyboard focus
+    Then a 2px accent focus ring is visible
+    And no box-shadow pulse runs
 
-  Scenario: Search input glow pulses while typing
-    Given the search input has focus and user is typing
-    When the user continues to type characters
-    Then the glow should pulse subtly every 500ms
-    And the pulse should only be visible after 1 second of continuous typing
+  @integration
+  Scenario: Result card focus
+    Given a search result card has focus
+    Then the focus ring is visible
+    And the card is not highlighted only by color
 
-  Scenario: Search input glow fades on blur
-    Given the search input has glow from focus
-    When the input loses focus
-    Then the glow should fade out over 300ms
-    And the border should return to default subtle color
-    And the content of the input should remain unchanged
-
-  Scenario: Search icon glows with input
-    Given the search input has focus
-    Then the search icon inside or beside the input should also glow
-    And the icon glow should match the input border glow intensity
-
-  Scenario: Search results inherit glow styling
-    Given search results are displayed
-    When each search result item renders
-    Then the item should have a subtle glow on hover
-    And the glow should be 0 0 4px var(--neon-cyan), 0 0 8px rgba(0,240,255,0.2)
+  @integration
+  Scenario: Reduced motion
+    Given prefers-reduced-motion is reduce
+    When the search UI updates
+    Then no transition or pulse plays

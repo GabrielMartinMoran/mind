@@ -1,15 +1,9 @@
 import { normalizeTag, normalizeTags } from '../../helpers/tags';
-import type { Tier } from '../../types';
+import { presentMemoryDetail } from '../presenters/memory';
 
+import { resolveTierFilter, parseTier } from './query-filters';
 import type { RouteDefinition } from './types';
 import { regex } from './types';
-
-function parseTier(raw: string | null): Tier | undefined {
-  if (!raw) return undefined;
-  const n = Number(raw);
-  if (n >= 1 && n <= 3) return n as Tier;
-  return undefined;
-}
 
 function parseIntParam(raw: string | null): number | undefined {
   if (!raw) return undefined;
@@ -31,22 +25,30 @@ export const memoryRoutes: RouteDefinition[] = [
   {
     method: 'GET',
     match: regex(/^\/api\/memories\/query$/, []),
-    handle: ({ url, store, json }) => {
-      const tier = parseTier(url.searchParams.get('tier'));
+    handle: async ({ url, store }) => {
+      const tierFilter = resolveTierFilter(url.searchParams);
       const tagRaw = url.searchParams.get('tag');
       const tag = tagRaw ? normalizeTag(tagRaw) : undefined;
 
-      return json(
-        store.queryMemories({
-          space: url.searchParams.get('space') ?? undefined,
-          tag,
-          tier,
-          from: url.searchParams.get('from') ?? undefined,
-          to: url.searchParams.get('to') ?? undefined,
-          limit: parseIntParam(url.searchParams.get('limit')),
-          offset: parseIntParam(url.searchParams.get('offset')),
-        })
-      );
+      const filters = {
+        space: url.searchParams.get('space') ?? undefined,
+        tag,
+        ...tierFilter,
+        from: url.searchParams.get('from') ?? undefined,
+        to: url.searchParams.get('to') ?? undefined,
+      };
+
+      const memories = store.queryMemories({
+        ...filters,
+        limit: parseIntParam(url.searchParams.get('limit')),
+        offset: parseIntParam(url.searchParams.get('offset')),
+      });
+      const total = await store.queryMemoriesCount(filters);
+
+      // Flat array body plus an additive total header, matching /api/search.
+      return Response.json(memories, {
+        headers: { 'X-Total-Count': String(total) },
+      });
     },
   },
   {
@@ -98,7 +100,7 @@ export const memoryRoutes: RouteDefinition[] = [
     handle: ({ params, store, json, err }) => {
       const memory = store.getMemory(params.space!, params.name!);
       if (!memory) return err('Memory not found', 404);
-      return json(memory);
+      return json(presentMemoryDetail(memory));
     },
   },
   {

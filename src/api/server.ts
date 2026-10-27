@@ -55,6 +55,10 @@ export async function handleRequest(req: Request, store: MindStore): Promise<Res
   if (matched) return matched;
 
   const url = new URL(req.url);
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+    return Response.json({ error: 'Not found' }, { status: 404 });
+  }
+
   return resolveStaticFile(url.pathname);
 }
 

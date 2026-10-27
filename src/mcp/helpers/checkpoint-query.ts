@@ -1,6 +1,9 @@
+import { fetchAllCheckpoints } from '../../checkpoint/checkpoint-lookup';
 import { fetchCheckpointContent } from '../../helpers/checkpoint-content';
 import type { MindStore } from '../../store/mind-store';
 import type { MemorySummary } from '../../types';
+
+import { filterByDateRange } from './date-filter';
 
 export interface CheckpointSummary {
   name: string;
@@ -9,8 +12,6 @@ export interface CheckpointSummary {
   changed_at: string;
   tags: string[];
 }
-
-const CHECKPOINT_BATCH_SIZE = 500;
 
 export function applyCheckpointFilters(
   checkpoints: MemorySummary[],
@@ -29,18 +30,7 @@ export function applyCheckpointFilters(
     filtered = filtered.filter(memory => memory.tags.includes(tag));
   }
 
-  if (from) {
-    const fromDate = new Date(from);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) >= fromDate);
-  }
-
-  if (to) {
-    const toDate = new Date(to);
-    toDate.setHours(23, 59, 59, 999);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) <= toDate);
-  }
-
-  return filtered;
+  return filterByDateRange(filtered, from, to);
 }
 
 export function applyCheckpointSortAndPagination(
@@ -83,27 +73,5 @@ export async function fetchAllCheckpointMemories(
   store: MindStore,
   space: string
 ): Promise<MemorySummary[]> {
-  const total = await store.queryMemoriesCount({
-    space,
-    tag: 'checkpoint',
-  });
-
-  if (total === 0) {
-    return [];
-  }
-
-  const checkpoints: MemorySummary[] = [];
-
-  for (let offset = 0; offset < total; offset += CHECKPOINT_BATCH_SIZE) {
-    checkpoints.push(
-      ...store.queryMemories({
-        space,
-        tag: 'checkpoint',
-        limit: CHECKPOINT_BATCH_SIZE,
-        offset,
-      })
-    );
-  }
-
-  return checkpoints;
+  return fetchAllCheckpoints(store, space);
 }

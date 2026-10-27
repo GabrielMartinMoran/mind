@@ -1,0 +1,11 @@
+{
+  "name": "taskqueue",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "list": "bun run src/cli.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

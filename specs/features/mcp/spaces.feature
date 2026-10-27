@@ -51,6 +51,27 @@ Feature: MCP Spaces Tools
       And the response includes trending_memories grouped into tier_1, tier_2, and tier_3
       And each trending tier block includes total_count returned_count coverage and memories
       And the response includes plural active_checkpoints
+      And the response includes a references block with total returned_count coverage and memories
+      And the references block excludes checkpoint-tagged memories
+
+    @integration
+    Scenario: space.get surfaces living references
+      Given a space with a memory tagged "type:reference" and "status:living"
+      And a memory tagged only "type:reference"
+      And a memory tagged only "status:living"
+      When calling space_get with name "test"
+      Then the references block includes only the living reference memory
+      And each reference summary exposes name tier pinned tags and changed_at
+      And each reference summary does not expose content or id
+
+    @integration
+    Scenario: space.get bounds tier previews and orders pinned memories first
+      Given a space with twelve tier 3 memories
+      And a tier with pinned and unpinned memories
+      When calling space_get with name "test"
+      Then the tier 3 block reports total_count 12
+      And the tier 3 block returns at most 5 memories
+      And pinned memories appear before unpinned memories in that tier preview
 
     Scenario: space.get for non-existent space throws
       When calling space_get with name "nonexistent"
@@ -90,6 +111,9 @@ Feature: MCP Spaces Tools
       And each trending_memories item does not expose updated_at
       And each trending tier block includes coverage
       And active_checkpoints is returned as a plural collection
+      And each references item exposes changed_at
+      And each references item does not expose id
+      And each references item does not expose content
       When calling space_update with name "test" description "normalized description"
       Then the response space exposes changed_at
       And the response space does not expose created_at

@@ -1,6 +1,6 @@
 {
   "name": "mind",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "module": "src/mind.ts",
   "type": "module",
   "private": true,
@@ -10,7 +10,8 @@
     "test:web": "bun test web/test",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && bun run typecheck:web",
+    "typecheck:web": "tsc -p web/jsconfig.json",
     "format": "prettier --write \"**/*.{ts,js,json,css,md}\"",
     "format:check": "prettier --check .",
     "prepare": "husky install"
@@ -29,7 +30,7 @@
     ]
   },
   "devDependencies": {
-    "@types/bun": "latest",
+    "@types/bun": "1.2.10",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^8.58.0",
     "@typescript-eslint/parser": "^8.58.0",
@@ -38,20 +39,36 @@
     "eslint-import-resolver-typescript": "^4.4.4",
     "eslint-plugin-import": "^2.32.0",
     "eslint-plugin-prettier": "^5.5.5",
+    "happy-dom": "^21.0.4",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
-    "prettier": "^3.8.1",
+    "marked": "^18.1.1",
+    "prettier": "3.8.1",
     "typescript": "^6.0.2"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@modelcontextprotocol/sdk": "^1.32.1",
     "ansi-styles": "^6.2.3",
-    "bun-style": "^0.3.2",
     "jsonc-parser": "3.3.1",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
+  },
+  "overrides": {
+    "@hono/node-server": "1.19.17",
+    "hono": "4.13.13",
+    "express": "5.3.0",
+    "body-parser": "2.4.0",
+    "proxy-addr": "2.0.8",
+    "qs": "6.16.1",
+    "path-to-regexp": "8.4.2",
+    "fast-uri": "3.1.9",
+    "ip-address": "10.7.4",
+    "js-yaml": "4.3.2",
+    "@humanfs/node": "0.16.8",
+    "minimatch@3>brace-expansion": "1.1.21",
+    "minimatch@10>brace-expansion": "5.0.12"
   }
 }

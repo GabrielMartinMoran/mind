@@ -14,15 +14,25 @@ import {
   safeWriteJsonc,
   safeWriteToml,
 } from '../setup/safe-config';
-import { ensureMindManagementSkill } from '../setup/skill-installation';
+import {
+  type AgentSkillType,
+  ensureMindManagementSkill,
+  getAgentSkillLayout,
+  getAgentSkillPath,
+  getAgentSkillSignalPaths,
+  pathExistsLstat,
+} from '../setup/skill-installation';
 export { buildOpenCodeAutomationPlugin } from '../setup/opencode-automation-plugin';
 export { getAgentCapabilities, getAgentCapabilityMatrix } from './capabilities';
 
 import {
+  type AgentSkillDeclaration,
   type CapabilityMap,
   type SupportedAgent,
   formatCapabilityBadge,
+  formatSkillLine,
   getAgentCapabilityMatrix,
+  getAgentSkillDeclaration,
   getSupportedAgents,
 } from './capabilities';
 import { renderMemoryProtocol } from './memory-protocol';
@@ -42,7 +52,10 @@ const CLAUDE_HOOK_SCRIPT_NAME = 'mind-session-summary.sh';
 const CLAUDE_HOOKS_OPT_IN_ENV = 'MIND_SETUP_CLAUDE_ENABLE_HOOKS';
 
 const CURSOR_HOOK_SCRIPT_NAME = 'mind-session-continuity.sh';
-const CURSOR_HOOK_EVENTS = ['sessionStart', 'preCompact', 'stop'] as const;
+// Documented Cursor event names. `sessionEnd` is the documented lifecycle end;
+// older Mind builds emitted a top-level `stop` map without the documented
+// `{ version, hooks }` envelope.
+const CURSOR_HOOK_EVENTS = ['sessionStart', 'preCompact', 'sessionEnd', 'stop'] as const;
 
 const LEGACY_PROTOCOL_FILENAMES = [
   'mind-memory-protocol-opencode.md',
@@ -81,6 +94,27 @@ function getMindScriptPath(): string {
   return 'mind';
 }
 
+/**
+ * Builds the `claude mcp add` argv. The `--env` flag follows the server name
+ * so the variadic environment list is terminated by the `--` separator.
+ */
+export function buildClaudeMcpAddArgs(mindPath: string): string[] {
+  return [
+    'mcp',
+    'add',
+    '--transport',
+    'stdio',
+    '--scope',
+    'user',
+    'mind',
+    '--env',
+    'MIND_AGENT=claude-code',
+    '--',
+    mindPath,
+    'mcp',
+  ];
+}
+
 export function tryClaudeMcpAdd(mindPath: string): { ok: boolean; reason?: string } {
   // Check if claude CLI is available
   try {
@@ -94,11 +128,11 @@ export function tryClaudeMcpAdd(mindPath: string): { ok: boolean; reason?: strin
 
   // Try claude mcp add
   try {
-    const result = spawnSync(
-      'claude',
-      ['mcp', 'add', '--transport', 'stdio', '--scope', 'user', 'mind', '--', mindPath, 'mcp'],
-      { encoding: 'utf-8', shell: false, stdio: 'pipe' }
-    );
+    const result = spawnSync('claude', buildClaudeMcpAddArgs(mindPath), {
+      encoding: 'utf-8',
+      shell: false,
+      stdio: 'pipe',
+    });
 
     if (result.status === 0) {
       return { ok: true };
@@ -201,6 +235,31 @@ function jsonFileHasMindMcp(filePath: string): boolean {
   const mcpServers = config.mcpServers as Record<string, unknown> | undefined;
 
   return Boolean(mcp?.mind || mcpServers?.mind);
+}
+
+/**
+ * Extracts the existing string environment entries from the Codex
+ * `[mcp_servers.mind]` stanza (inline table or `[mcp_servers.mind.env]`
+ * subtable, both normalized by the parser). Non-string scalars are stringified
+ * because environment values are strings in the emitted TOML.
+ */
+function readCodexEnvironment(config: Record<string, unknown>): Record<string, string> {
+  const mcpServers = config.mcp_servers as Record<string, unknown> | undefined;
+  const mind = mcpServers?.mind as Record<string, unknown> | undefined;
+  const env = mind?.env;
+  if (!env || typeof env !== 'object' || Array.isArray(env)) {
+    return {};
+  }
+
+  const environment: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (typeof value === 'string') {
+      environment[key] = value;
+    } else if (typeof value === 'number' || typeof value === 'boolean') {
+      environment[key] = String(value);
+    }
+  }
+  return environment;
 }
 
 function tomlFileHasMindMcp(filePath: string): boolean {
@@ -390,7 +449,7 @@ function ensureClaudeManagedInstructions(instructionPath: string): void {
 
   const managedBody = [
     CLAUDE_MANAGED_BLOCK_START,
-    '## mind Memory Protocol (managed)',
+    '## Mind activation pointer (managed)',
     '',
     `Source: ${instructionPath}`,
     '',
@@ -412,9 +471,28 @@ function ensureCodexManagedInstructions(): void {
 
   const managedBody = [
     CLAUDE_MANAGED_BLOCK_START,
-    '## mind Memory Protocol (managed)',
+    '## Mind activation pointer (managed)',
     '',
     renderMemoryProtocol('codex').trim(),
+    CLAUDE_MANAGED_BLOCK_END,
+  ].join('\n');
+
+  const next = upsertManagedBlock(current, managedBody);
+  writeText(agentsPath, next);
+}
+
+function ensurePiManagedInstructions(): void {
+  const piDir = path.join(getHomeDir(), '.pi', 'agent');
+  const agentsPath = path.join(piDir, 'AGENTS.md');
+
+  ensureDir(piDir);
+  const current = readText(agentsPath);
+
+  const managedBody = [
+    CLAUDE_MANAGED_BLOCK_START,
+    '## Mind activation pointer (managed)',
+    '',
+    renderMemoryProtocol('pi').trim(),
     CLAUDE_MANAGED_BLOCK_END,
   ].join('\n');
 
@@ -474,22 +552,15 @@ function ensureCursorHookScript(): string {
   const script = `#!/usr/bin/env bash
 set -euo pipefail
 
-if ! command -v mind >/dev/null 2>&1; then
-  exit 0
-fi
-
+# Mind does not create, overwrite, or complete checkpoints from Cursor hooks.
+# Continuity is agent-driven through the mind-management skill so a hook can
+# never clobber a real active checkpoint's goal or pending work.
 EVENT="\${1:-\${CURSOR_HOOK_EVENT:-unknown}}"
-PROJECT_SPACE="\${MIND_PROJECT_SPACE:-projects/unknown}"
 
 case "$EVENT" in
-  sessionStart)
-    mind checkpoint set "$PROJECT_SPACE" "Cursor session start" "Capture active goal and pending work" --notes "cursor:event=sessionStart" >/dev/null 2>&1 || true
-    ;;
-  preCompact)
-    mind checkpoint set "$PROJECT_SPACE" "Cursor pre-compact" "Snapshot context before compaction" --notes "cursor:event=preCompact" >/dev/null 2>&1 || true
-    ;;
-  stop)
-    mind checkpoint set "$PROJECT_SPACE" "Cursor session stop" "Persist final continuity notes" --notes "cursor:event=stop" >/dev/null 2>&1 || true
+  sessionStart|preCompact|sessionEnd|stop)
+    # Intentional no-op: the lifecycle event is observed but not persisted.
+    :
     ;;
   *)
     exit 0
@@ -505,9 +576,18 @@ function withCursorHooksConfig(
   hookScriptPath: string
 ): Record<string, unknown> {
   const next = { ...config };
+  const hooksRoot =
+    next.hooks && typeof next.hooks === 'object' && !Array.isArray(next.hooks)
+      ? { ...(next.hooks as Record<string, unknown>) }
+      : {};
 
   for (const eventName of CURSOR_HOOK_EVENTS) {
-    const existing = Array.isArray(next[eventName]) ? (next[eventName] as Array<unknown>) : [];
+    // Migrate the pre-documented top-level event map if it is still present.
+    const legacy = Array.isArray(next[eventName]) ? (next[eventName] as Array<unknown>) : [];
+    const current = Array.isArray(hooksRoot[eventName])
+      ? (hooksRoot[eventName] as Array<unknown>)
+      : [];
+    const existing = [...current, ...legacy];
 
     const isManagedEntry = (entry: unknown): boolean => {
       if (!entry || typeof entry !== 'object') {
@@ -530,8 +610,12 @@ function withCursorHooksConfig(
 
     const withoutManaged = existing.filter(entry => !isManagedEntry(entry));
 
-    next[eventName] = [...withoutManaged, managedEntry];
+    hooksRoot[eventName] = [...withoutManaged, managedEntry];
+    delete next[eventName];
   }
+
+  next.version = typeof next.version === 'number' && next.version > 0 ? next.version : 1;
+  next.hooks = hooksRoot;
 
   return next;
 }
@@ -735,10 +819,30 @@ export async function statusServers(): Promise<void> {
 
 // getAgentConfig is now imported from ../setup/agent-config
 
-function printCapabilityDiagnostics(capabilities: CapabilityMap): void {
+function printCapabilityDiagnostics(
+  capabilities: CapabilityMap,
+  skill?: AgentSkillDeclaration
+): void {
   console.log(`   ${formatCapabilityBadge('L1_MCP', capabilities.L1_MCP)}`);
   console.log(`   ${formatCapabilityBadge('L2_INSTRUCTIONS', capabilities.L2_INSTRUCTIONS)}`);
   console.log(`   ${formatCapabilityBadge('L3_HOOKS', capabilities.L3_HOOKS)}`);
+  if (skill) {
+    console.log(`   ${formatSkillLine(skill)}`);
+  }
+}
+
+function installAgentSkill(agent: AgentSkillType): void {
+  try {
+    const skillPath = ensureMindManagementSkill(agent, {
+      warn: message => console.log(`⚠️ ${message}`),
+    });
+    if (skillPath) {
+      console.log(`✅ mind-management skill installed`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.log(`⚠️ skill installation failed: ${message}`);
+  }
 }
 
 // Agent-specific setup handlers (Task 3.4)
@@ -757,16 +861,7 @@ async function setupOpenCode(
     console.log(`⚠️ OpenCode plugin failed: ${message}`);
   }
 
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('opencode');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('opencode');
 
   return result;
 }
@@ -780,16 +875,7 @@ async function setupClaudeCode(
   ensureClaudeManagedInstructions(instructionsPath);
   console.log(`✅ Claude Code protocol instructions configured`);
 
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('claude-code');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('claude-code');
 
   const shouldRefreshHooks = options.refreshExistingClaudeHooks && hasClaudeHooksSignal();
   if (shouldEnableClaudeHooks() || shouldRefreshHooks) {
@@ -817,16 +903,7 @@ async function setupCursor(merged: Record<string, unknown>): Promise<Record<stri
     console.log(`⚠️ hooks setup failed: ${message}`);
   }
 
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('cursor');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('cursor');
 
   return merged;
 }
@@ -835,68 +912,31 @@ async function setupCodex(_configPath: string, _snippet: string): Promise<void> 
   ensureCodexManagedInstructions();
   console.log(`✅ Codex AGENTS protocol configured`);
 
-  // Install mind-management skill (shared ~/.agents/skills for cross-agent compatibility)
-  try {
-    const skillPath = ensureMindManagementSkill('codex');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('codex');
 }
 
 async function setupWindsurf(): Promise<void> {
-  // Install mind-management skill (shared ~/.agents/skills for cross-agent compatibility)
-  try {
-    const skillPath = ensureMindManagementSkill('windsurf');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('windsurf');
 }
 
 async function setupGeminiCli(): Promise<void> {
-  // Install mind-management skill
-  try {
-    const skillPath = ensureMindManagementSkill('gemini-cli');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('gemini-cli');
 }
 
 async function setupVscode(): Promise<void> {
-  // Install mind-management skill (shared ~/.agents/skills for cross-agent compatibility)
-  try {
-    const skillPath = ensureMindManagementSkill('vscode');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('vscode');
 }
 
 async function setupAntigravity(): Promise<void> {
-  // Install mind-management skill at ~/.gemini/antigravity/skills/mind-management/
-  try {
-    const skillPath = ensureMindManagementSkill('antigravity');
-    if (skillPath) {
-      console.log(`✅ mind-management skill installed`);
-    }
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.log(`⚠️ skill installation failed: ${message}`);
-  }
+  installAgentSkill('antigravity');
+}
+
+async function setupPi(): Promise<void> {
+  ensurePiManagedInstructions();
+  console.log(`✅ Pi AGENTS protocol configured`);
+
+  // Pi has documented extensions, but Mind intentionally ships no Pi plugin.
+  installAgentSkill('pi');
 }
 
 // Agents that use stdio transport and need URL field removed
@@ -907,6 +947,7 @@ const STDIO_TRANSPORT_AGENTS: SupportedAgent[] = [
   'gemini-cli',
   'vscode',
   'antigravity',
+  'pi',
 ];
 
 function removeLegacyUrlField(merged: Record<string, unknown>): void {
@@ -966,7 +1007,7 @@ export async function runSetup(
     try {
       merged = deepMerge(
         isJsonc ? readJsonc(readPath) : readJson(readPath),
-        cfg.build(mcpUrl, mindPath) as Record<string, unknown>
+        cfg.build(mcpUrl, mindPath, agent) as Record<string, unknown>
       );
     } catch (err) {
       if (err instanceof MalformedConfigError) {
@@ -991,6 +1032,8 @@ export async function runSetup(
       await setupVscode();
     } else if (agent === 'antigravity') {
       await setupAntigravity();
+    } else if (agent === 'pi') {
+      await setupPi();
     }
 
     // For stdio transport agents, remove any leftover url field
@@ -1019,27 +1062,42 @@ export async function runSetup(
     // and comments. If no mind stanza exists, the snippet is appended.
     // Malformed existing TOML throws MalformedConfigError and the file
     // is left byte-for-byte unchanged.
-    readTomlOrThrow(cfg.configPath);
+    const parsedConfig = readTomlOrThrow(cfg.configPath);
 
     const current = readText(cfg.configPath);
-    const snippet = cfg.build(mcpUrl, mindPath) as string;
-    const bounds = findTomlTableStanzaBounds(current, 'mcp_servers.mind');
+    const snippet = cfg.build(
+      mcpUrl,
+      mindPath,
+      agent,
+      readCodexEnvironment(parsedConfig)
+    ) as string;
+
+    // A `[mcp_servers.mind.env]` subtable is a valid table form for the same
+    // environment. Fold it into the inline `env` table so replacing the main
+    // stanza cannot leave a duplicate definition behind.
+    const envBounds = findTomlTableStanzaBounds(current, 'mcp_servers.mind.env');
+    const base =
+      envBounds === null
+        ? current
+        : current.slice(0, envBounds.start) + current.slice(envBounds.end);
+
+    const bounds = findTomlTableStanzaBounds(base, 'mcp_servers.mind');
 
     let nextText: string;
     if (bounds === null) {
-      nextText = current.length === 0 ? snippet.replace(/^\n+/, '') : `${current}${snippet}`;
+      nextText = base.length === 0 ? snippet.replace(/^\n+/, '') : `${base}${snippet}`;
     } else {
       // The snippet carries a leading separator (`\n`) for the append
       // path. When we slice the existing text, the separator lives
       // BEFORE `bounds.start` and is therefore NOT part of the slice.
-      // Normalize both sides by stripping leading whitespace before we
-      // decide whether a rewrite would change anything.
-      const existingStanza = current.slice(bounds.start, bounds.end);
-      const normalize = (s: string): string => s.replace(/^\s+/, '');
+      // Normalize both sides by stripping leading/trailing whitespace before
+      // we decide whether a rewrite would change anything.
+      const existingStanza = base.slice(bounds.start, bounds.end);
+      const normalize = (s: string): string => s.replace(/^\s+/, '').replace(/\s+$/, '');
       nextText =
         normalize(existingStanza) === normalize(snippet)
-          ? current
-          : current.slice(0, bounds.start) + snippet + current.slice(bounds.end);
+          ? base
+          : base.slice(0, bounds.start) + snippet + base.slice(bounds.end);
     }
 
     if (nextText !== current) {
@@ -1059,7 +1117,53 @@ export async function runSetup(
       console.log(`   Config updated`);
     }
   }
-  printCapabilityDiagnostics(cfg.capabilities);
+  printCapabilityDiagnostics(cfg.capabilities, getAgentSkillDeclaration(agent));
+}
+
+export interface SetupAllFailure {
+  agent: SupportedAgent;
+  message: string;
+}
+
+export interface SetupAllResult {
+  configured: SupportedAgent[];
+  failed: SetupAllFailure[];
+}
+
+export async function runSetupAll(
+  agents: SupportedAgent[] = getSupportedAgents() as SupportedAgent[],
+  setup: (agent: SupportedAgent) => Promise<void> = runSetup
+): Promise<SetupAllResult> {
+  const configured: SupportedAgent[] = [];
+  const failed: SetupAllFailure[] = [];
+
+  for (const agent of agents) {
+    try {
+      await setup(agent);
+      configured.push(agent);
+    } catch (error) {
+      // One failing agent (for example a malformed user config) must not
+      // abort the remaining agents. Every failure is reported below.
+      failed.push({
+        agent,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (failed.length === 0) {
+    console.log(`✅ Setup complete for all ${configured.length} supported agents.`);
+  } else {
+    for (const { agent, message } of failed) {
+      console.log(`❌ ${agent}: ${message}`);
+    }
+    console.log(
+      `❌ Setup failed for ${failed.length} of ${agents.length} supported agents. ` +
+        `${configured.length} configured.`
+    );
+  }
+
+  return { configured, failed };
 }
 
 export interface SetupRefreshOptions {
@@ -1073,40 +1177,28 @@ export interface SetupRefreshResult {
   skippedAgents: SupportedAgent[];
 }
 
-function getSharedSkillPath(): string {
-  return path.join(getHomeDir(), '.agents', 'skills', 'mind-management', 'SKILL.md');
-}
-
-function getAgentSkillSignalPath(agent: SupportedAgent): string | null {
-  const home = getHomeDir();
-  switch (agent) {
-    case 'opencode':
-      return path.join(home, '.config', 'opencode', 'skills', 'mind-management', 'SKILL.md');
-    case 'claude-code':
-      return path.join(home, '.claude', 'skills', 'mind-management', 'SKILL.md');
-    case 'cursor':
-      return path.join(home, '.cursor', 'skills', 'mind-management', 'SKILL.md');
-    case 'gemini-cli':
-      return path.join(home, '.gemini', 'skills', 'mind-management', 'SKILL.md');
-    case 'antigravity':
-      return path.join(home, '.gemini', 'antigravity', 'skills', 'mind-management', 'SKILL.md');
-    case 'codex':
-    case 'windsurf':
-    case 'vscode':
-      return getSharedSkillPath();
-  }
-}
-
 function hasAgentSkillSignal(agent: SupportedAgent): boolean {
-  const skillPath = getAgentSkillSignalPath(agent);
-  if (!skillPath || !fs.existsSync(skillPath)) {
+  // Link-strategy clients have a dedicated directory, so only its SKILL.md is
+  // a signal. The shared canonical copy must not make every client look
+  // detected after a single install.
+  const layout = getAgentSkillLayout(agent);
+  if (layout.strategy === 'link') {
+    // lstat also recognizes a broken managed symlink, so refresh can repair it.
+    return pathExistsLstat(layout.targetDir) || pathExistsLstat(getAgentSkillPath(agent));
+  }
+
+  const managedDirs = [layout.canonicalDir, ...layout.shadowDirs];
+  const skillPaths = getAgentSkillSignalPaths(agent);
+  if (
+    !managedDirs.some(managedPath => pathExistsLstat(managedPath)) &&
+    !skillPaths.some(skillPath => pathExistsLstat(skillPath))
+  ) {
     return false;
   }
 
-  if (!['codex', 'windsurf', 'vscode'].includes(agent)) {
-    return true;
-  }
-
+  // Shared-strategy clients all resolve the same canonical `~/.agents` skill.
+  // Requiring their own config directory prevents one client's install from
+  // making every other shared client look detected.
   const cfg = getAgentConfig(agent);
   return fs.existsSync(path.dirname(cfg.configPath));
 }
@@ -1154,10 +1246,17 @@ export function isAgentIntegrationDetected(agent: SupportedAgent): boolean {
         fs.existsSync(path.join(home, '.cursor', 'hooks', CURSOR_HOOK_SCRIPT_NAME))
       );
     case 'windsurf':
+      // Read-only legacy detection: the documented path is written above.
+      return jsonFileHasMindMcp(path.join(home, '.windsurf', 'mcp.json'));
     case 'gemini-cli':
     case 'vscode':
     case 'antigravity':
       return false;
+    case 'pi':
+      return textFileContains(
+        path.join(home, '.pi', 'agent', 'AGENTS.md'),
+        CLAUDE_MANAGED_BLOCK_START
+      );
   }
 }
 
@@ -1222,7 +1321,12 @@ function getCapabilityBadge(
   return '❌';
 }
 
-function formatAgentRow(agent: string, name: string, capabilities: CapabilityMap): string {
+function formatAgentRow(
+  agent: string,
+  name: string,
+  capabilities: CapabilityMap,
+  skill: AgentSkillDeclaration
+): string {
   // Determine overall badge based on L1_MCP support (L1 is required)
   const overallBadge = getAgentBadge(
     agent.includes('experimental')
@@ -1237,13 +1341,17 @@ function formatAgentRow(agent: string, name: string, capabilities: CapabilityMap
 
   // Truncate name to 12 chars for alignment
   const shortName = name.length > 12 ? name.slice(0, 11) + '…' : name.padEnd(12);
-  return `   ${overallBadge} ${shortName}  L1 ${l1}  L2 ${l2}  L3 ${l3}`;
+  const skillBadge = getAgentBadge(skill.status);
+  return (
+    `   ${overallBadge} ${shortName}  L1 ${l1}  L2 ${l2}  L3 ${l3}\n` +
+    `      ${skillBadge} skill ${skill.status} (${skill.strategy}) ${skill.path}`
+  );
 }
 
 export function listAgents(): void {
-  console.log('🧠 Available Agents\n');
+  console.log('🧠 Agent Compatibility\n');
 
-  for (const { agent, name, capabilities } of getAgentCapabilityMatrix()) {
-    console.log(formatAgentRow(agent, name, capabilities));
+  for (const { agent, name, capabilities, skill } of getAgentCapabilityMatrix()) {
+    console.log(formatAgentRow(agent, name, capabilities, skill));
   }
 }

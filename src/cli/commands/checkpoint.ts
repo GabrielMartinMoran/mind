@@ -1,13 +1,13 @@
 // ── Checkpoint CLI command handlers ──
 
 import { completeCheckpoint } from '../../checkpoint/checkpoint-done';
-import { buildCheckpointContent, fetchCheckpointContent } from '../../helpers/checkpoint-content';
+import { findActiveCheckpoint } from '../../checkpoint/checkpoint-lookup';
+import { saveCheckpoint } from '../../checkpoint/checkpoint-save';
+import { fetchCheckpointContent } from '../../helpers/checkpoint-content';
 import type { CheckpointContent } from '../../helpers/checkpoint-content';
 import { buildLinkedMemoriesArray } from '../../helpers/link-building';
 import type { EnrichedLink } from '../../helpers/link-building';
-import { resolveRefWithFallback } from '../../helpers/memory-ref-resolver';
 import { style } from '../../helpers/style';
-import type { MindStore } from '../../store/mind-store';
 import type { Memory } from '../../types';
 import { ArgParser } from '../arg-parser';
 
@@ -16,31 +16,6 @@ import type { CommandGroup } from './types';
 const p = ArgParser.param.bind(ArgParser);
 
 // ── Helper functions ──
-
-/**
- * Parse comma-separated memory refs and create links from the checkpoint memory.
- * Silently skips unresolvable refs.
- */
-function linkMemoriesToCheckpoint(
-  store: MindStore,
-  checkpointId: string,
-  linkedMemoriesFlag: string,
-  space: string
-): void {
-  const refs = linkedMemoriesFlag
-    .split(',')
-    .map(r => r.trim())
-    .filter(Boolean);
-
-  for (const ref of refs) {
-    try {
-      const resolved = resolveRefWithFallback(store, ref, space);
-      store.link(checkpointId, resolved.id, 'related');
-    } catch {
-      // Ignore link errors silently
-    }
-  }
-}
 
 /**
  * Build a recoverable checkpoint object from a checkpoint memory.
@@ -100,10 +75,13 @@ export const checkpointGroup: CommandGroup = {
         const space = params.space;
         const goal = params.goal;
         const pending = params.pending;
-        const notes = flags.notes ? String(flags.notes) : undefined;
-        const linkedMemoriesFlag = flags['linked-memories']
+        const notes = flags.notes !== undefined ? String(flags.notes) : undefined;
+        const linkedMemories = flags['linked-memories']
           ? String(flags['linked-memories'])
-          : undefined;
+              .split(',')
+              .map(ref => ref.trim())
+              .filter(Boolean)
+          : [];
 
         // Verify the space exists
         if (!store.getSpace(space)) {
@@ -111,52 +89,23 @@ export const checkpointGroup: CommandGroup = {
           return;
         }
 
-        // Check if there's already an active checkpoint
-        const existingCheckpoints = store.listMemories(space, { tag: 'checkpoint' });
-        const activeCheckpoint = existingCheckpoints.find(m => m.tags.includes('active'));
-
-        let checkpoint;
-        if (activeCheckpoint) {
-          // Update existing active checkpoint
-          const memory = store.getMemoryById(activeCheckpoint.id);
-          if (memory) {
-            const existingContent = fetchCheckpointContent(memory);
-            if (existingContent) {
-              await store.updateMemory(activeCheckpoint.id, {
-                content: buildCheckpointContent(
-                  goal,
-                  pending,
-                  notes || '',
-                  existingContent.createdAt
-                ),
-              });
-              checkpoint = store.getMemoryById(activeCheckpoint.id);
-            }
-          }
-        } else {
-          // Create new checkpoint
-          const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-          checkpoint = await store.addMemory(
-            space,
-            `checkpoint-${timestamp}`,
-            buildCheckpointContent(goal, pending, notes || ''),
-            {
-              tags: ['checkpoint', 'active'],
-              tier: 1,
-            }
-          );
+        let result;
+        try {
+          result = await saveCheckpoint(store, space, {
+            goal,
+            pending,
+            notes,
+            linkedMemories,
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'unknown error';
+          logger.logInfo(style(`❌ ${message}`, ['red']));
+          return;
         }
 
-        // Link comma-separated refs to the checkpoint using shared helper
-        if (linkedMemoriesFlag && checkpoint) {
-          linkMemoriesToCheckpoint(store, checkpoint.id, linkedMemoriesFlag, space);
-        }
-
-        const status = activeCheckpoint ? 'updated' : 'created';
+        const status = result.created ? 'created' : 'updated';
         logger.logInfo(style(`Checkpoint ${status} in "${space}"`, ['bold', 'green']));
-        if (checkpoint) {
-          logger.logInfo(style(`   Name: ${checkpoint.name}`, ['dim']));
-        }
+        logger.logInfo(style(`   Name: ${result.checkpoint.name}`, ['dim']));
       },
     },
     {
@@ -171,9 +120,8 @@ export const checkpointGroup: CommandGroup = {
         if (checkpointName) {
           memory = store.getMemory(space, checkpointName);
         } else {
-          // Find active checkpoint
-          const checkpoints = store.listMemories(space, { tag: 'checkpoint' });
-          const active = checkpoints.find(m => m.tags.includes('active'));
+          // Find active checkpoint across all tiers
+          const active = await findActiveCheckpoint(store, space);
           if (active) {
             memory = store.getMemoryById(active.id);
           }
@@ -185,7 +133,14 @@ export const checkpointGroup: CommandGroup = {
         }
 
         // Transform checkpoint into session memory (same behavior as MCP checkpoint_done)
-        const result = await completeCheckpoint(store, space, memory.id, summary);
+        let result;
+        try {
+          result = await completeCheckpoint(store, space, memory.id, summary);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'unknown error';
+          logger.logInfo(style(`❌ ${message}`, ['red']));
+          return;
+        }
 
         logger.logInfo(
           style(

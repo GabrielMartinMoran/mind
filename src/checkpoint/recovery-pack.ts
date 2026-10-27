@@ -1,6 +1,9 @@
 import { getAgentCapabilities, type Agent, type CapabilityMap } from '../cli/capabilities';
+import { buildLinkedMemoriesArray } from '../helpers/link-building';
 import { isSessionLikeMemory } from '../helpers/session-summary';
 import type { MindStore } from '../store/mind-store';
+import { EmptySearchQueryError } from '../store/shared/search-query-error';
+import type { LinkDirection } from '../types';
 
 export type RecoveryFormat = 'text' | 'md' | 'json';
 
@@ -11,7 +14,12 @@ interface RecoveryCheckpoint {
   space: string;
   tags: string[];
   content: CheckpointContent;
-  links: Array<{ targetSpace: string; targetName: string; label: string }>;
+  links: Array<{
+    targetSpace: string;
+    targetName: string;
+    label: string;
+    direction: LinkDirection;
+  }>;
 }
 
 export interface RecoveryPack {
@@ -124,30 +132,37 @@ export async function buildRecoveryPack(
       const memory = store.getMemoryById(latest.id);
       if (memory) {
         const content = parseCheckpointContent(memory.content);
-        const links = store.getLinks(latest.id).slice(0, 5);
+        const linkedMemories = buildLinkedMemoriesArray(store, latest.id, 5);
         checkpoint = {
           name: memory.name,
           space: memory.space_name,
           tags: memory.tags,
           content,
-          links: links.map(link => ({
-            targetSpace: link.target_space,
-            targetName: link.target_name,
+          links: linkedMemories.map(link => ({
+            targetSpace: link.space,
+            targetName: link.name,
             label: link.label,
+            direction: link.direction,
           })),
         };
 
         // Semantic search for context, excluding checkpoint memories
         const retrievalQuery = checkpointQuery(content);
         if (retrievalQuery.length > 0) {
-          const hits = await store.search(retrievalQuery, { space });
-          for (const hit of hits.slice(0, 5)) {
-            if (hit.tags?.includes('checkpoint')) continue;
-            context_hits.push({
-              ref: `${hit.space_name}:${hit.name}`,
-              tier: hit.tier,
-              score: hit.similarity,
-            });
+          try {
+            const hits = await store.search(retrievalQuery, { space });
+            for (const hit of hits.slice(0, 5)) {
+              if (hit.tags?.includes('checkpoint')) continue;
+              context_hits.push({
+                ref: `${hit.space_name}:${hit.name}`,
+                tier: hit.tier,
+                score: hit.similarity,
+              });
+            }
+          } catch (error) {
+            // Checkpoint text made only of common words is not a search query;
+            // keep the existing recent-memory fallback. Other failures surface.
+            if (!(error instanceof EmptySearchQueryError)) throw error;
           }
         }
       } else {

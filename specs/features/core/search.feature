@@ -27,23 +27,26 @@ Feature: Search System
       When searching for "running"
       Then memories with "ran" or "run" are found
 
-  Rule: Search fallback chain
+  Rule: Unified search pipeline
 
-    Scenario: searchFallback returns FTS5 results when available
+    @integration
+    Scenario: All-terms matches flow through the unified pipeline
       When searching for a term that exists in FTS
-      Then FTS5 results are returned
-      And search_method is "fts5"
+      Then memories matching the term are returned
+      And search_method derives from the contributing channel groups
 
-    Scenario: searchFallback falls back to LIKE when FTS returns empty
-      When searching for a fuzzy term that FTS cannot match
-      Then LIKE fallback is used
-      And search_method is "like"
+    @integration
+    Scenario: Partial matches are recovered through pipeline channels
+      When searching for a multi-word query where only some terms match
+      Then partial matches are returned with relaxed provenance
+      And each result exposes a confidence bucket
 
-    Scenario: searchFallback falls back to embeddings when RAG enabled
+    @integration
+    Scenario: Semantic results are fused with lexical results
       Given RAG is enabled and embeddings exist
       When searching for a semantic query
-      Then embedding similarity search is used
-      And search_method includes "embedding"
+      Then semantic similarity candidates join the same fusion pipeline
+      And search_method reflects the primary contributing channel
 
   Rule: Search query syntax
 

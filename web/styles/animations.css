@@ -1,30 +1,5 @@
-/* ── Neon Pulse ─────────────────────────────────────────────────────────────── */
-@keyframes neon-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    filter: brightness(1);
-  }
-  50% {
-    opacity: 0.8;
-    filter: brightness(1.2);
-  }
-}
+/* State-change motion only. No ambient, looping decorative effects. */
 
-/* ── Glow Breathe ───────────────────────────────────────────────────────────── */
-@keyframes glow-breathe {
-  0%,
-  100% {
-    filter: brightness(1) drop-shadow(0 0 8px var(--tier1))
-      drop-shadow(0 0 16px rgba(255, 123, 114, 0.4));
-  }
-  50% {
-    filter: brightness(1.15) drop-shadow(0 0 12px var(--tier1))
-      drop-shadow(0 0 24px rgba(255, 123, 114, 0.6));
-  }
-}
-
-/* ── Slide In Right ──────────────────────────────────────────────────────────── */
 @keyframes slide-in-right {
   from {
     transform: translateX(100%);
@@ -36,7 +11,6 @@
   }
 }
 
-/* ── Slide Out Right ────────────────────────────────────────────────────────── */
 @keyframes slide-out-right {
   from {
     transform: translateX(0);
@@ -48,10 +22,9 @@
   }
 }
 
-/* ── Scale In ───────────────────────────────────────────────────────────────── */
 @keyframes scale-in {
   from {
-    transform: scale(0.92);
+    transform: scale(0.96);
     opacity: 0;
   }
   to {
@@ -60,69 +33,73 @@
   }
 }
 
-/* ── Scale Out ──────────────────────────────────────────────────────────────── */
 @keyframes scale-out {
   from {
     transform: scale(1);
     opacity: 1;
   }
   to {
-    transform: scale(0.96);
+    transform: scale(0.98);
     opacity: 0;
   }
 }
 
-/* ── Glow Border Pulse ──────────────────────────────────────────────────────── */
-@keyframes glow-border-pulse {
-  0%,
-  100% {
-    border-color: rgba(0, 240, 255, 0.4);
-    box-shadow:
-      0 0 8px var(--neon-cyan),
-      0 0 16px rgba(0, 240, 255, 0.3);
-  }
-  50% {
-    border-color: rgba(0, 240, 255, 0.8);
-    box-shadow:
-      0 0 12px var(--neon-cyan),
-      0 0 24px rgba(0, 240, 255, 0.5);
-  }
-}
-
-/* ── Float Up ───────────────────────────────────────────────────────────────── */
-@keyframes float-up {
-  0% {
+@keyframes toast-slide-in {
+  from {
     transform: translateY(8px);
     opacity: 0;
   }
-  100% {
+  to {
     transform: translateY(0);
     opacity: 1;
   }
 }
 
-/* ── Reduced motion overrides for keyframes ── */
+@keyframes toast-fade-out {
+  from {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateY(4px);
+    opacity: 0;
+  }
+}
+
+@keyframes skeleton-shimmer {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ── Reduced motion: no animation, no transition-driven movement ────────── */
 @media (prefers-reduced-motion: reduce) {
-  @keyframes neon-pulse {
-    from,
-    to {
-      opacity: 1;
-      filter: brightness(1);
-    }
+  .toast,
+  .toast.toast-fade-out,
+  .modal,
+  .modal.modal-closing,
+  .skeleton,
+  .spinner,
+  #memory-panel,
+  .inspector,
+  .space-rail,
+  [class*='slide'],
+  [class*='scale'] {
+    animation: none !important;
+    transition: none !important;
   }
-  @keyframes glow-breathe {
-    from,
-    to {
-      filter: brightness(1);
-    }
-  }
-  @keyframes glow-border-pulse {
-    from,
-    to {
-      border-color: rgba(0, 240, 255, 0.4);
-      box-shadow:
-        0 0 8px var(--neon-cyan),
-        0 0 16px rgba(0, 240, 255, 0.3);
-    }
+
+  .spinner {
+    animation: none !important;
   }
 }

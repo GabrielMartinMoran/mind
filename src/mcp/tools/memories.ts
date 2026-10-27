@@ -15,10 +15,10 @@ const MEMORY_TOOL_DESCRIPTIONS: Record<string, string> = {
   memory_add:
     'Add a memory to a space with tags. Use after decisions, bug fixes, discoveries, or config changes. Returns links_created and links_failed arrays.',
   memory_update:
-    'Update a memory name, content, or tags. Use when memory content or metadata changes.',
+    'Update a memory by space and name. Supports newName and content, replaces tags when tags is provided, sets pinned, and moves one tier with tierTransition (promote/demote). Explicit transitions move pinned memories.',
   memory_delete: 'Permanently delete a memory and all its links.',
   memory_read:
-    'Read a memory with links. Auto-promotes tier (T3→T2→T1) unless noPromote:true. Use when actively working with a memory.',
+    'Read a memory with its direct relations. links_to lists outgoing relations and linked_by lists incoming relations; each summary includes the stored label and direction. Auto-promotes tier (T3→T2→T1) unless noPromote:true. Use when actively working with a memory.',
 };
 
 export interface MemoryTools {
@@ -58,7 +58,7 @@ export function createMemoryTools(store: MindStore): MemoryTools {
     memory_query: {
       schema: MemoryQuerySchema,
       description:
-        'Query memories by metadata, date, or full-text search (search param uses FTS5 syntax). Use space="*" for all spaces.',
+        'Query memories by metadata, date, or content relevance; omit `search` to list, and use quoted phrases, a trailing `*`, and uppercase `AND`/`OR`/`NOT` operators (lowercase forms are terms). A supplied search with no informative term after stopword filtering returns a validation error, so reformulate with a specific topic, name, identifier, or code term; score, methods, and search_method appear only when USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE is exactly "true", and space="*" searches all spaces without recording access.',
       annotations: { readOnlyHint: true, openWorldHint: false },
       handler: queryMemoriesHandler(store),
     },

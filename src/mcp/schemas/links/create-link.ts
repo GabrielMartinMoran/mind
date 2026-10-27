@@ -10,5 +10,7 @@ export const LinkCreateSchema = z.object({
   label: z
     .string()
     .optional()
-    .describe('Relationship label (e.g., "depends_on", "caused_by", "extends").'),
+    .describe(
+      'Relationship label (e.g., "depends_on", "caused_by", "extends"). Re-creating the same directed pair replaces the label.'
+    ),
 });

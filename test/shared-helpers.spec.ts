@@ -4,15 +4,16 @@ import { buildCheckpointContent, fetchCheckpointContent } from '../src/helpers/c
 import {
   buildLinkedMemoriesArray,
   mapLinkedSummariesToLinksFormat,
+  resolveLinkEndpoint,
   transformLinkedSummary,
 } from '../src/helpers/link-building';
-import type { MindStore, LinkedMemorySummary } from '../src/store/mind-store';
+import type { LinkedMemorySummary, MindStore } from '../src/store/mind-store';
 import type { Memory, Tier } from '../src/types';
 
 // ── Mock store factory ──────────────────────────────────────────────────────
 
 function createMockStore(
-  links: { source_id: string; target_id: string }[],
+  links: { source_id: string; target_id: string; label?: string }[],
   memories: Map<string, Memory>
 ): MindStore {
   return {
@@ -36,6 +37,8 @@ describe('link-building helpers', () => {
         tags: ['cat:decision'],
         pinned: false,
         changed_at: '2026-01-01 12:00:00',
+        label: 'caused_by',
+        direction: 'outgoing',
       };
 
       const result = transformLinkedSummary(summary);
@@ -48,6 +51,8 @@ describe('link-building helpers', () => {
         tags: ['cat:decision'],
         pinned: false,
         changed_at: '2026-01-01 12:00:00',
+        label: 'caused_by',
+        direction: 'outgoing',
       });
     });
   });
@@ -64,6 +69,8 @@ describe('link-building helpers', () => {
             tags: ['cat:decision'],
             pinned: true,
             changed_at: '2026-01-01 10:00:00',
+            label: 'implements',
+            direction: 'outgoing',
           },
         ],
         linked_by: [
@@ -75,6 +82,8 @@ describe('link-building helpers', () => {
             tags: ['cat:bugfix'],
             pinned: false,
             changed_at: '2026-01-02 10:00:00',
+            label: 'contradicts',
+            direction: 'incoming',
           },
         ],
       };
@@ -90,6 +99,8 @@ describe('link-building helpers', () => {
         tags: ['cat:decision'],
         pinned: true,
         changed_at: '2026-01-01 10:00:00',
+        label: 'implements',
+        direction: 'outgoing',
       });
 
       expect(result.linked_by).toHaveLength(1);
@@ -101,6 +112,8 @@ describe('link-building helpers', () => {
         tags: ['cat:bugfix'],
         pinned: false,
         changed_at: '2026-01-02 10:00:00',
+        label: 'contradicts',
+        direction: 'incoming',
       });
     });
 
@@ -131,7 +144,7 @@ describe('link-building helpers', () => {
         changed_at: '2026-03-15 14:30:00',
       };
 
-      const links = [{ source_id: '10', target_id: 'memory-42' }];
+      const links = [{ source_id: '10', target_id: 'memory-42', label: 'related' }];
       const memories = new Map<string, Memory>([['memory-42', linkedMem]]);
       const store = createMockStore(links, memories);
 
@@ -146,7 +159,52 @@ describe('link-building helpers', () => {
         tags: ['cat:pattern'],
         pinned: false,
         changed_at: '2026-03-15 14:30:00',
+        label: 'related',
+        direction: 'outgoing',
       });
+    });
+
+    test('resolves incoming links to the source memory', () => {
+      const sourceMem: Memory = {
+        id: 'source-1',
+        space_name: 'projects/mind',
+        space_id: 'test-space-uuid',
+        name: 'source-memory',
+        content: 'source content',
+        tier: 2,
+        pinned: false,
+        access_count: 0,
+        last_accessed_at: null,
+        embedding: null,
+        tags: ['cat:decision'],
+        created_at: '2026-01-01',
+        updated_at: '2026-01-01',
+        changed_at: '2026-03-15 14:30:00',
+      };
+
+      const links = [{ source_id: 'source-1', target_id: '10', label: 'caused_by' }];
+      const memories = new Map<string, Memory>([['source-1', sourceMem]]);
+      const store = createMockStore(links, memories);
+
+      const result = buildLinkedMemoriesArray(store, '10');
+
+      expect(result).toHaveLength(1);
+      expect(result[0]?.name).toBe('source-memory');
+      expect(result[0]?.direction).toBe('incoming');
+      expect(result[0]?.label).toBe('caused_by');
+    });
+
+    test('resolveLinkEndpoint handles outgoing, incoming, self, and unknown links', () => {
+      expect(resolveLinkEndpoint({ source_id: 'a', target_id: 'b' }, 'a')).toEqual({
+        id: 'b',
+        direction: 'outgoing',
+      });
+      expect(resolveLinkEndpoint({ source_id: 'a', target_id: 'b' }, 'b')).toEqual({
+        id: 'a',
+        direction: 'incoming',
+      });
+      expect(resolveLinkEndpoint({ source_id: 'a', target_id: 'a' }, 'a')).toBeNull();
+      expect(resolveLinkEndpoint({ source_id: 'a', target_id: 'b' }, 'c')).toBeNull();
     });
 
     test('respects limit parameter', () => {

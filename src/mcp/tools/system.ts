@@ -11,7 +11,7 @@ export function createSystemTools(): SystemTools {
     system_instructions: {
       schema: SystemInstructionsSchema,
       description:
-        'Returns the complete mind usage protocol: space naming, tagging, linking, tier system, and session workflow. Must be called before using any other mind tool in a new session.',
+        'Returns the complete fallback copy of the Mind protocol when the `mind-management` skill is not listed or cannot be loaded.',
       annotations: { readOnlyHint: true },
       handler: getSystemInstructionsHandler,
     },

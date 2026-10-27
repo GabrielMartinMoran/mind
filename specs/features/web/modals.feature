@@ -1,107 +1,137 @@
 @web @product/modals
 Feature: Modals
 
-  Modal dialogs for creating and editing spaces and memories.
+  Accessible dialogs for creating and editing spaces and memories.
 
   Background:
     Given the web application is loaded
 
-  Rule: New space modal
+  Rule: Dialog behavior
 
-    Scenario: Open new space modal
-      When clicking the new space button
-      Then a modal appears with name and description inputs
+    @integration
+    Scenario: Open a modal
+      When the user activates "New space"
+      Then a dialog opens with the form
+      And focus moves to the first field
 
-    Scenario: New space modal has tags input
-      When the new space modal is open
-      Then a tags input field is shown
+    @integration
+    Scenario: Focus is trapped in the modal
+      Given a modal is open
+      When the user tabs through the dialog
+      Then focus stays inside the dialog
 
-    Scenario: Submit creates space
+    @integration
+    Scenario: Escape closes the modal
+      Given a modal is open
+      When the user presses Escape
+      Then the modal closes
+      And focus returns to the trigger
+
+    @integration
+    Scenario: Modal can be reopened after Escape
+      Given a modal was closed with Escape
+      When the user opens it again
+      Then the modal is visible and usable
+
+    @integration
+    Scenario: Backdrop click closes the modal
+      Given a modal is open
+      When the user clicks the backdrop
+      Then the modal closes
+
+  Rule: New space
+
+    @integration
+    Scenario: Create a space
       Given the new space modal is open
-      When entering name "projects/new" and description "A new project"
-      And clicking submit
+      When the user enters a name and description
+      And submits
       Then the space is created
       And the modal closes
 
-    Scenario: Cancel closes modal
+    @integration
+    Scenario: Cancel does not create a space
       Given the new space modal is open
-      When clicking cancel or outside the modal
-      Then the modal closes
-      And no space is created
+      When the user cancels
+      Then no space is created
 
-  Rule: New memory modal
+  Rule: New memory
 
-    Scenario: Open new memory modal
-      When clicking the new memory button
-      Then a modal appears with name, content, and tags inputs
-
-    Scenario: New memory modal has tier selector
-      When the new memory modal is open
-      Then a tier selector is shown
-
-    Scenario: Submit creates memory
+    @integration
+    Scenario: Create a memory
       Given the new memory modal is open
-      When entering name "my-memory" content "Memory content" tags "cat:decision"
-      And clicking submit
+      When the user enters a name, content, tags and tier
+      And submits
       Then the memory is created
       And the modal closes
 
-    Scenario: Cancel closes modal without creating
+    @integration
+    Scenario: Cancel does not create a memory
       Given the new memory modal is open
-      When clicking cancel
-      Then the modal closes
-      And no memory is created
+      When the user cancels
+      Then no memory is created
 
-  Rule: Delete confirmation modal
+    @integration
+    Scenario: New memory returns focus to its contextual trigger
+      Given the New memory action is beside the open space title
+      When the user opens and cancels the new memory modal
+      Then focus returns to the New memory action
 
-    Scenario: Delete memory shows confirmation
+  Rule: Delete confirmation
+
+    @integration
+    Scenario: Confirm deletion
       Given a memory exists
-      When clicking delete on the memory
-      Then a confirmation modal appears
-
-    Scenario: Confirm delete removes memory
-      Given the delete confirmation is shown
-      When clicking confirm
+      When the user confirms deletion
       Then the memory is deleted
-      And the modal closes
 
-    Scenario: Cancel delete keeps memory
+    @integration
+    Scenario: Cancel deletion keeps the memory
       Given the delete confirmation is shown
-      When clicking cancel
+      When the user cancels
       Then the memory is preserved
-      And the modal closes
 
-  Rule: Inline edit
+  Rule: Validation and errors
 
-    Scenario: Inline edit appears in place
-      Given a memory item is displayed
-      When double-clicking the name
-      Then an edit input replaces the name
-      And other elements remain visible
+    @integration
+    Scenario: Required name is enforced
+      Given the form is open
+      When the user submits an empty name
+      Then an inline error is shown
+      And the dialog stays open
 
-    Scenario: Enter saves inline edit
-      Given an inline edit is active
-      When pressing Enter
-      Then the edit is saved
-      And normal display returns
+    @integration
+    Scenario: API error is shown without losing input
+      Given the form is open
+      When the request fails
+      Then an error is shown in the dialog
+      And the entered values remain
 
-    Scenario: Escape cancels inline edit
-      Given an inline edit is active
-      When pressing Escape
-      Then the original value is restored
-      And normal display returns
+  Rule: Styling
 
-  Rule: Modal styling
-
-    Scenario: Modal has glassmorphism backdrop
+    @integration
+    Scenario: Modal surface is solid, not glass
       When a modal is open
-      Then the backdrop has blur effect
+      Then the surface uses the design tokens
+      And there is no backdrop-filter or glow
 
-    Scenario: Modal has glowing border
-      When a modal is open
-      Then the border has cyan glow
+    @integration
+    Scenario: Focus ring is visible
+      Given a modal is open
+      When a field receives focus
+      Then a 2px accent focus ring is visible
 
-    Scenario: Modal input glows on focus
-      Given a modal with input fields
-      When an input receives focus
-      Then the input border glows cyan
+    @integration
+    Scenario: Reduced motion opens instantly
+      Given prefers-reduced-motion is reduce
+      When a modal opens or closes
+      Then no animation plays
+
+  Rule: Command actions
+
+    @integration
+    Scenario: Dialog command actions keep labels beside decorative icons
+      Given a create, edit or delete dialog is open
+      Then each command button keeps its visible text label
+      And its local icon is decorative and hidden from assistive technology
+      And any icon-only control has a descriptive accessible name

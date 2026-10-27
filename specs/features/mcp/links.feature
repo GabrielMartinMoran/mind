@@ -37,6 +37,12 @@ Feature: MCP Link Tools
       When calling link_create with sourceRef "mem1" targetRef "mem1"
       Then an error "self-links not allowed" is returned
 
+    Scenario: link.create relabels an existing directed pair
+      Given a link exists from "mem1" to "mem2" with label "related"
+      When calling link_create with sourceRef "mem1" targetRef "mem2" label "implements"
+      Then the link has exactly one label "implements"
+      And the link still connects "mem1" to "mem2"
+
   Rule: link.delete tool
 
     Scenario: link.delete accepts "space:name" format
@@ -49,6 +55,8 @@ Feature: MCP Link Tools
       When calling link_delete with sourceRef "mem1" targetRef "mem2"
       Then the link is removed
 
-    Scenario: link.delete non-existent link throws
+    Scenario: link.delete on a missing link is a no-op
+      Given two memories with no link between them
       When calling link_delete with sourceRef "mem1" targetRef "mem2"
-      Then an error "link not found" is returned
+      Then the call succeeds without error
+      And no link is created

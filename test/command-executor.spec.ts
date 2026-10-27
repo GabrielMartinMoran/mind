@@ -1,10 +1,19 @@
 import { describe, expect, test, afterEach } from 'bun:test';
 
 import { executeCommand } from '../src/cli/command-executor';
+import { searchGroup } from '../src/cli/commands/search';
+import { style } from '../src/helpers/style';
 import type { MindStore } from '../src/store/mind-store';
+import { EMPTY_SEARCH_QUERY_MESSAGE } from '../src/store/shared/search-query-error';
 
 import { mockedLogger } from './mocks/mocked-logger';
 import { createTestStore } from './mocks/test-store';
+
+const ANSI_PATTERN = /\u001b\[[0-9;]*m/g;
+
+function stripAnsi(value: string): string {
+  return value.replace(ANSI_PATTERN, '');
+}
 
 let store: MindStore & { cleanup: () => void };
 
@@ -399,6 +408,28 @@ describe('Command Executor — Search', () => {
     expect(logs.some(l => l.message.includes('proj-a'))).toBe(true);
   });
 
+  test('should surface the shared validation error for an empty or stopword-only query', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'noise', 'the and for de la', { tags: ['test'] });
+
+    for (const query of ['', '   ', 'the and for']) {
+      await expect(executeCommand(['search', query], store, logger)).rejects.toThrow(
+        EMPTY_SEARCH_QUERY_MESSAGE
+      );
+    }
+  });
+
+  test('should document quoting, uppercase operators, and validation recovery in search help', () => {
+    const help = stripAnsi(searchGroup.helpEntries[0]!.getRendered());
+
+    expect(help).toContain('quote it when it contains multiple words');
+    expect(help).toContain('Only uppercase AND, OR, NOT are boolean operators');
+    expect(help).toContain('add a specific topic, name, identifier, or code term');
+    expect(help).toContain('list memories by metadata');
+  });
+
   test('should query memories with metadata filters', async () => {
     store = createTestStore();
     const logger = mockedLogger();
@@ -415,6 +446,82 @@ describe('Command Executor — Search', () => {
     const logs = logger.getLogs();
     expect(logs.some(l => l.message.includes('proj-a') && l.message.includes('auth'))).toBe(true);
     expect(logs.some(l => l.message.includes('proj-b') && l.message.includes('auth'))).toBe(false);
+  });
+
+  test('should annotate each result with a confidence bucket marker', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'auth', 'JWT authentication with refresh tokens', {
+      tags: ['test'],
+    });
+
+    await executeCommand(['search', 'authentication'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    expect(logs.some(m => /\[(high|medium|low)\]/.test(m))).toBe(true);
+    expect(logs.some(m => m.includes('[high]'))).toBe(true);
+  });
+
+  test('should default to 25 results and report the pre-limit total', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    for (let i = 0; i < 30; i++) {
+      await store.addMemory('test', `m-${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    await executeCommand(['search', 'token'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    const memoryLines = logs.filter(m => /^\s*\[.*\] \/ \[/.test(m));
+    expect(logs.some(m => m.includes('🔍 30 result(s) for "token":'))).toBe(true);
+    expect(memoryLines.length).toBe(25);
+    expect(logs.some(m => m.includes('Pagination | limit: 25 | offset: 0 | next offset: 25'))).toBe(
+      true
+    );
+  });
+
+  test('should honour --limit and --offset', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    for (let i = 0; i < 5; i++) {
+      await store.addMemory('test', `m-${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    await executeCommand(['search', 'token', '--limit', '2', '--offset', '1'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    const memoryLines = logs.filter(m => /^\s*\[.*\] \/ \[/.test(m));
+    expect(memoryLines.length).toBe(2);
+    expect(logs.some(m => m.includes('Pagination | limit: 2 | offset: 1 | next offset: 3'))).toBe(
+      true
+    );
+  });
+
+  test('should clamp --limit to the 500 max page size', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    for (let i = 0; i < 501; i++) {
+      await store.addMemory('test', `m-${i}`, 'shared token content', { tags: ['test'] });
+    }
+
+    await executeCommand(['search', 'token', '--limit', '1000'], store, logger);
+    const logs = logger.getLogs().map(l => stripAnsi(l.message));
+    const memoryLines = logs.filter(m => /^\s*\[.*\] \/ \[/.test(m));
+    expect(logs.some(m => m.includes('🔍 501 result(s) for "token":'))).toBe(true);
+    expect(memoryLines.length).toBe(500);
+    expect(logs.some(m => m.includes('Pagination | limit: 500 | offset: 0'))).toBe(true);
+  });
+
+  test('should reject a non-positive --limit', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'auth', 'token content', { tags: ['test'] });
+
+    await expect(
+      executeCommand(['search', 'token', '--limit', '0'], store, logger)
+    ).rejects.toThrow('--limit must be a positive number.');
   });
 
   test('should show pagination with next offset in query output', async () => {
@@ -479,6 +586,19 @@ describe('Command Executor — Status', () => {
     expect(logs.some(l => l.message.includes('Status'))).toBe(true);
     // Should show tier labels
     expect(logs.some(l => l.message.includes('T1') || l.message.includes('hot'))).toBe(true);
+  });
+
+  test('should render the provider-aware RAG status line', () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+
+    executeCommand(['status'], store, logger);
+
+    const ragLine = `   ${style('RAG:', ['bold'])} disabled (set MIND_RAG=true)`;
+    const messages = logger.getLogs().map(entry => entry.message);
+
+    expect(messages).toContain(ragLine);
+    expect(messages.join('\n')).not.toContain('+ OPENAI_API_KEY');
   });
 
   test('should run space-scoped status', () => {
@@ -611,8 +731,8 @@ describe('Command Executor — Checkpoint', () => {
     const logger = mockedLogger();
     store.createSpace('myproject', 'A project', ['test']);
 
-    // Create checkpoint
-    await executeCommand(['checkpoint', 'set', 'myproject', 'Goal', 'Pending'], store, logger);
+    // Create a completed checkpoint (pending cleared)
+    await executeCommand(['checkpoint', 'set', 'myproject', 'Goal', ''], store, logger);
     const memories = store.listMemories('myproject', { tag: 'checkpoint' });
     const cpName = memories[0]!.name;
 
@@ -638,6 +758,65 @@ describe('Command Executor — Checkpoint', () => {
 
     const logs = logger.getLogs();
     expect(logs.some(l => l.message.includes('transformed into session memory'))).toBe(true);
+  });
+
+  test('should refuse to complete a checkpoint with pending work', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('myproject', 'A project', ['test']);
+
+    await executeCommand(
+      ['checkpoint', 'set', 'myproject', 'Goal', 'Still pending'],
+      store,
+      logger
+    );
+    const memories = store.listMemories('myproject', { tag: 'checkpoint' });
+    const cpName = memories[0]!.name;
+
+    await executeCommand(
+      ['checkpoint', 'complete', 'myproject', cpName, 'Tried early'],
+      store,
+      logger
+    );
+
+    expect(store.getMemory('myproject', cpName)).not.toBeNull();
+    expect(store.queryMemories({ space: 'myproject', tag: 'type:session' })).toHaveLength(0);
+    const logs = logger.getLogs();
+    expect(logs.some(l => l.message.includes('pending work'))).toBe(true);
+  });
+
+  test('checkpoint set preserves existing notes when --notes is omitted', async () => {
+    store = createTestStore();
+    const logger = mockedLogger();
+    store.createSpace('myproject', 'A project', ['test']);
+
+    await executeCommand(
+      [
+        'checkpoint',
+        'set',
+        'myproject',
+        'First goal',
+        'First pending',
+        '--notes',
+        'Original notes',
+      ],
+      store,
+      logger
+    );
+
+    await executeCommand(
+      ['checkpoint', 'set', 'myproject', 'Updated goal', 'Updated pending'],
+      store,
+      logger
+    );
+
+    const memories = store.listMemories('myproject', { tag: 'checkpoint' });
+    expect(memories).toHaveLength(1);
+    const mem = store.getMemoryById(memories[0]!.id);
+    const content = JSON.parse(mem!.content);
+    expect(content.goal).toBe('Updated goal');
+    expect(content.pending).toBe('Updated pending');
+    expect(content.notes).toBe('Original notes');
   });
 
   test('should list checkpoints', async () => {

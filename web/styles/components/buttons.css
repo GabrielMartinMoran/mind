@@ -1,0 +1,127 @@
+/* Buttons: one primary action, quiet secondary controls. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: var(--font-size-13);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.2;
+  white-space: nowrap;
+  transition:
+    background-color var(--motion-fast) var(--ease-standard),
+    border-color var(--motion-fast) var(--ease-standard),
+    color var(--motion-fast) var(--ease-standard);
+}
+
+.btn-primary {
+  min-height: 44px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent);
+}
+
+.btn-primary:hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--text-primary));
+  border-color: color-mix(in srgb, var(--accent) 88%, var(--text-primary));
+}
+
+.btn-primary:active {
+  background: color-mix(in srgb, var(--accent) 78%, var(--text-primary));
+}
+
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text-primary);
+  border-color: var(--line-strong);
+}
+
+.btn-secondary:hover {
+  background: var(--surface-3);
+  border-color: var(--text-quiet);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+
+.btn-ghost:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/* Quiet command: outlined but unfilled, so it never competes with creation. */
+.btn-quiet {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--line);
+}
+
+.btn-quiet:hover {
+  background: var(--surface-2);
+  border-color: var(--line-strong);
+  color: var(--text-primary);
+}
+
+.btn-danger {
+  background: var(--danger);
+  color: var(--bg-void);
+  border-color: var(--danger);
+  font-weight: var(--font-weight-semibold);
+}
+
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--danger) 86%, var(--text-primary));
+}
+
+/* Destructive trigger: outlined until the confirmation dialog takes over. */
+.btn-danger-outline {
+  background: transparent;
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.btn-danger-outline:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.btn-sm {
+  min-height: 32px;
+  padding: var(--space-1) var(--space-2);
+  font-size: var(--font-size-12);
+}
+
+.btn-icon {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.btn-icon.btn-sm {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+}
+
+.btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn:disabled,
+.btn[aria-disabled='true'] {
+  opacity: 0.5;
+}
+
+.btn:disabled:hover,
+.btn[aria-disabled='true']:hover {
+  background: inherit;
+}

@@ -1,0 +1,148 @@
+/* Forms: inputs, selects, textareas, chips and filters. */
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.form-label,
+.form-field > label {
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+  font-weight: var(--font-weight-medium);
+}
+
+.form-hint {
+  color: var(--text-quiet);
+  font-size: var(--font-size-12);
+}
+
+.form-error {
+  color: var(--danger);
+  font-size: var(--font-size-12);
+}
+
+.input,
+.select,
+.textarea,
+input[type='text'],
+input[type='search'],
+input[type='email'],
+input[type='password'],
+input[type='url'],
+textarea,
+select {
+  width: 100%;
+  min-height: 36px;
+  padding: var(--space-2) var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-void);
+  color: var(--text-primary);
+  font-size: var(--font-size-14);
+  line-height: var(--line-height-body);
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard);
+}
+
+.textarea,
+textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.input::placeholder,
+.textarea::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-quiet);
+}
+
+.input:hover,
+.select:hover,
+.textarea:hover,
+input:hover,
+textarea:hover,
+select:hover {
+  border-color: var(--text-quiet);
+}
+
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  border-color: var(--accent);
+}
+
+.select,
+select {
+  cursor: pointer;
+}
+
+.input-sm {
+  min-height: 32px;
+  font-size: var(--font-size-13);
+}
+
+.checkbox,
+.radio {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 24px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-13);
+  cursor: pointer;
+}
+
+.checkbox input,
+.radio input {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 24px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text-secondary);
+  font-size: var(--font-size-12);
+  white-space: nowrap;
+}
+
+.chip:hover {
+  border-color: var(--line-strong);
+  color: var(--text-primary);
+}
+
+.chip.is-active,
+.chip[aria-pressed='true'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+}

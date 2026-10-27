@@ -387,6 +387,13 @@ describe('Phase 2.5: Checkpoint Tools (same space)', () => {
       expect(created.checkpoint?.tier).toBe(1);
       const checkpointName = created.checkpoint!.name;
 
+      // Work is complete: clear pending deliberately before closing.
+      const cleared = await tools.checkpoint_save.handler({
+        space: 'test-space',
+        pending: '',
+      });
+      expect(cleared.checkpoint?.name).toBe(checkpointName);
+
       // Transform it
       const res = await tools.checkpoint_done.handler({
         space: 'test-space',
@@ -402,7 +409,7 @@ describe('Phase 2.5: Checkpoint Tools (same space)', () => {
       // Content should include checkpoint data plus summary
       const content = JSON.parse(sessionMem!.content);
       expect(content.goal).toBe('Implement feature X');
-      expect(content.pending).toBe('Write tests');
+      expect(content.pending).toBe('');
       expect(content.notes).toBe('Some implementation notes');
       expect(content.whatWasDone).toBe('Feature X is done');
       expect(content.originalCheckpoint).toBe(checkpointName);

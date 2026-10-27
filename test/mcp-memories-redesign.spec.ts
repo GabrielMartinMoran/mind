@@ -148,6 +148,8 @@ describe('Phase 2.2: Memories Tools Redesign', () => {
       expect(link!.tags).toContain('cat:pattern');
       expect(link!.pinned).toBe(true);
       expect(typeof link!.changed_at).toBe('string');
+      expect(link!.label).toBe('related');
+      expect(link!.direction).toBe('outgoing');
     });
   });
 

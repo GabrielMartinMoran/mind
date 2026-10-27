@@ -1,0 +1,162 @@
+/* Dialogs and side sheets. */
+dialog,
+.dialog {
+  max-width: min(560px, calc(100vw - var(--space-8)));
+  max-height: calc(100dvh - var(--space-8));
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
+  overflow: hidden;
+}
+
+dialog::backdrop,
+.dialog-backdrop {
+  background: rgb(3 6 12 / 72%);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: var(--font-size-16);
+  font-weight: var(--font-weight-semibold);
+}
+
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.dialog-message {
+  margin: 0;
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--line);
+}
+
+.dialog-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.dialog-close:hover {
+  background: var(--surface-2);
+  color: var(--text-primary);
+}
+
+/* Legacy modal aliases: opaque surface, visible focus, no decorative chrome. */
+.modal-backdrop {
+  background: rgb(3 6 12 / 72%);
+}
+
+.modal {
+  background: var(--surface-1);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
+  animation: scale-in var(--motion-base) var(--ease-standard) forwards;
+}
+
+.modal::before {
+  content: none;
+  display: none;
+}
+
+.modal.modal-closing {
+  animation: scale-out var(--motion-fast) ease-in forwards;
+}
+
+/*
+ * Native create/edit modals (`#modal-new-space`, `#modal-new-memory`).
+ * Solid token surface, visible focus, responsive, no glass or glow.
+ */
+.modal-dialog {
+  width: min(480px, calc(100vw - var(--space-6)));
+  max-width: min(480px, calc(100vw - var(--space-6)));
+  max-height: calc(100dvh - var(--space-8));
+  margin: auto;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  color: var(--text-primary);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 55%);
+  overflow: hidden;
+}
+
+.modal-dialog[open] {
+  animation: scale-in var(--motion-base) var(--ease-standard);
+}
+
+.modal-dialog::backdrop {
+  background: rgb(3 6 12 / 72%);
+}
+
+.modal-dialog .dialog-body {
+  max-height: min(70dvh, 520px);
+}
+
+.modal-dialog .form-error {
+  margin: 0;
+}
+
+.modal-dialog .dialog-actions {
+  gap: var(--space-2);
+}
+
+@media (max-width: 600px) {
+  .modal-dialog {
+    width: calc(100vw - var(--space-4));
+    max-width: calc(100vw - var(--space-4));
+    border-radius: var(--radius-md);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-dialog[open] {
+    animation: none;
+  }
+}
+
+.inspector-sheet,
+.side-sheet {
+  border-left: 1px solid var(--line-strong);
+  background: var(--surface-1);
+}
+
+@media (max-width: 600px) {
+  dialog,
+  .dialog {
+    max-width: 100%;
+    width: 100%;
+    max-height: 100dvh;
+    margin: 0;
+    border-radius: 0;
+  }
+}

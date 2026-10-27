@@ -3,7 +3,7 @@ Feature: checkpoint-session-transformation
   Scenario: checkpoint_done creates same-space session memory in projects/<repo> and deletes checkpoint
     Given a space "projects/mind" with an active checkpoint
     And the checkpoint has goal "Complete API refactor"
-    And the checkpoint has pending "Write tests"
+    And the checkpoint has no pending work
     And the checkpoint has linked_memories ["memory-1", "memory-2"]
     When I call checkpoint_done(space="projects/mind", name="current")
     Then a new memory is created in "projects/mind"

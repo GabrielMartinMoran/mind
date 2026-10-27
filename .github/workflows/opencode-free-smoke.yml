@@ -1,0 +1,46 @@
+name: OpenCode Free QA Smoke
+on:
+  push:
+    branches:
+      - benchmark/longmemeval-20261025
+    paths:
+      - .github/workflows/opencode-free-smoke.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  free-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install OpenCode
+        run: |
+          npm install --global opencode-ai@latest
+          opencode --version
+      - name: Discover DeepSeek free
+        run: |
+          opencode models opencode --refresh | grep -E 'deepseek.*free|DeepSeek.*Free' || true
+      - name: Test DeepSeek Flash on hosted OpenCode CLI
+        run: |
+          mkdir -p /tmp/opencode-free-benchmark
+          cd /tmp/opencode-free-benchmark
+          set +e
+          timeout 120s opencode run --model opencode/deepseek-v4.1-flash-free \
+            --format json 'Answer with exactly: BENCHMARK_READY' \
+            >/tmp/opencode-probe-events.jsonl 2>/tmp/opencode-probe-errors.txt
+          status=$?
+          set -e
+          echo "OpenCode exit status: $status"
+          echo "Event types and textual output:"
+          node -e 'const fs=require("fs"); const lines=fs.readFileSync("/tmp/opencode-probe-events.jsonl","utf8").split("\n").filter(Boolean); for(const line of lines.slice(-30)){try{const j=JSON.parse(line); console.log(JSON.stringify({type:j.type,text:j.part?.text?.slice(0,180),error:j.error?.message||j.properties?.error?.message}));}catch{console.log(line.slice(0,180))}}'
+          echo "Errors (truncated):"
+          head -c 1200 /tmp/opencode-probe-errors.txt
+          echo
+          if [ "$status" -ne 0 ]; then exit "$status"; fi
+          grep -q BENCHMARK_READY /tmp/opencode-probe-events.jsonl

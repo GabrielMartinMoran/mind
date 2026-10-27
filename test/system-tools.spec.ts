@@ -3,6 +3,7 @@ import { join } from 'node:path';
 
 import { describe, expect, test } from 'bun:test';
 
+import { loadCanonicalProtocolBody } from '../src/cli/memory-protocol';
 import { renderSystemInstructions } from '../src/cli/system-instructions';
 import { createSystemTools } from '../src/mcp/tools/system';
 
@@ -33,6 +34,29 @@ const PRODUCT_PROTOCOL_FORBIDDEN_TERMS = [
 ];
 
 describe('MCP System Tools', () => {
+  test('system instructions are the labeled fallback used when the skill is unavailable', async () => {
+    const rendered = renderSystemInstructions();
+
+    expect(rendered.startsWith('# Mind Memory Protocol (fallback)')).toBe(true);
+    expect(rendered).toContain('complete fallback copy for the `mind` MCP server');
+    expect(rendered).toContain(
+      'used only when the `mind-management` skill is not listed or cannot be loaded'
+    );
+    expect(rendered).toContain('The skill is the primary source of truth');
+    expect(rendered).toContain('load it unconditionally before any Mind use');
+    // @ts-ignore — handler accepts 0 args but type system requires 1
+    const response = await createSystemTools().system_instructions.handler();
+    expect(response.instructions_version).toBe('2.3.0');
+  });
+
+  test('system instructions describe operator casing, omit-vs-search, and validation recovery', () => {
+    const rendered = renderSystemInstructions();
+
+    expect(rendered).toContain('Only uppercase `AND`, `OR`, and `NOT` are boolean operators');
+    expect(rendered).toContain('Omit `search` to list memories by metadata');
+    expect(rendered).toContain('add a specific topic');
+  });
+
   test('system instructions renderer should match snapshot', () => {
     const snapshotText = readFileSync(SYSTEM_INSTRUCTIONS_SNAPSHOT_PATH, 'utf-8');
 
@@ -40,72 +64,60 @@ describe('MCP System Tools', () => {
     expect(renderSystemInstructions()).toBe(snapshotText);
   });
 
-  test('system instructions renderer should be deterministic and equal to canonical source text', () => {
+  test('system instructions renderer should be deterministic and equal to the composed canonical source', () => {
     const sourceText = readFileSync(SYSTEM_INSTRUCTIONS_SOURCE_PATH, 'utf-8');
+    const expected = `${sourceText.replace('{{protocolBody}}', loadCanonicalProtocolBody()).trimEnd()}\n`;
 
-    expect(renderSystemInstructions()).toBe(sourceText);
-    expect(renderSystemInstructions()).toBe(sourceText);
+    expect(expected).toContain(loadCanonicalProtocolBody());
+    expect(renderSystemInstructions()).toBe(expected);
+    expect(renderSystemInstructions()).toBe(expected);
   });
 
-  test('system instructions describe memory quality tiers and living references', () => {
+  test('system instructions describe memory quality and living references', () => {
     const rendered = renderSystemInstructions();
 
-    expect(rendered).toContain('Durable memory threshold');
-    expect(rendered).toContain('Checkpoint = live/ephemeral work state');
+    expect(rendered).toContain('Every memory needs at least one tag.');
     expect(rendered).toContain('type:reference');
-    expect(rendered).toContain(
-      'Required tags: `type:reference`, exactly one `ref:*`, and `status:living`.'
-    );
-    expect(rendered).toContain(
-      'The `ref:*` tag defines the reference category; the memory name is the readable identifier.'
-    );
-    expect(rendered).toContain(
-      'Recommended names: `architecture-overview`, `project-map`, `style-guide`, `domain-model`, and `workflow-notes`.'
-    );
-    expect(rendered).not.toContain('Recommended names: `ref-project-map`');
-    expect(rendered).toContain('status:superseded');
-    expect(rendered).toMatch(/routine\s+validation results with no new findings/);
-    expect(rendered).toMatch(
-      /verified root causes, regressions, risk decisions, or durable validation\s+patterns/
-    );
-    expect(rendered).toContain('Before creating a durable memory');
-    expect(rendered).toContain('Future utility');
-    expect(rendered).toContain('Evidence');
-    expect(rendered).toContain('Stability');
-    expect(rendered).toContain('Living reference taxonomy and maintenance');
+    expect(rendered).toContain('exactly one `ref:*` tag');
+    expect(rendered).toContain('status:living');
     expect(rendered).toContain('ref:key-decisions');
     expect(rendered).toContain('ref:known-pitfalls');
-    expect(rendered).toContain('30 days');
-    expect(rendered).toContain('project-map');
+    expect(rendered).toContain('status:superseded');
+    expect(rendered).toContain('not on a calendar quota');
+    expect(rendered).toContain('Link source memories');
   });
 
-  test('system instructions describe session summary flow and decision matrix', () => {
+  test('system instructions describe checkpoint events and session handoff', () => {
     const rendered = renderSystemInstructions();
 
-    expect(rendered).toMatch(/\| Need\s+\| Use\s+\| Result\s+\|/);
-    expect(rendered).toMatch(
-      /\| Live goal, pending work, blockers, or next action\s+\| `checkpoint_save`\s+\| Active checkpoint\s+\|/
-    );
-    expect(rendered).toMatch(
-      /\| Stable decisions, root causes, patterns, preferences, config, or domain facts\s+\| `memory_add` \/ `memory_update`\s+\| Durable memory\s+\|/
-    );
-    expect(rendered).toContain(
-      'Checkpoints hold live state; `checkpoint_done` completes the active checkpoint'
-    );
-    expect(rendered).toContain('Durable memories are separate from session summaries.');
-    expect(rendered).not.toContain('do not create session summaries manually');
+    expect(rendered).toContain('A plan is approved, a subtask finishes, a decision or blocker');
+    expect(rendered).toContain('Save a checkpoint at those events.');
+    expect(rendered).toContain('checkpoint_query { space:');
+    expect(rendered).toContain('checkpoint_load { space:');
+    expect(rendered).toContain('`checkpoint_done` to turn the active checkpoint into a');
+    expect(rendered).not.toContain('less than 30 minutes old');
   });
 
   test('system instructions describe compact linking guidance', () => {
     const rendered = renderSystemInstructions();
 
-    expect(rendered).toContain(
-      'When a new memory depends on, updates, or explains another memory, pass related memories in `links_to`.'
-    );
-    expect(rendered).toContain(
-      'After adding with `links_to`, check `links_created` and `links_failed`; retry important failed links with `link_create`.'
-    );
-    expect(rendered).not.toContain('memory is worse if not linked');
+    expect(rendered).toContain('`depends_on`');
+    expect(rendered).toContain('`caused_by`');
+    expect(rendered).toContain('`contradicts`');
+    expect(rendered).toContain('Re-creating the same directed pair replaces');
+    expect(rendered).toContain('succeeds as a no-op when it is absent');
+  });
+
+  test('system instructions describe search grammar and confidence guidance', () => {
+    const rendered = renderSystemInstructions();
+
+    expect(rendered).toContain('`memory_query` supports quoted phrases');
+    expect(rendered).toContain('`OR`');
+    expect(rendered).toContain('`NOT`');
+    expect(rendered).toContain('trailing `*`');
+    expect(rendered).toContain('`confidence`');
+    expect(rendered).toContain('`methods`');
+    expect(rendered).toContain('RAG is optional and off by default');
   });
 
   test('system instructions avoid workflow-specific orchestration language', () => {
@@ -119,8 +131,8 @@ describe('MCP System Tools', () => {
   test('system instructions close example uses checkpoint_done for session summaries', () => {
     const rendered = renderSystemInstructions();
 
-    expect(rendered).toContain('// 6. Session end: close the checkpoint');
-    expect(rendered).toContain('checkpoint_done {');
+    expect(rendered).toContain('```json tool:checkpoint_done');
+    expect(rendered).toContain('turn the active checkpoint into a');
     expect(rendered).not.toContain('// 6. Session end: summarize\nmemory_add {');
   });
 
@@ -137,18 +149,19 @@ describe('MCP System Tools', () => {
     const response = await tool.handler();
     expect(response).toEqual({
       content: [{ type: 'text', text: renderSystemInstructions() }],
-      instructions_version: '1.4.0',
+      instructions_version: '2.3.0',
     });
   });
 
-  test('system_instructions should load protocol text from markdown source file', async () => {
+  test('system_instructions should compose the protocol text from the canonical body', async () => {
     const tools = createSystemTools();
     // @ts-ignore — handler accepts 0 args but type system requires 1
     const response = await tools.system_instructions.handler();
     const sourceText = readFileSync(SYSTEM_INSTRUCTIONS_SOURCE_PATH, 'utf-8');
+    const expected = `${sourceText.replace('{{protocolBody}}', loadCanonicalProtocolBody()).trimEnd()}\n`;
 
-    expect(response.instructions_version).toBe('1.4.0');
+    expect(response.instructions_version).toBe('2.3.0');
     expect(response.content[0]?.type).toBe('text');
-    expect(response.content[0]?.text).toBe(sourceText);
+    expect(response.content[0]?.text).toBe(expected);
   });
 });

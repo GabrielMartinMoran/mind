@@ -1,5 +1,7 @@
 import type { MindStore } from '../../../store/mind-store';
+import { toCompatSearchMethod } from '../../../store/shared';
 import type { Tier } from '../../../types';
+import { filterByDateRange } from '../../helpers/date-filter';
 import { presentMemoryResponse } from '../../helpers/memory-response';
 import { buildYamlContent } from '../../helpers/yaml-response';
 import { MemoryQuerySchema } from '../../schemas/memories/query-memories';
@@ -12,32 +14,26 @@ interface MemoryQueryPayload {
   search_method?: string;
 }
 
-function applyDateFilters(
-  results: { changed_at: string }[],
+const EXPANDED_RESPONSE_ENV = 'USE_DEBUGGING_EXPANDED_TOOLS_RESPONSE';
+
+function isExpandedResponseEnabled(): boolean {
+  return process.env[EXPANDED_RESPONSE_ENV] === 'true';
+}
+
+export function applyDateFilters<T extends { changed_at: string }>(
+  results: T[],
   from?: string,
   to?: string
-): typeof results {
-  let filtered = results;
-
-  if (from) {
-    const fromDate = new Date(from);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) >= fromDate);
-  }
-
-  if (to) {
-    const toDate = new Date(to);
-    toDate.setHours(23, 59, 59, 999);
-    filtered = filtered.filter(memory => new Date(memory.changed_at) <= toDate);
-  }
-
-  return filtered;
+): T[] {
+  return filterByDateRange(results, from, to);
 }
 
 function buildMemoryQueryResponse(
   memories: any[],
   totalCount: number,
   search_method: string | undefined,
-  parsed: { limit?: number; offset?: number }
+  parsed: { limit?: number; offset?: number },
+  includeDiagnostics: boolean
 ): ReturnType<typeof buildYamlContent<MemoryQueryPayload>> {
   const response: MemoryQueryPayload = {
     memories: memories.map(
@@ -49,14 +45,23 @@ function buildMemoryQueryResponse(
         created_at: _created_at,
         updated_at: _updated_at,
         ...rest
-      }: any) => presentMemoryResponse(rest)
+      }: any) => {
+        const presented = presentMemoryResponse(rest);
+
+        if (includeDiagnostics) {
+          return presented;
+        }
+
+        const { score: _score, methods: _methods, ...compact } = presented;
+        return compact;
+      }
     ),
     total: totalCount,
     limit: parsed.limit ?? 25,
     offset: parsed.offset ?? 0,
   };
 
-  if (search_method) {
+  if (includeDiagnostics && search_method) {
     response.search_method = search_method;
   }
 
@@ -85,17 +90,21 @@ export function queryMemoriesHandler(store: MindStore) {
     let totalCount: number;
     let search_method: string | undefined;
 
-    if (parsed.search) {
-      const searchResult = await store.searchFallback(parsed.search, {
+    if (parsed.search !== undefined) {
+      // Unified pipeline (D1): fused ranking with confidence/methods provenance.
+      const results = await store.search(parsed.search, {
         space: spaceFilter,
         tag: parsed.tag,
         tier: tierFilter as Tier | undefined,
       });
 
-      const filteredResults = applyDateFilters(searchResult.results, parsed.from, parsed.to);
+      const filteredResults = applyDateFilters(results, parsed.from, parsed.to);
 
       totalCount = filteredResults.length;
-      search_method = searchResult.search_method;
+      // Compatibility field: primary channel of the top-ranked result (D5).
+      search_method = filteredResults[0]
+        ? toCompatSearchMethod(filteredResults[0].methods)
+        : undefined;
 
       const offset = parsed.offset ?? 0;
       const limit = parsed.limit ?? 25;
@@ -120,6 +129,12 @@ export function queryMemoriesHandler(store: MindStore) {
       });
     }
 
-    return buildMemoryQueryResponse(memories, totalCount, search_method, parsed);
+    return buildMemoryQueryResponse(
+      memories,
+      totalCount,
+      search_method,
+      parsed,
+      isExpandedResponseEnabled()
+    );
   };
 }

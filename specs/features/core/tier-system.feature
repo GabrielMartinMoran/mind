@@ -45,9 +45,9 @@ Feature: Tier System
       Then an error "already at highest tier" is thrown
       And the memory remains in tier 1
 
-    Scenario: promotion is skipped for pinned memories
+    Scenario: automatic promotion is skipped for pinned memories
       Given a pinned memory in tier 2
-      When promoting the memory
+      When recording an access on the memory
       Then the memory remains in tier 2
       And no error is thrown
 
@@ -71,7 +71,7 @@ Feature: Tier System
       Then an error "already at lowest tier" is thrown
       And the memory remains in tier 3
 
-  Rule: Pinned memories are immune to operations
+  Rule: Pinned memories are immune to automatic operations
 
     Scenario: pinned memories cannot be evicted
       Given a space at T1 capacity with all memories pinned

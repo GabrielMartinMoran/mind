@@ -1,7 +1,6 @@
 import { dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-import eslint from '@eslint/js';
 import tseslint from '@typescript-eslint/eslint-plugin';
 import tsparser from '@typescript-eslint/parser';
 import eslintConfigPrettier from 'eslint-config-prettier';
@@ -13,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 export default [
   // Ignore the config file itself
   {
-    ignores: ['eslint.config.js'],
+    ignores: ['eslint.config.js', 'web/assets/vendor/'],
   },
 
   // Config for TypeScript files in src/ and test/ (with full TypeScript project support)
@@ -23,6 +22,45 @@ export default [
       parser: tsparser,
       parserOptions: {
         project: './tsconfig.json',
+        tsconfigRootDir: __dirname,
+      },
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+      import: importPlugin,
+      prettier,
+    },
+    rules: {
+      ...eslintConfigPrettier.rules,
+      'prettier/prettier': 'error',
+      'import/order': [
+        'error',
+        {
+          groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+          'newlines-between': 'always',
+          alphabetize: { order: 'asc' },
+        },
+      ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      'no-undef': 'off',
+    },
+  },
+
+  // Benchmark subproject (its own package/tsconfig/lockfile)
+  {
+    files: ['benchmarks/agent-memory/src/**/*.ts', 'benchmarks/agent-memory/test/**/*.ts'],
+    languageOptions: {
+      parser: tsparser,
+      parserOptions: {
+        project: './benchmarks/agent-memory/tsconfig.json',
         tsconfigRootDir: __dirname,
       },
     },
@@ -80,6 +118,41 @@ export default [
   // Config for web/test/*.ts files (TypeScript but not in tsconfig project)
   {
     files: ['web/test/**/*.ts'],
+    languageOptions: {
+      parser: tsparser,
+    },
+    plugins: {
+      '@typescript-eslint': tseslint,
+      import: importPlugin,
+      prettier,
+    },
+    rules: {
+      ...eslintConfigPrettier.rules,
+      'prettier/prettier': 'error',
+      'import/order': [
+        'error',
+        {
+          groups: ['builtin', 'external', 'internal', 'parent', 'sibling', 'index'],
+          'newlines-between': 'always',
+          alphabetize: { order: 'asc' },
+        },
+      ],
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+      'no-unused-vars': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/require-await': 'off',
+      '@typescript-eslint/no-unnecessary-condition': 'off',
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      'no-undef': 'off',
+    },
+  },
+
+  // Config for experiment scripts (TypeScript, outside the main tsconfig project)
+  {
+    files: ['benchmarks/agent-memory/experiments/**/*.ts'],
     languageOptions: {
       parser: tsparser,
     },

@@ -4,6 +4,7 @@ import { basename, dirname, join } from 'path';
 import { Database } from 'bun:sqlite';
 
 import { SCHEMA_VERSION, initializeDatabase } from './schema';
+import { trigramIndexProblems } from './shared/fts-helpers';
 
 type ValidateDatabase = (db: Database) => void;
 
@@ -108,7 +109,7 @@ function sqlString(value: string): string {
   return `'${value.replaceAll("'", "''")}'`;
 }
 
-function validateMigratedDatabase(db: Database): void {
+export function validateMigratedDatabase(db: Database): void {
   const version = readSchemaVersionIfPossible(db);
   if (version !== SCHEMA_VERSION) {
     throw new Error(`expected schema version ${SCHEMA_VERSION}, found ${version ?? 'unknown'}`);
@@ -127,6 +128,17 @@ function validateMigratedDatabase(db: Database): void {
   // v8-specific validation
   if (version >= 8) {
     validateV8Database(db);
+  }
+
+  // v9 adds the standalone trigram FTS5 index; validate its sync parity.
+  if (version >= 9) {
+    validateV9Database(db);
+  }
+
+  // v10 recreates the trigram index with diacritic folding + contentless
+  // semantics; validate it.
+  if (version >= 10) {
+    validateV10Database(db);
   }
 }
 
@@ -182,6 +194,46 @@ function validateV8Database(db: Database): void {
     .get() as { next_value: number } | null;
   if (!seq) {
     throw new Error('fts_id_sequence missing entry for memories');
+  }
+}
+
+/** v9 adds the standalone trigram FTS5 index; validate it has no orphans. */
+function validateV9Database(db: Database): void {
+  const orphanTrigram = db
+    .query(
+      'SELECT COUNT(*) as c FROM memories_fts_trigram tri LEFT JOIN memories m ON m.fts_id = tri.rowid WHERE m.id IS NULL'
+    )
+    .get() as { c: number };
+  if (orphanTrigram.c > 0) {
+    throw new Error(
+      `Found ${orphanTrigram.c} orphan trigram FTS entries without matching memories`
+    );
+  }
+}
+
+/**
+ * v10: the trigram index must carry `remove_diacritics` and
+ * `contentless_delete=1` in its stored DDL and stay in count/rowid parity with
+ * `memories`.
+ */
+function validateV10Database(db: Database): void {
+  const ddl = db
+    .query("SELECT sql FROM sqlite_master WHERE type='table' AND name='memories_fts_trigram'")
+    .get() as { sql: string } | null;
+  if (!ddl) {
+    throw new Error('memories_fts_trigram is missing');
+  }
+  const sql = ddl.sql.toLowerCase();
+  if (!sql.includes('remove_diacritics')) {
+    throw new Error('memories_fts_trigram is missing remove_diacritics');
+  }
+  if (!sql.includes('contentless_delete=1')) {
+    throw new Error('memories_fts_trigram is missing contentless_delete=1');
+  }
+
+  const trigramProblems = trigramIndexProblems(db);
+  if (trigramProblems.length > 0) {
+    throw new Error(`trigram index inconsistency: ${trigramProblems.join('; ')}`);
   }
 }
 

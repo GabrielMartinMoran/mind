@@ -40,7 +40,7 @@ export function createLinkRepository(db: Database): LinkRepository {
                  JOIN memories tm ON tm.id = l.target_id
                  JOIN spaces st ON st.id = tm.space_id
                  WHERE l.source_id = ? OR l.target_id = ?
-                 ORDER BY l.created_at DESC`
+                 ORDER BY l.created_at DESC, l.rowid DESC`
       )
       .all(memoryId, memoryId) as any[];
 

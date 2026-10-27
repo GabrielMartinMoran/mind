@@ -7,6 +7,8 @@ import {
   isInitializeRequest,
 } from '@modelcontextprotocol/sdk/types.js';
 
+import { renderSkillActivation } from '../cli/skill-activation';
+import { resolveAgentIdentity, type AgentTransport } from '../helpers/agent-identity';
 import { createLogEntry } from '../helpers/logger';
 import type { MindStore } from '../store/mind-store';
 import { withAutoExport } from '../sync/auto-export-store';
@@ -20,7 +22,12 @@ import { createSpaceTools } from './tools/spaces';
 import { createStatusTools } from './tools/status';
 import { createSystemTools } from './tools/system';
 
-function createMcpServer(store: MindStore): Server {
+interface McpServerOptions {
+  transport?: AgentTransport;
+}
+
+function createMcpServer(store: MindStore, options: McpServerOptions = {}): Server {
+  const transport = options.transport ?? 'stdio';
   const server = new Server(
     {
       name: 'mind-mcp-server',
@@ -30,6 +37,7 @@ function createMcpServer(store: MindStore): Server {
       capabilities: {
         tools: {},
       },
+      instructions: renderSkillActivation(),
     }
   );
 
@@ -48,9 +56,7 @@ function createMcpServer(store: MindStore): Server {
     return {
       tools: Object.entries(allTools).map(([name, tool]) => ({
         name,
-        description: tool.description
-          ? `${tool.description}\n\nSee system_instructions for full mind usage guidelines.`
-          : `Call system_instructions first to get full mind usage guidelines.\n\nTool: ${name}`,
+        description: tool.description ?? `Tool: ${name}.`,
         inputSchema: tool.schema
           ? zodToJsonSchema(tool.schema)
           : { type: 'object', properties: {} },
@@ -59,7 +65,7 @@ function createMcpServer(store: MindStore): Server {
     };
   });
 
-  server.setRequestHandler(CallToolRequestSchema, async request => {
+  server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
     const { name, arguments: args } = request.params;
     const tool = allTools[name];
 
@@ -102,6 +108,14 @@ function createMcpServer(store: MindStore): Server {
       };
     } finally {
       const durationMs = Date.now() - startTime;
+      const clientVersion = server.getClientVersion();
+      const callerInfo = resolveAgentIdentity({
+        envAgent: process.env.MIND_AGENT,
+        clientName: clientVersion?.name,
+        clientVersion: clientVersion?.version,
+        transport,
+        sessionId: extra.sessionId,
+      });
       logEntry({
         source: 'mcp',
         operation: name,
@@ -110,7 +124,7 @@ function createMcpServer(store: MindStore): Server {
         outputData,
         errorMessage,
         durationMs,
-        callerInfo: {},
+        callerInfo,
       });
     }
   });
@@ -207,7 +221,7 @@ export async function startMcpHttpServer(
         }
 
         if (!sessionId && isInitializeRequest(body)) {
-          const server = createMcpServer(wrappedStore);
+          const server = createMcpServer(wrappedStore, { transport: 'http' });
           let transport: WebStandardStreamableHTTPServerTransport;
 
           transport = new WebStandardStreamableHTTPServerTransport({
