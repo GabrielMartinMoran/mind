@@ -8,11 +8,14 @@
 const DIACRITICS = /[\u0300-\u036f]/g;
 const LOWER_UPPER_BOUNDARY = /([a-z0-9])([A-Z])/g;
 const ACRONYM_BOUNDARY = /([A-Z]+)([A-Z][a-z])/g;
-const NON_ALPHANUMERIC = /[^a-z0-9]+/;
+const NON_ALPHANUMERIC = /[^\p{L}\p{N}]+/u;
+const LATIN_WITH_DIACRITICS = /[À-ɏḀ-ỿ]/g;
 
 /** Remove combining diacritics (`acción` → `accion`). */
 export function stripDiacritics(text: string): string {
-  return text.normalize('NFD').replace(DIACRITICS, '');
+  // Fold only Latin letters, like SQLite unicode61/trigram remove_diacritics:
+  // folding Cyrillic й/ё here would turn them into и/е, which the index keeps.
+  return text.replace(LATIN_WITH_DIACRITICS, ch => ch.normalize('NFD').replace(DIACRITICS, ''));
 }
 
 /** Split camelCase and acronym boundaries into separate words. */

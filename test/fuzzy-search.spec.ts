@@ -236,6 +236,22 @@ describe('MindStore — fuzzy channel (P-A global vocabulary)', () => {
     store.cleanup();
   });
 
+  test('finds Cyrillic words with й/ё and recovers Cyrillic word forms', async () => {
+    const store = createTestStore();
+    store.createSpace('test', 'Test', ['test']);
+    await store.addMemory('test', 'yo', 'особый случай: зелёный корабль', { tags: ['test'] });
+    await store.addMemory('test', 'mem', 'тесты падают без памяти', { tags: ['test'] });
+
+    for (const query of ['случай', 'особый', 'зелёный']) {
+      expect(names((await store.search(query)) as ScoredSearchResult[])).toEqual(['yo']);
+    }
+    const forms = (await store.search('корабли')) as ScoredSearchResult[];
+    expect(names(forms)).toEqual(['yo']);
+    expect(forms[0]!.methods).toContain('fuzzy');
+    expect(names((await store.search('память')) as ScoredSearchResult[])).toEqual(['mem']);
+    store.cleanup();
+  });
+
   test('tolerates transposition, insertion and deletion typos', async () => {
     const store = createTestStore();
     store.createSpace('test', 'Test', ['test']);

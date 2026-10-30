@@ -25,6 +25,15 @@ describe('matching tokenizer (D11)', () => {
     expect(normalizeToken('Acción')).toBe('accion');
     expect(normalizeToken('tokenBorderColor')).toBe('tokenbordercolor');
   });
+
+  test('keeps Cyrillic й and ё, which SQLite unicode61 does not fold', () => {
+    expect(normalizeToken('Случай')).toBe('случай');
+    expect(normalizeToken('Зелёный')).toBe('зелёный');
+  });
+
+  test('keeps non-Latin words as tokens', () => {
+    expect(tokenize('Сокеты кораблей-2026')).toEqual(['сокеты', 'кораблей', '2026']);
+  });
 });
 
 describe('query parser — Query parsing rule', () => {
